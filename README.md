@@ -22,10 +22,11 @@ install.packages("recipes")
 ```
 
 ## Feature Engineering and Selection (FES)  
-A Bookdown page prepared by MAx Kuhn
+A Bookdown page prepared by Max Kuhn  
 http://www.feat.engineering/  
 https://github.com/kojimizu/FES  
 
 ## Hands on Machine Learning with R
 Hands-on Machine Learning with R: An applied book covering the fundamentals of machine learning with R.  
 https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/  
+https://github.com/bradleyboehmke/hands-on-machine-learning-with-r  
