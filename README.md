@@ -20,3 +20,12 @@ Introduction materials are from useR2018 by Max Kuhn
 # Avaiable from CRAN
 install.packages("recipes")
 ```
+
+## Feature Engineering and Selection (FES)  
+A Bookdown page prepared by MAx Kuhn
+http://www.feat.engineering/  
+https://github.com/kojimizu/FES  
+
+## Hands on Machine Learning with R
+Hands-on Machine Learning with R: An applied book covering the fundamentals of machine learning with R.  
+https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/  
