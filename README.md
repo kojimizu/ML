@@ -1,4 +1,4 @@
-# Analysis
+# Bookdown materials
 
 ## Caret
 ### 1: Caret package introduction by Max Kuhn (Bookdown)
