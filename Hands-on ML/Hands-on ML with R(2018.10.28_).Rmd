@@ -1,0 +1,916 @@
+---
+title: "Hands-on-ML with R"
+author: "Koji Mizumura"
+date: "October 29th,2018 - "
+output:
+  word_document:
+    toc: yes
+  html_notebook:
+    code_folding: hide
+    fig_height: 4.5
+    fig_width: 7
+    highlight: tango
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.align = "center",
+  message = FALSE,
+  warning = FALSE,
+  collapse = TRUE
+)
+```
+
+# Introduction {#intro}
+Machine learning continues to grow in importance for many organizations across nearly all domains. Examples include:
+
+* predicting the likelihood of a patient returning to the hospital (_readmission_) within 30 days of discharge,
+* segmenting customers based on common attributes or purchasing behavior for target marketing,
+* predicting coupon redemption rates for a given marketing campaign,
+* predicting customer churn so an organization can perform preventative intervention,
+* and many more!
+
+In essence, these tasks all seek to learn from data.  To address each scenario, we use a given set of _features_ to train an algorithm and extract insights. These algorithms, or _learners_, can be classified according to the amount and type of supervision provided during training.  The two main groups this book focuses on includes: ___supervised learners___ that are used to construct predictive models, and ___unsupervised learners___ that are used to build descriptive models. Which type you will need to use depends on the learning task you hope to accomplish.
+
+## Supervised Learning
+A ___predictive model___ is used for tasks that involve the prediction of a given output using other variables and their values (_features_) in the data set. Or as stated by @apm, predictive modeling is _"the process of developing a mathematical tool or model that generates an accurate prediction"_ (p. 2).  The learning algorithm in a predictive model attempts to discover and model the relationship among the ___target___ response (the variable being predicted) and the other features (aka predictor variables). Examples of predictive modeling include:
+
+* using customer attributes to predict the probability of the customer churning in the next 6 weeks,
+* using home attributes to predict the sales price,
+* using employee attributes to predict the likelihood of attrition,
+* using patient attributes and symptoms to predict the risk of readmission,
+* using production attributes to predict time to market.
+
+Each of these examples have a defined learning task. They each intend to use attributes ($x$) to predict an outcome measurement ($Y$)
+
+```{block, type="rmdnote"}
+Throughout this text I will use various terms interchangeably for:
+- $X$: "predictor variables", "independent variables", "attributes", "features", "predictors"
+- $Y$: "target variable", "dependent variable", "response", "outcome measurement"
+```
+
+The predictive modeling examples above describe what is known as _supervised learning_. The supervision refers to the fact that the target values provide a supervisory role, which indicates to the learner the task it needs to learn. Specifically, given a set of data, the learning algorithm attempts to optimize a function (the algorithmic steps) to find the combination of feature values that results in a predicted value that is as close to the actual target output as possible.
+
+Supervised learning problems resolve around two primary themes: regression and classification.
+
+```{block, type="rmdnote"}
+In supervised learning, the training data you feed the algorithm includes the desired solutions.  Consequently, the solutions can be used to help _supervise_ the training process to find the optimal algorithm parameters.
+```
+
+### Regression problems
+When the objective of our supervised learning is to predict a numeric outcome, we refer to this as a ___regression problem___ (not to be confused with linear regression modeling).  Regression problems revolve around predicting output that falls on a continuous numeric spectrum. In the examples above predicting home sales prices and time to market reflect a regression problem because the output is numeric and continuous.  This means, given the combination of predictor values, the response value could fall anywhere along the continuous spectrum.  Figure \@ref(fig:regression-problem) illustrates average home sales prices as a function of two home features: year built and total square footage. Depending on the combination of these two features, the expected home sales price could fall anywhere along the plane.
+
+```{r regression-problem, echo=FALSE, fig.cap="Average home sales price as a function of year built and total square footage."}
+
+library(plotly)
+df <- AmesHousing::make_ames()
+x <- matrix(sort(df$Gr_Liv_Area)[floor(seq(1, nrow(df), length.out = 15))], 15, 1)
+y <- matrix(sort(df$Year_Built)[floor(seq(1, nrow(df), length.out = 15))], 1, 15)
+z <- 25051 + 3505*(log(x^.9) %*% log(y)) - 5*as.vector(x) 
+c <- matrix(c(.92, .95, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, .95), 1, 15)
+z <- sweep(z, MARGIN = 2, c, `*`)
+
+plot_ly(x = as.vector(x), y = as.vector(y), z = z, showscale = FALSE) %>%  
+    add_surface() %>%
+    layout(
+        scene = list(
+            xaxis = list(title = "Feature: square footage"),
+            yaxis = list(title = "Feature: year built"),
+            zaxis = list(title = "Response: sale price")
+        )
+    )
+```
+
+### classification problems
+When the objective of our supervised learning is to predict a categorical response, we refer to this as a ___classification problem___.  Classification problems most commonly revolve around predicting a binary or multinomial response measure such as:
+
+* did a customer redeem a coupon (yes/no, 1/0),
+* did a customer churn (yes/no, 1/0),
+* did a customer click on our online ad (yes/no, 1/0),
+* classifying customer reviews:
+    * binary: positive vs negative
+    * multinomial: extremely negative to extremely positive on a 0-5 Likert scale
+    
+```{r classification-problem, echo=FALSE, out.width="40%", out.height="40%", eval=FALSE}
+library(DiagrammeR)
+grViz("
+  
+  digraph boxes_and_circles {
+    node [shape = circle]
+    x1; x2; x3;
+
+    node [shape = box]
+    Yes; No;
+
+    x1->Yes; x2->Yes; x3->Yes; x1->No; x2->No; x3->No;
+}")   
+
+```
+
+However, when we apply machine learning models for classification problems, rather than predict a particular class (i.e. "yes" or "no"), we often predict the _probability_ of a particular class (i.e. yes: .65, no: .35).  Then the class with the highest probability becomes the predicted class.  Consequently, even though we are performing a classification problem, we are still predicting a numeric output (probability).  However, the essence of the problem still makes it a classification problem.
+
+### Algorithm comparison guide
+Although there are machine learning algorithms that can be applied to **regression problems** but not **classification** and vice versa, the supervised learning algorithms I cover in this book can be applied to both.  These algorithms have become the most popular machine learning applications in recent years. 
+
+Although the chapters that follow will go into detail on each algorithm, the following provides a quick reference guide that compares and contrasts some of their features.  Moreover, I provide recommended base learner packages that I have found to scale well with typical rectangular data analyzed by organizations.
+
+
+<table style="font-size:13px;">
+<col width="40%">
+<col width="15%">
+<col width="15%">
+<col width="15%">
+<col width="15%">
+<thead>
+<tr class="header">
+<th align="left">Characteristics</th>
+<th align="left">Regularized GLM</th>
+<th align="left">Random Forest</th>
+<th align="left">Gradient Boosting Machine</th>
+<th align="left">Deep Learning</th>
+</tr>
+</thead>
+<tbody>
+
+<tr class="odd">
+<td align="left" valign="top">
+  Allows n < p
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+</tr>
+
+<tr class="even">
+<td align="left" valign="top">
+  Provides automatic feature selection
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+</tr>
+
+<tr class="odd">
+<td align="left" valign="top">
+  Handles missing values
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+</tr>
+
+<tr class="even">
+<td align="left" valign="top">
+  No feature pre-processing required
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+</tr>
+
+<tr class="odd">
+<td align="left" valign="top">
+  Robust to outliers
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="yellow" stroke-width="3" fill="yellow" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+</tr>
+
+<tr class="even">
+<td align="left" valign="top">
+  Easy to tune
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+</tr>
+
+<tr class="odd">
+<td align="left" valign="top">
+  Computational speed
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="yellow" stroke-width="3" fill="yellow" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="yellow" stroke-width="3" fill="yellow" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+</tr>
+
+<tr class="even">
+<td align="left" valign="top">
+  Predictive power
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="red" stroke-width="3" fill="red" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="yellow" stroke-width="3" fill="yellow" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="green" stroke-width="3" fill="green" /></svg>
+</td>
+<td align="left" valign="center"> 
+  <svg height="10" width="10"><circle cx="5" cy="5" r="5" stroke="yellow" stroke-width="3" fill="yellow" /></svg>
+</td>
+</tr>
+
+<tr class="odd">
+<td align="left" valign="top">
+  Preferred regression base learner <br>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">glmnet</a><br>
+  <a  href="">h2o.glm</a>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">ranger</a><br>
+  <a  href="">h2o.randomForest</a>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">xgboost</a><br>
+  <a  href="">h2o.gbm</a>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">keras</a><br>
+  <a  href="">h2o.deeplearning</a>
+</td>
+</tr>
+
+<tr class="even">
+<td align="left" valign="top">
+  Preferred classifciation base learner <br>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">glmnet</a><br>
+  <a  href="">h2o.glm</a>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">ranger</a><br>
+  <a  href="">h2o.randomForest</a>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">xgboost</a><br>
+  <a  href="">h2o.gbm</a>
+</td>
+<td align="left" valign="top"> 
+  <a  href="">keras</a><br>
+  <a  href="">h2o.deeplearning</a>
+</td>
+</tr>
+
+</tbody>
+</table>
+
+## Unsupervised learning
+___Unsupervised learning___, in contrast to supervised learning, includes a set of statistical tools to better understand and describe your data but performs the analysis without a target variable.  In essence, unsupervised learning is concerned with identifying groups in a data set. The groups may be defined by the rows (i.e., *clustering*) or the columns (i.e., *dimension reduction*); however, the motive in each case is quite different.
+
+The goal of ___clustering___ is to segment observations into similar groups based on the observed variables. For example, to divide consumers into different homogeneous groups, a process known as market segmentation.  In __dimension reduction__, we are often concerned with reducing the number of variables in a data set. For example, classical regression models break down in the presence of highly correlated features.  Dimension reduction techniques provide a method to reduce the feature set to a potentially smaller set of uncorrelated variables. These variables are often used as the input variables to downstream supervised models like.
+
+Unsupervised learning is often performed as part of an exploratory data analysis. However, the exercise tends to be more subjective, and there is no simple goal for the analysis, such as prediction of a response. Furthermore, it can be hard to assess the quality of results obtained from unsupervised learning methods. The reason for this is simple. If we fit a predictive model using a supervised learning technique (i.e. linear regression), then it is possible to check our work by seeing how well our model predicts the response *Y* on observations not used in fitting the model. However, in unsupervised learning, there is no way to check our work because we don’t know the true answer—the problem is unsupervised.  
+
+However, the importance of unsupervised learning should not be overlooked and techniques for unsupervised learning are used in organizations to: 
+
+- Divide consumers into different homogeneous groups so that tailored marketing strategies can be developed and deployed for each segment.
+- Identify groups of online shoppers with similar browsing and purchase histories, as well as items that are of particular interest to the shoppers within each group. Then an individual shopper can be preferentially shown the items in which he or she is particularly likely to be interested, based on the purchase histories of similar shoppers.
+- Identify products that have similar purchasing behavior so that managers can manage them as product groups.
+
+These questions, and many more, can be addressed with unsupervised learning.  Moreover, often the results of an unsupervised model can be used as inputs to downstream supervised learning models.
+
+## Machine learning interpretability
+
+In his seminal 2001 paper, Leo Breiman popularized the phrase: _“the multiplicity of good models.”_ The phrase means that for the same set of input variables and prediction targets, complex machine learning algorithms can produce multiple accurate models with very similar, but not the exact same, internal architectures. 
+
+Figure \@ref(fig:error-surface) is a depiction of a non-convex error surface that is representative of the error function for a machine learning algorithm with two inputs — say, a customer’s income and a customer’s age, and an output, such as the same customer’s probability of redeeming a coupon. This non-convex error surface with no obvious global minimum implies there are many different ways complex machine learning algorithms could learn to weigh a customer’s income and age to make a good decision about if they are likely to redeem a coupon. Each of these different weightings would create a different function for making coupon redemption (and therefore marketing) decisions, and each of these different functions would have different explanations.
+
+```{r error-surface, echo=FALSE, fig.cap="Non-convex error surface with many local minimas."}
+library(plotly)
+error <- c(
+  c(8.83,8.89,8.81,8.87,8.9,8.87),
+  c(8.89,8.94,8.85,8.94,8.96,8.92),
+  c(8.84,8.9,8.82,8.92,8.93,8.91),
+  c(8.79,8.85,8.79,8.9,8.94,8.92),
+  c(8.79,8.88,8.81,8.9,8.95,8.92),
+  c(8.8,8.82,8.78,8.91,8.94,8.92),
+  c(8.75,8.78,8.77,8.91,8.95,8.92),
+  c(8.8,8.8,8.77,8.91,8.95,8.94),
+  c(8.74,8.81,8.76,8.93,8.98,8.99),
+  c(8.89,8.99,8.92,9.1,9.13,9.11),
+  c(8.97,8.97,8.91,9.09,9.11,9.11),
+  c(9.04,9.08,9.05,9.25,9.28,9.27),
+  c(9,9.01,9,9.2,9.23,9.2),
+  c(8.99,8.99,8.98,9.18,9.2,9.19),
+  c(8.93,8.97,8.97,9.18,9.2,9.18)
+)
+dim(error) <- c(15, 6)
+
+x <- seq(20, 90, by = 5)
+y <- c(50, 75, 100, 150, 200, 250)
+
+plot_ly(showscale = FALSE) %>%
+  add_surface(x = x, y = y, z = ~error) %>%
+  layout(
+        scene = list(
+            xaxis = list(title = "age"),
+            yaxis = list(title = "income"),
+            zaxis = list(title = "error")
+        )
+    )
+```
+
+All of this is an obstacle to data scientists. On one hand, **different models** can have widely different predictions based on the same feature set. Even models built from the same algorithm but with **different hyperparameters** can lead to different results. Consequently, practitioners should understand how different implementation of algorithms differ, which can cause variance in their results (i.e., a default `xgboost` model can produce very different results from a default `gbm` model, even though they both implement gradient boosting machines). 
+
+Alternatively, data scientists can experience very similar predictions from different models based on the same feature set. However, these models will have very different logic and structure leading to different interpretations. Consequently, preactitionaer should understand how to interpret different types of models.
+
+This book provide you with a fundamental understanding to compare and contrast models and even package implementations of similar algorithms. Several machine learning interpretability techniques will be demonstrated to help you understand what is driving model and prediction performance. This will allow you to be more effective and efficient in applying and understandin multiple good models.
+
+## The data sets{#data}
+The __XX__ data sets chosen for this book allow us to illustrate the different features of our machine learning algorithms.  Since the goal of this book is to demonstrate how to implement R's ML stack, I make the assumption that you have already spent significant time cleaning and getting to know your data via exploratory data analysis. This would allow you to perform many necessary tasks prior to the ML tasks outlined in this book such as:
+
+* feature selection: removing unnecessary variables and retaining only those variables you wish to include in your modeling process,
+* recoding variable names and values so that they are meaningful and interpretable,
+* recoding or removing missing values.
+
+Consequently, the exemplar data sets I use throughout this book have, for the most part, gone through the necessary cleaning process.  These data sets are all freely available and include:
+
+* Property sales information as described in @de2011ames.
+    - __problem type__: supervised regression
+    - __response variable__: sale price (i.e. \$195,000, \$215,000)
+    - __features__: 80 
+    - __observations__: 2,930
+    - __objective__: use property attributes to predict the sale price of a home
+    - __access__: provided by the `AmesHousing` package [@R-ames]
+    - __more details__: See `?AmesHousing::ames_raw`
+
+```{r import-ames-data}
+# access data
+ames <- AmesHousing::make_ames()
+
+# initial dimension
+dim(ames)
+
+# response variable
+head(ames$Sale_Price)
+```
+
+```{block, type = "rmdcomment"}
+    You can see the entire data cleaning process to transform the raw Ames housing data (`AmesHousing::ames_raw`) to the final clean  data (`AmesHousing::make_ames`) that we will use in machine learning algorithms throughout this book at:
+
+https://github.com/topepo/AmesHousing/blob/master/R/make_ames.R
+```
+* Employee attrition information originally provided by [IBM Watson Analytics Lab](https://www.ibm.com/communities/analytics/watson-analytics-blog/hr-employee-attrition/).
+    - __problem type__: supervised binomial classification
+    - __response variable__: `Attrition` (i.e. "Yes", "No")
+    - __features__: 30 
+    - __observations__: 1,470
+    - __objective__: use employee attributes to predict if they will attrit (leave the company)
+    - __access__: provided by the `rsample` package [@R-rsample]
+    - __more details__: See `?rsample::attrition`
+    
+```{r import-attrition-data}
+# access data
+attrition <- rsample::attrition
+
+# initial dimension
+dim(attrition)
+
+# response variable
+head(attrition$Attrition)
+```
+
+* Image information for handwritten numbers 
+originally presented to AT&T Bell Lab’s to help build automatic mail-sorting machines for the USPS. Has been used since early 1990s to compare machine learning performance on pattern recognition (i.e. @lecun1990handwritten; @lecun1998gradient; @cirecsan2012multi).
+    - __Problem type__: supervised multinomial classification
+    - __response variable__: `V785` (i.e. numbers to predict: 0, 1, ..., 9)
+    - __features__: 784 
+    - __observations__: 60,000 (train) / 10,000 (test)
+    - __objective__: use attributes about the "darkness" of each of the 784 pixels in images of handwritten numbers to predict if the number is 0, 1, ..., or 9.
+    - __access__: see the code chunk that follows for download instructions
+    - __more details__: See [online MNIST documentation](http://yann.lecun.com/exdb/mnist/)
+
+```{r eval=FALSE}
+ # load training data https://h2o-public-test-data.s3.amazonaws.com/bigdata/laptop/mnist/train.csv.gz
+train <- data.table::fread("C:/Users/kojikm.mizumura/Desktop/Data Science/Hands-on ML/data/mnist_train.csv", data.table = FALSE)
+
+# load test data https://h2o-public-test-data.s3.amazonaws.com/bigdata/laptop/mnist/test.csv.gz
+test <- data.table::fread("C:/Users/kojikm.mizumura/Desktop/Data Science/Hands-on ML/data/mnist_test.csv", data.table = FALSE)
+
+# initial dimension
+dim(train)
+
+# response variable
+head(train$V785)
+```
+
+__TODO__: get unsupervised data sets for clustering and dimension reduction examples
+
+# Supervised Learning
+## Preparing for Supervised Machine Learning {#regression-performance}
+
+```{r setup1, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.align = "center",
+  collapse = TRUE,
+  message = FALSE,
+  warning = FALSE, 
+  cache = TRUE
+)
+```
+
+Machine learning is a very iterative process.  If performed and interpreted correctly, we can have great confidence in our outcomes. If not, the results will be useless. Approaching machine learning correctly means approaching it strategically by spending our data wisely on learning and validation procedures, properly pre-processing variables, minimizing data leakage, tuning hyperparameters, and assessing model performance. Before introducing specific algorithms, this chapter introduces concepts that are commonly required in the supervised machine learning process and that you'll see briskly covered in each chapter. 
+
+## Prerequisites {#reg_perf_prereq}
+```{r sml-prep, cache=FALSE}
+
+library(rsample)
+library(caret)
+library(h2o)
+library(dplyr)
+
+# turn off progress bars
+h2o.no_progress()
+
+# launch h2o
+h2o.init()
+```
+
+To illustrate some of the concepts, we will use the Ames Housing data and employee attrition data introduced in Chapter \@ref(intro).  Throughout this book, I'll demonstrate approaches with regular data frames.  However, since many of the supervised machine learning chapters leverage the __h2o__ package, we'll also show how to do some of the tasks with H2O objects.  This requires your data to be in an H2O object, which you can convert any data frame easily with `as.h2o`.  
+
+```{block, type="rmdwarning"}
+If you try to convert the original `rsample::attrition` data set to an H2O object an error will occur. This is because several variables are _ordered factors_ and H2O has no way of handling this data type.  Consequently, you must convert any ordered factors to unordered.
+```
+
+```{r, create_data}
+# ames data
+library(tidyverse)
+ames <- AmesHousing::make_ames()
+ames.h2o <- as.h2o(ames)
+
+# attrition data
+churn <- rsample::attrition %>% 
+  mutate_if(is.ordered, factor, ordered = FALSE)
+churn.h2o <- as.h2o(churn)
+```
+
+## data splitting{#reg_perf_split}
+### Spending our data wisely
+
+A major goal of the machine learning process is to find an algorithm $f(x)$ that most accurately predicts future values ($y$) based on a set of inputs ($x$).  In other words, we want an algorithm that not only fits well to our past data, but more importantly, one that predicts a future outcome accurately.  This is called the ___generalizability___ of our algorithm.  How we _"spend"_ our data will help us understand how well our algorithm generalizes to unseen data.  
+
+To provide an accurate understanding of the generalizability of our final optimal model, we split our data into training and test data sets:
+
+*  __Training Set__: these data are used to train our algorithms and tune hyper-parameters.
+*  __Test Set__: having chosen a final model, these data are used to estimate its prediction error (generalization error). These data should _not be used during model training!_
+
+```{r, echo=FALSE, fig.align='center', fig.cap="Splitting data into training and test sets.", out.width=175}
+knitr::include_graphics("images/data_split.png")
+```
+
+Given a fixed amount of data, typical recommendations for splitting your data into training-testing splits include 60% (training) - 40% (testing), 70%-30%, or 80%-20%. Generally speaking, these are appropriate guidelines to follow; however, it is good to keep in mind that as your overall data set gets smaller,
+
+* spending too much in training ($>80\%$) won't allow us to get a good assessment of predictive performance.  We may find a model that fits the training data very well, but is not generalizable (overfitting),
+* sometimes too much spent in testing ($>40\%$) won't allow us to get a good assessment of model parameters
+
+In today's data-rich environment, typically, we are not lacking in the quantity of observations, so a 70-30 split is often sufficient.  The two most common ways of splitting data include ___simple random sampling___ and ___stratified sampling___.
+
+### simple random sampling
+
+The simplest way to split the data into training and test sets is to take a simple random sample. This does not control for any data attributes, such as the percentage of data represented in your response variable ($y$). There are multiple ways to split our data.  Here we show four options to produce a 70-30 split (note that setting the seed value allows you to reproduce your randomized splits):
+
+```{block, type = "rmdnote"}
+Sampling is a random process so setting the random number generator with a common seed allows for reproducible results.  Throughout this book I will use the number _123_ often for reproducibility but the number itself has no special meaning.
+```
+```{r splitting}
+
+# baseR
+set.seed(123)
+index_1 <- sample(1:nrow(ames), round(nrow(ames)*0.7))
+train_1 <- ames[index_1,]
+test_1 <- ames[-index_1,]
+
+dim(train_1)
+
+# caret package
+set.seed(123)
+library(caret)
+library(AmesHousing)
+index_2 <- createDataPartition(ames$Sale_Price, p=0.7, list=FALSE)
+train_2 <- ames[index_2,]
+test_2 <- ames[-index_2,]
+
+# rsample package
+library(rsample)
+split_1 <- initial_split(ames,prop=0.7)
+train_3 <- training(split_1)
+test_3 <- testing(split_1)
+
+# h2o package
+library(h2o)
+split_2 <- h2o.splitFrame(ames.h2o, ratios = 0.7, seed = 123)
+train_4 <- split_2[[1]]
+test_4  <- split_2[[2]]
+```
+
+Since this samplint approach will randomly sample across the distribution of $y$ (`Sale_Price` in our example), you will typically result in a similar distribution between your training and test sets as illustrated below.
+
+```{r distribution, echo=FALSE, fig.cap="Training (black) vs. test (red) distribution.", fig.height=3, fig.width=9}
+library(ggplot2)
+
+p1 <- ggplot(train_1, aes(x=Sale_Price))+
+  geom_density(trim=TRUE)+
+  geom_density(data=test_1, trim=T, col="red")+
+  ggtitle("Base R")
+
+p2 <- ggplot(train_2, aes(x = Sale_Price)) + 
+    geom_density(trim = TRUE) + 
+    geom_density(data = test_2, trim = TRUE, col = "red") +
+    theme(axis.title.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank()) +
+    ggtitle("caret") 
+
+p3 <- ggplot(train_3, aes(x = Sale_Price)) + 
+    geom_density(trim = TRUE) + 
+    geom_density(data = test_3, trim = TRUE, col = "red") +
+    theme(axis.title.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank()) +
+    ggtitle("rsample")
+
+p4 <- ggplot(as.data.frame(train_4), aes(x = Sale_Price)) + 
+    geom_density(trim = TRUE) + 
+    geom_density(data = as.data.frame(test_4), trim = TRUE, col = "red") +
+    theme(axis.title.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank()) +
+    ggtitle("h2o")
+
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 1)
+
+```
+
+### Stratified sampling
+
+However, if we want to explicitly control our sampling so that our training and test sets have similar $y$ distributions, we can use **stratified sampling**. This is more common with classification problems where the response variable may be imbalanced (90% of observations with response "Yes" and 10% with response "No"). 
+
+However, we can als apply to regression problems for data sets that have a small sample size and where the response variable diviates strongly from normality. With a continuous response variable, **stratified sampling** will break $y$ down into quartiles and randomly sample from each quantile. Consequently, this will help ensure a balanced representation of the response distribution in both training and test sets. 
+
+The easiest way to perform **stratified sampling** on a response variable is to use the __rsample__ package, where you specify the response variable to `strata`fy. The following illustrates that in our original employee attrition data we have an imbalanced response (No:84%, Yes:16%). By enforcing stratified sampling both our training and testing sets have approximately equal response distributions.
+
+```{r stratified sampling}
+# original response distribution
+table(churn$Attrition) %>% prop.table()
+
+# stratified sampling with rsample package
+set.seed(123)
+
+split_strata <- initial_split(churn, prop=0.7, strata="Attrition")
+train_strat <- training(split_strata)
+test_strat <- testing(split_strata)
+
+# consistent response ratio between train & test
+table(train_strat$Attrition) %>% prop.table()
+table(test_strat$Attrition) %>% prop.table()
+```
+
+### Feature engineering {#reg_perf_feat}
+
+__Feature engineering__ generally refers to the process of adding, deleting, and transforming the variables to be applied to your machine learning algorithms. Feature engineering is a significant process and requires you to speed substantial time understanding your data... or as Leo Breiman said _"live with your data before you plunge into modeling."_
+
+Although this book primarily focused on applying machine learning algorithms, feature engineering can make or break an algorithm's predictive ability. We will not cover all the potential ways of implementing feature engineering: however, we will cover a few fundamental pre-processing tasks that can significantly improve modeling performance. 
+
+To learn more about feature engineering check out [Feature Engineering for Machine Learning](http://shop.oreilly.com/product/0636920049081.do) by @zheng2018feature and Max Kuhn's upcoming book [Feature Engineering and Selection: A Practical Approach for Predictive Models](http://www.feat.engineering/).
+
+### Response transformation
+
+Although not a requirement, normalizing the distribution of the response variable by using a _transformation_ can lead to a big improvement, especially for parametric models. As we saw in the data splitting section, our response variable `Sale_Price` is right skewed.
+
+```{r skewedresponse, fig.cap="Right skewed response variable.", fig.height=3, fig.width=9}
+ggplot(train_1, aes(x=Sale_Price))+
+  geom_density(trim=T)+
+  geom_density(data=test_1, trim=T, col="red")
+```
+
+To normalize, we have a few options:
+
+__Option 1__: normalize with alog transformation. This will transform most right skewed distributions to be approximately normal.
+```{r ylog}
+# log transformation
+train_log_y <- log(train_1$Sale_Price)
+test_log_y <- log(test_1$Sale_Price)
+
+library(dplyr)
+train_log_y %>% as_tibble() %>% dim()
+```
+
+```{r}
+train_log_y %>% 
+  as.tibble() %>% 
+  rename(train_log=value) %>% 
+  ggplot(aes(train_log))+
+  geom_density()
+```
+
+IF your response has negative values that a log transformation will produce `NaN`s. IF these neative values are small (between -0.99 to 0) then you can apply `log1p` which adds 1 to the value prior to applying a log transformation. If your data consists of negative equal to or less than -1, use the **Yeo Johnson transformation** mentioned next.
+
+```{r}
+log(-.5)
+log1p(-.5)
+```
+
+__Option 2__: Use a **Box Cox Transformation**. A Box Cox transformation is more flexibile and will find the transformation from a family of [power transforms](https://en.wikipedia.org/wiki/Power_transform#Box%E2%80%93Cox_transformation) that will transform the variable as close as possible to a normal distribution.
+
+```{block}
+Be sure to compute the `lamda` on the training set and apply the same `lambda` to both the training and test set to minimize data leakage. 
+```
+
+```{r y_boxcox}
+# Box Cox transformation
+library(forecast)
+
+lambda <- forecast::BoxCox.lambda(train_1$Sale_Price)
+train_bc_y <- forecast::BoxCox(train_1$Sale_Price, lambda)
+test_bc_y <- forecast::BoxCox(test_1$Sale_Price, lambda)
+```
+
+We can see that in this example, the log transformation and Box Cox both do about equally well in transforming our response variable to be normally distributed.
+
+```{r ,echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Response variable transformations.", fig.height=3, fig.width=9}
+
+library(dplyr)
+
+data.frame(
+  Normal = train_1$Sale_Price,
+  Log_Transform = train_log_y,
+  BoxCox_Transform = train_bc_y
+) %>% 
+  gather(Transform, Value) %>% 
+  mutate(Transform = factor(Transform, levels = c("Normal", "Log_Transform", "BoxCox_Transform"))) %>% 
+  ggplot(aes(Value, fill = Transform)) +
+  geom_histogram(show.legend = FALSE, bins = 40) +
+  facet_wrap(~ Transform, scales = "free_x")
+
+```
+
+Note that when your model with a transformed response variable, your predictions will also be in the transformed value. You will likely want to re-transform your predicted values to their normal state so that decision-makers can interpret the results. The following code can do this for your:
+```{r inverse_bc}
+
+# log transform a value
+y <- log(10)
+
+# re-transforming the log-transformed value
+exp(y)
+
+# Box Cox transform a value
+y <- forecast::BoxCox(10,lambda)
+
+# Inverse box cox function
+inv_box_cox <- function(x,lambda){
+  if(lambda==0) exp(x)
+  else (lambda*x+1)^(1/lambda)
+}
+
+# re-transforming the box cox-transformed values
+inv_box_cox(y, lambda)
+```
+
+```{block, type="rmdtip"}
+
+If your response has negative values, you can use the Yeo-Johnson transformation. To apply, use `car::powerTransform` to identify the lambda, `car::yjPower` to apply the transformation, and `VGAM::yeo.johnson` to apply the transformation and/or the inverse transformation. 
+
+```
+
+
+### Predictor transformation
+### One-hot encoding
+
+Many models requrire all predictor variables to be numeric. Consequently, we need to transform any categorical variables into numeric representations so that these algorithms can compute. Some packages automate this process (i.e., `h2o`, `glm`, `caret`), while others do not (i.e., `glmnet`, `keras`). Furthermore, there are many ways to encode categorical variables as numeric representations (i.e., one-hot, ordinal, binary, sum, Helmert).
+
+The most common is referred to as one-hot encoding, where we transpose our categorical variables so that each level of the feature is represented as a boolean value. For example, one-hot encoding variable `x` in the following.
+
+```{r one-hot}
+set.seed(123)
+ex1 <- data.frame(id=1:8, x=sample(letters[1:3],8, replace=TRUE))
+knitr::kable(ex1)
+```
+
+results in the following representation:
+```{r}
+one_hot <- dummyVars(~., ex1, fullRank=F)
+ex2 <- predict(one_hot, ex1)
+knitr::kable(ex2)
+```
+
+This is called less than _full rank_ encoding where we retain all variables for each level of `x`. However, this creates perfect collinearity which causes problems with some machine learning algorithms (i.e., generalized regression models, neural networks). Alternatively, we can create full-rank one-hot encoding by dropping one of the levels (level `a` has been dropped):
+
+```{r one-hot3, echo=FALSE}
+one_hot <- dummyVars( ~ ., ex1, fullRank = TRUE)
+ex3 <- predict(one_hot, ex1)
+knitr::kable(ex3)
+```
+
+If you needed to manually implement one-hot encoding yourself you can with `caret::dummyVars`.  Sometimes you may have a feature level with very few observations and all these observations show up in the test set but not the training set.  The benefit of using `dummyVars` on the full data set and then applying the result to both the train and test data sets is that it will guarantee that the same features are represented in both the train and test data.
+
+```{r one-hot4}
+# full rank one-hot encode - recommended for generalized linear models and
+# neural networks
+full_rank  <- dummyVars( ~ ., data = ames, fullRank = TRUE)
+train_oh   <- predict(full_rank, train_1)
+test_oh    <- predict(full_rank, test_1)
+
+# less than full rank --> dummy encoding
+dummy    <- dummyVars( ~ ., data = ames, fullRank = FALSE)
+train_oh <- predict(dummy, train_1)
+test_oh  <- predict(dummy, test_1)
+```
+
+Two things to note: 
+* since one-hot encoding add new features it can significantly increase the dimensionality of our data. If you have a data set with many categorical variables and those categorical variables in turn have many unique levels, the number of features can explode. In these cases, you may want to explorer ordinal encoding of your data.
+
+* if you use `h2o` you do not need to explicitly encode your categorical variables but you can overrride the default encoding. This can be considered a tuning parameter as some encoding approaches will improve modeling accuracy over other encodings. See the encoding options for `h2o` [here](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science/algo-params/categorical_encoding.html)
+
+Reference 
+http://docs.h2o.ai/h2o/latest-stable/h2o-docs/welcome.html
+
+### Standardizing
+
+Some models (K-NN, SVMs, PLS, Neural networks) require that the predictor variables have the same units. **Centering**, and **scaling** can be used for this purpose, and is often referred to as __standardizing__ the features. Standardizing numeric variables results in zero mean and unit variance, which provides a common comparable unit of measure across all the variables.
+
+Some packages have built-in arguments (i.e., `h2o`, `caret`) to standardize and some do not(i.e., `glm`, `keras`).  If you need to manually standardize your variables you can use the `preProcess` function provided by the `caret` package.  For example, here we center and scale our Ames predictor variables.
+
+```{block, type = "rmdwarning"}
+It is important that you standardize the test data based on the training mean and variance values of each feature.  This minimizes data leakage.
+```
+```{r}
+# identify only the predictor variables
+features <- setdiff(names(train_1), "Sale_Price")
+features
+
+# pre-process estimation based on training features
+pre_process <- preProcess(
+  x=train_1[,features],
+  method=c("center","scale")
+)
+
+# apply to both training & test
+train_x <- predict(pre_process, train_1[,features])
+test_x <- predict(pre_process, test_1[,features])
+```
+
+### Alternative Feature Transformation
+There are some alternative transformation that you can perform:
+
+* Normalizing the predictor variables with Box Cox transformation can improve parametric model performance. 
+* Collapsing highly correlated variables with PCA can reduce the number of features and increase the stability of generalized linear models. However, this reduces the amount of information at your disposal and we show you how to use regularization as a better alternative to PCA. 
+* Remove near-zero variance variables. Variables with vary little variance tend to not improve model performance and can be removed. 
+```{block, type="rmdtip"}
+`preProcess` provides many other transformation options which you can read more about [here](https://topepo.github.io/caret/pre-processing.html).
+```
+
+For example, the following normalizes predictors with Box Cox transformation, center and scales continuous variables, peforms principal component analysis to reduce the predictor dimensions, and removes predictors with near zero variance. 
+
+```{r eval=FALSE}
+
+# identify only the predictor variables
+features <- setdiff(names(train_1), "Sale_Price")
+
+# pre-process estimation based on training features
+pre_process <- preProcess(
+  x      = train_1[, features],
+  method = c("BoxCox", "center", "scale", "pca", "nzv")    
+  )
+
+# apply to both training & test
+train_x <- predict(pre_process, train_1[, features])
+test_x  <- predict(pre_process, test_1[, features])
+```
+
+## Basic model formulation 
+There are __many__ packages to perform machine learning and there are almost always more than one to perform each algorithm (i.e., there are over 20 packages to perform random forecasts). There are pros and cons to each package: some may be more computationally efficient while others may have more hyperparameter tuning options.  Future chapters will expose you to many of the packages and algorithms that perform and scale best to most organization's problems and data sets.  Just realize there are *more ways than one to skin a* scream cat.
+
+For example, these three functions will all produce the same linear regression model output.
+```{r, eval=FALSE}
+
+lm.lm <- lm(Sale_Price ~., data=train_1)
+lm.glm   <- glm(Sale_Price ~ ., data = train_1, family = gaussian)
+lm.caret <- train(Sale_Price ~ ., data = train_1, method = "lm")
+```
+
+One thing you will notice throughout this guide is that we cano specify our model formulation in different ways. In the above examples, we use the _model formulation_ (`Sale_Price ~.`, which says explain `Sale_Price` based on all features) approach. Alternative approaches, which you will see more often throughout this guide, are the matrix formulation and variable name specification approaches. 
+
+_Matrix formulation_ requires that we separate our response variable from our features. For example, in the regularization session, we'll use `glmnet` which requires our features (`x`) and response (`y`) variable to be specified separately.
+
+```{r, eval=FALSE}
+library(glmnet)
+
+# get feature names
+features <- setdiff(names(train_1), "Sale_Price")
+
+# create feature and response set
+train_x <- train_1[, features]
+train_y <- train_1$Sale_Price
+
+# example of matrix formulation
+glmnet.m1 <- glmnet(x = train_x, y = train_y)
+```
+
+Alternatively, `h2o` uses _variable name specification_ where we provide all the data combined in one `training_frame` but we specify the features and response with character strings:
+```{r, eval=FALSE}
+
+# create variable names and h2o training frame
+y <- "Sale_Price"
+x <- setdiff(names(train_1),y)
+train.h2o <- as.h2o(train_1)
+
+# example of variable name specification
+h2o.m1 <- h2o.glm(x = x, y = y, training_frame = train.h2o)
+```
+
+## Model tuning
+
+Hyperparameters control the level of model complexity.  Some algorithms have many tuning parameters while others have only one or two.  Tuning can be a good thing as it allows us to transform our model to better align with patterns within our data. For example, the simple illustration below shows how the more flexible model aligns more closely to the data than the fixed linear model.
+
+```{r echo=FALSE, fig.height=3, fig.cap="Tuning allows for more flexible patterns to be fit."}
+
+install.packages 
+
+p1 <- ggplot(pdp::boston, aes(crim,cmedv))+
+  geom_point(size=1)
+
+```
+
+
+
+
