@@ -3468,7 +3468,7 @@ The GA implementation in caret uses the underlying code from the `GA` package ([
 
 ## Example
 Using example from the previous page, where there are five real predictors and 40 noise predictors.
-```{r}
+```{r eval=FALSE}
 library(mlbench)
 library(caret)
 
@@ -3491,7 +3491,7 @@ x <- as.data.frame(x)
 
 We’ll fit a random forest model and use the out-of-bag RMSE estimate as the internal performance metric and use the same repeated 10-fold cross-validation process used with the search. To do this, we’ll use the built-in `rfGA` object for this purpose. The default GA operators will be used and conduct 200 generations of the algorithm.
 
-```{r}
+```{r eval=FALSE}
 ga_ctrl <- gafsControl(functions = rfGA,
                        method = "repeatedcv",
                        repeats = 5)
@@ -3509,7 +3509,7 @@ rf_ga
 With 5 repeats of 10-fold cross-validation, the GA was executed 50 times. The average external performance is calculated across resamples and these results are used to determine the optimal number of iterations for the final GA to avoid over-fitting. Across the resamples, an average of 8.7 predictors were selected at the end of each of the algorithms.
 
 The `plot` function is used to monitor the average of the internal out-of-bag RMSE estimates as well as the average of the external performance estimates calculated from the 50 out-of-sample predictions. By default, this function uses `ggplot2` package. A black and white theme can be “added” to the output object:
-```{r}
+```{r eval=FALSE}
 plot(rf_ga)+theme_by()
 ```
 
@@ -3660,7 +3660,7 @@ However, with a random forest model, there is no real notion of model degrees of
 For the RMSE, the est case would be zero. Many poor models have values around four. To five the RMSE value more weight in the overall desirability calculation, we use a scale parameter value of 2. This desirability function is:
 
 To use the overall desirability to drive the feature selection, the `internal` function requires replacement. We make a copy of `rfGA` and add code using the `desirability` package and the function returns the estimated RMSE and the overall desirability. The `gafsControl` function also need changes. The `metric` argument needs to reflect that the overall desirability score should be maximized internally but the RMSE estimate should be minimized externally.
-```{r}
+```{r eval=FALSE}
 # install.packages("desirability")
 library(desirability)
 rfGA2 <- rfGA
@@ -3687,7 +3687,7 @@ rf_ga_d
 ```
 
 Here are the RMSE values for this search:
-```{r}
+```{r eval=FALSE}
 plot(rf_ga_d)+theme_bw()
 ```
 
@@ -3723,7 +3723,7 @@ This isn't very specific. All of the action is in the control function. That can
 
 Suppose that we want to fit a linear regression model. To do this, we can use `train` as an interface and pass arguments to that function through`safs`:
 
-```{r}
+```{r eval=FALSE}
 ctrl <- safsControl(functions=caretSA)
 obj <- safs(x=predictors,
             y=outcome,
@@ -3789,7 +3789,7 @@ This function builds the model based on a proposed current subset. The arguments
 - `...`: optional arguments to pass to the fit function in the call to safs
 The function should return a model object that can be used to generate predictions. For random forest, the fit function is simple:
 
-```{r}
+```{r eval=FALSE}
 rrSA$fit
 ```
 
@@ -3818,7 +3818,7 @@ The output should be a **named** numeric vector of performance values.
 In many cases, some resampled measure of performance is used. In the example above using random forest, the OOB error was used. In other cases, the resampled performance from `train` can be used and, if safsControl$holdout is not zero, a static hold-out set can be used. This depends on the data and problem at hand. If left
 
 The example function for random forest is:`
-```{r}
+```{reval=FALSE}
 rfSA$fitness_intern()
 ```
 
@@ -3830,7 +3830,7 @@ The fitness_extern function takes the observed and predicted values form the ext
 The output should be a **named** numeric vector of performance values.
 
 The example function for random forest is:
-```{r}
+```{r eval=FALSE}
 rfSA$fitness_extern
 ```
 
@@ -3866,13 +3866,13 @@ This function computes the acceptance probability. Inputs are:
 The output should be a numeric value between zero and one.
 
 One of the biggest difficulties in using simulated annealing is the specification of the acceptance probability calculation. There are many references on different methods for doing this but the general consensus is that 1) the probability should decrease as the difference between the current and new solution increases and 2) the probability should decrease over iterations. One issue is that the difference in fitness values can be scale-dependent. In this package, the default probability calculations uses the percent difference, i.e. `(current - new)/current` to normalize the difference. The basic form of the probability simply takes the difference, multiplies by the iteration number and exponentiates this product:
-```{r}
+```{r eval=FALSE}
 prob=exp[(current - new)/current*iteration]
 ```
 
 
 To demonstrate this, the plot below shows the probability profile for different fitness values of the current subset and different (absolute) differences. For the example data that were simulated, the RMSE values ranged between values greater than 4 to just under 3. In the plot below, the red curve in the right-hand panel shows how the probability changes over time when comparing a current value of 4 with a new values of 4.5 (smaller values being better). While this difference would likely be accepted in the first few iterations, it is unlikely to be accepted after 30 or 40. Also, larger differences are uniformly disfavored relative to smaller differences.
-```{r}
+```{r eval=FALSE}
 grid <- expand.grid(old = c(4, 3.5),
                     new = c(4.5, 4, 3.5) + 1,
                     iter = 1:40)
