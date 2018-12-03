@@ -1,0 +1,382 @@
+---
+title: "Hands-on-ML with R"
+author: "Koji Mizumura"
+date: "October 29th,2018 - November 29th,2018"
+always_allow_html: yes
+output:
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+# Random forest model
+<img src="images/RF_icon.jpg"  style="float:right; margin: 0px 0px 0px 10px; width: 22%; height: 22%;" />
+
+__Random forests__ are modification of decision trees and bagging that builds a large collection of *de-correlated* trees to reduce overfitting (aka variance). They have become a very popular "out -of-the-box" learning algorithm that enjoys good predicive performance and easy hyperparameter tuning. Many modern implementations of random forests algorithms exist: however, Leo Breiman's algorithm [@breiman2001random] has largely become the authoritative procedure. This chapter will cover the fundamentals of random forests.
+
+## Prerequisites {rf-requirements}
+
+__Notes__
+Any tutorial on random forests (RF) should also include a review of decision trees, as these are models that are ensembled together to create the random forest model â€? or put another way, the â€œtrees that comprise the forest.â€? Much of the complexity and detail of the random forest algorithm occurs within the individual decision trees and therefore itâ€™s important to understand decision trees to understand the RF algorithm as a whole. Therefore, before proceeding, it is recommended that you read through [http://uc-r.github.io/regression_trees](http://uc-r.github.io/regression_trees) prior to continuing.
+
+```{r}
+library(rsample)
+library(ranger)
+library(h2o)
+library(vip)
+library(ggplot2)
+library(dplyr)
+library(pdp)
+```
+
+## Advantanges & Disadvantages {#rf-proscons}
+
+__Advantages:__
+
+- Typically have very good performance.
+- Remarkably good "out-of-the box" - very little tuning required.
+- Built-in validation set - don't need to sacrifice data for extra validation.
+- Does not overfit.
+- No data pre-processing required - often works great with categorical and numerical values as is.
+- Robust to outliers.
+- Handles missing data - imputation not required.
+- Provide automatic feature selection.
+
+__Disadvantages:__
+
+- Can become slow on large data sets.
+- Although accurate, often cannot compete with the accuracy of advanced boosting algorithms.
+- Less interpretable although this is easily addressed with various tools (variable importance, partial dependence plots, LIME, etc.).
+
+## The Idea {#rf-idea}
+
+Random forests are built on the same fundamendtal principles as decision trees and bagging (check out this [tutorial](http://uc-r.github.io/regression_trees) if you need a refresher on these techniques).  Bagging trees introduces a random component in to the tree building process that reduces the variance of a single tree's prediction and improves predictive performance.  However, the trees in bagging are not completely independent of each other since all the original predictors are considered at every split of every tree.  Rather, trees from different bootstrap samples typically have similar structure to each other (especially at the top of the tree) due to underlying relationships.
+
+For example, if we create six decision trees with different bootstrapped samples of the [Boston housing data]((http://lib.stat.cmu.edu/datasets/boston)) [@harrison1978hedonic], we see that the top of the trees all have a very similar structure.  Although there are 15 predictor variables to split on, all six trees have both `lstat` and `rm` variables driving the first few splits.  
+
+```{r tree-correlation, message=FALSE,  warning=FALSE, fig.align='center', fig.cap="Six decision trees based on different bootstrap samples.", echo=FALSE, dev='png', eval=FALSE}
+
+library(caret)
+library(randomForest)
+
+iter = 6
+par(mfrow=c(3,3))
+
+for (i in 1:iter){
+  set.seed(i+30)
+  # create train/test sets
+  train_index <- caret::createDataPartition(pdp::boston$cmedv, p=.6333,
+                                            list=FALSE,
+                                            times=1)
+  
+  train_DF <- pdp::boston[train_index,]
+  validate_DF <- pdp::boston[-train_index,]
+  
+  train_y <- train_DF$cmedv
+  train_x <- train_DF[,setdiff(names(train_DF),"cmedv")]
+  
+  validate_y <- validate_DF$cmedv
+  validate_x <- validate_DF[,setdiff(names(validate_DF),"cmedv")]
+  
+  d_tree <- rpart::rpart(cmedv~., train_DF)
+  
+  # graphs
+  rpart.plot::rpart.plot(d_tree, main=paste0("Decision Tree",i),type=0, extra=0)
+}
+```
+
+```{r voston-trees, echo=FALSE, fig.cap="Six decision trees based on different bootstrap samples", out.height="100%", out.width="100%"}
+knitr::include_graphics("images/Boston-6-trees.png")
+```
+
+This characteristics is known as **tree correlation* and prevents bagging from optimally reducing variance of the precictive values. In order to reduce variance further, we need to minimize the amount of correlation between the trees. This can be achieved by injecting more randomess into tree-growing process. Random forests achieve this in two ways:
+
+1. __Bootstrap__: Similar to bagging, each tree is grown to a bootstrap resampled data set, which makes them different and _somewhat_ decorrelates them.
+2. __Split-variable randomization__: each time a split is to be performed, the search for the split variable is limited to a random subset of *m* of the *p* variables. Typical default values are $m=\frac{p}{3}$ (is limited to a random subset of *m* (regression trees) and $m=\sqrt{p}$ (classification trees) but this should be considered a tuning parameter. When $m=p$, the randomization amounts to using only step 1 and is the same as *bagging*. 
+
+The basic algorithm for a regression or classification random forest can be generalized to the following:
+
+```r
+1.  Given training data set
+2.  Select number of trees to build (ntrees)
+3.  for i = 1 to ntrees do
+4.  |  Generate a bootstrap sample of the original data
+5.  |  Grow a regression or classification tree to the bootstrapped data
+6.  |  for each split do
+7.  |  | Select m variables at random from all p variables
+8.  |  | Pick the best variable/split-point among the m
+9.  |  | Split the node into two child nodes
+10. |  end
+11. | Use typical tree model stopping criteria to determine when a tree is complete (but do not prune)
+12. end
+```
+
+Since the algorithm randomly selects a bootstrap sample to train on __and__ predictors to use at each split, tree correlation will be lessened beyond bagging trees.
+
+### OOB error vs test set error {#rf-oob}
+
+Similar to bagging, a natural benefit of the bootstrap resampling process is that random frests have na out-of-bag (OOB) that provides an efficient and reasonable approximation of the test error.  This provides a built-in validation set without any extra work on your part, and you do not need to sacrifice any of your training data to use for validation. This makes identifying the number of trees required to stablize the error rate during tuning more efficient; however, as illustrated below some difference between the OOB error and test error are expected.
+
+```{r, echo=FALSE, fig.cap="Random forest out-of-bag error versus validation error.", out.height="100%", out.width="100%"}
+knitr::include_graphics("images/OOB_error.png")
+```
+
+Furthermore, many packages do not keep track of which observations were part of the OOB sample for a given tree and which were not. If you are comparing multiple models to one-another, you'd want to score each on the same validation set to compare performance. Also, although technically it is possible to compute certain metrics such as root mean squared logarithmic error (RMSLE) on the OOB sample, it is not built in to all packages.  So if you are looking to compare multiple models or use a slightly less traditional loss function you will likely want to still perform cross validation.
+
+### Tuning {#rf-tune}
+
+Random forests are fairly easy to tune since there are only a handful of tuning parameters. Typically, the primary concern when starting out is tuning the number of candidate variables to select from each split. However, there are a few additional hyperparameters that we should be aware of. Although the argument names may differ across packages, these hyperparameters should be present.
+
+- __Number of trees___:  We want enough trees to stabalize the error but using too many trees is unncessarily inefficient, especially when using large data sets.
+- __Number of variables to randomly sample as candidates at each split__ (often referred to as `mtry`): When `mtry` $=p$ the model equates to bagging.  When `mtry` $=1$ the split variable is completely random, so all variables get a chance but can lead to overly biased results. A common suggestion is to start with 5 values evenly spaced across the range from 2 to *p*.
+- __Sample size__: the number of samples to train on. The default value is 63.25% of the training set since this is the expected value of unique observations in the bootstrap sample.  Lower sample sizes can reduce the training time but may introduce more bias than necessary.  Increasing the sample size can increase performance but at the risk of overfitting because it introduces more variance. Typically, when tuning this parameter we stay near the 60-80% range.
+- __Node size__: minimum number of samples within the terminal nodes. Controls the complexity of the trees.  Smaller node size allows for deeper, more complex trees and a larger node size results in shallower trees.  This is another bias-variance tradeoff where deeper trees introduce more variance (risk of overfitting) and shallower trees introduce more bias (risk of not fully capturing unique patters and relatonships in the data).
+- __Number of terminal nodes__: Another way to control the complexity of the trees. More nodes equates to deeper, more complex trees and less nodes result in shallower trees.
+
+### Package implementation {#rf-pkgs}
+There are over 20 random forest packages in R. The oldest and most well known implementation of the Random Forest Algorithm in R is the `randomForest` package.
+
+__Notes__
+`randomForest` is not a recoomended package because as your data sets grow in size `randomForest` does not scale well (although you can parallelize with `foreach`). Instead, we recommend you use the `ranger` and `h2o` packages.
+
+Since `randomForest` does not scale well to many of the data set sizes that organizations analyze, we will demonstrate how to implement the random forest algorithm with two fasts, efficient, and highly recommended packages:
+
+* [`ranger`](https://github.com/imbs-hl/ranger): a C++ implementation of Brieman's random forest algorithm and particularly well suited for high dimensional data. The original paper describing `ranger` and providing benchmarking to other packages can be found [here](http://arxiv.org/pdf/1508.04409v1.pdf). Features include[^ledell]:
+    - Classification, regression, probability estimation and survival forests are supported.
+    - Multi-threaded capabilities for optimal speed.
+    - Excellent speed and support for high-dimensional or wide data.
+    - Not as fast for "tall & skinny" data (many rows, few columns).
+    - GPL-3 licensed.
+* [`h2o`](https://cran.r-project.org/web/packages/gamboostLSS/index.html): The `h2o` R package is a powerful and efficient java-based interface that allows for local and cluster-based deployment. It comes with a fairly comprehensive [online resource](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/index.html) that includes methodology and code documentation along with tutorials. Features include:
+    - Automated feature pre-processing (one-hot encode & standardization).
+    - Built-in cross validation.
+    - Built-in grid search capabilities.
+    - Provides automatic early stopping for faster grid searches.
+    - Supports the following distributions: "guassian", "binomial", "multinomial", "poisson", "gamma", "tweedie".
+    - Uses histogram approximations of continuous variables for speedup on "long data" (many rows).
+    - Distributed and parallelized computation on either a single node or a multi-node cluster.
+    - Model export in plain Java code for deployment in production environments.
+
+## Implementation: Regression {rf-regression}
+To illustrate various random forest concepts for a regression problem. We will use the AmesAIA housing data, where our internet is to predict `Sale_Price`. 
+
+```{r rf-regression-data-import}
+
+# Create training (70%) and test (30%) sets for the AmesHousing::make_ames() data.
+# Use set.seed for reproducibility
+
+set.seed(123)
+ames_split <- initial_split(AmesHousing::make_ames(), prop=.7, strata="Sale_Price")
+ames_train <- training(ames_split)
+ames_test <- testing(ames_split)
+```
+
+__Notes__
+Tree-based algorithms typically perform very well __without preprocessing__ the data (i.e., one-hot encoding, normalizing, standardizing). 
+
+### `ranger` {#ranger-regression}
+#### Basic implementation {#ranger-regression-basic}
+
+`ranger::ranger` uses the formula method for specifying our model.  Below we apply the default `ranger` model specifying to model `Sale_Price` as a function of all features in our data set.  The key arguments to the `ranger` call are:
+
+* `formula`: formula specification
+* `data`: training data
+* `num.trees`: number of trees in the forest
+* `mtry`: randomly selected predictor variables at each split. Default is $\texttt{floor}(\sqrt{\texttt{number of features}})$; however, for regression problems the preferred `mtry` to start with is $\texttt{floor}(\frac{\texttt{number of features}}{3}) = \texttt{floor}(\frac{92}{3}) = 30$
+* `respect.unordered.factors`: specifies how to treat unordered factor variables. We recommend setting this to "order" for regression. See @esl, chapter 9.2.4 for details.
+* `seed`: because this is a random algorithm, you will set the seed to get reproducible results
+
+__Notes__
+By default, `ranger` will provide the computation status and estimated remaining time; however, to reduce output in this tutorial this is turned off with `verbose = FALSE`.
+
+As the model results show, averaging across all 500 trees provides an OOB $MSE = 615848303$ ($RMSE \approx 24816$).
+
+```{r rf-m1-ranger}
+# number of features
+features <- setdiff(names(ames_train), "Sale_Price")
+
+# perform basic random forest model
+m1_ranger <- ranger(
+  formula=Sale_Price~., 
+  data=ames_train,
+  num.trees = 500,
+  mtry=floor(length(features)/3),
+  respect.unordered.factors = "order",
+  verbose = FALSE,
+  seed=123
+)
+
+# look at results
+m1_ranger
+
+# comupte RMSE(RMSE=square root of MSE)
+sqrt(m1_ranger$prediction.error)
+```
+
+One of the benefits of tree-based methods is they do not require preprocessing steps such as normalization and standardization of the response and/or predictor variables. However, because these methods do not require these steps does not mean you should not assess their impact.  Sometimes normalizing and standardizing the data can improve performance.  In the following code we compare a basic random forest model on unprocessed data to one on processed data (normalized, standardized, and zero variance features removded).  
+
+```{r m1-ranger-preprocessed}
+# create validation set
+set.seed(123)
+split2 <- initial_split(ames_train, prop = .8, strata = "Sale_Price")
+train_tran <- training(split2)
+validation <- testing(split2)
+
+
+#-------------------------Unprocessed variables-------------------------#
+
+# number of features in unprocessed data
+m <- length(setdiff(names(train_tran), "Sale_Price"))
+
+# perform basic random forest model on unprocessed data
+m1_ranger_unprocessed <- ranger(
+  formula    = Sale_Price ~ ., 
+  data       = train_tran, 
+  num.trees  = 500,
+  mtry       = m,
+  respect.unordered.factors = 'order',
+  verbose    = FALSE,
+  seed       = 123
+  )
+
+
+#--------------------------Processed variables--------------------------#
+
+# preprocess features
+feature_process <- caret::preProcess(
+  train_tran[, features],
+  method = c("center", "scale", "zv")
+)
+
+train_tran <- predict(feature_process, train_tran)
+
+# preprocess response
+train_tran$Sale_Price <- log(train_tran$Sale_Price) 
+
+# number of features in processed data
+m <- length(setdiff(names(train_tran), "Sale_Price"))
+
+# perform basic random forest model on processed data
+m1_ranger_processed <- ranger(
+  formula    = Sale_Price ~ ., 
+  data       = train_tran, 
+  num.trees  = 500,
+  mtry       = m,
+  respect.unordered.factors = 'order',
+  verbose    = FALSE,
+  seed       = 123
+  )
+```
+
+We can now apply each model to the validation set.  For the second (preprocessed) model, we re-transform our predicted values back to the normal units and we compute the RMSE for both.  Now we see that our original model on unpreprocessed data is performing just as well as, if not better than, the second model on the processed data.  
+
+```{r m1-preprocessed -results}
+
+# apply unpreprocessed model
+m1_pred <- predict(m1_ranger_unprocessed, validation)
+caret::RMSE(m1_pred$predictions, validation$Sale_Price)
+
+# preprocess features
+valid_tran <- predict(feature_process,validation)
+
+# apply preprocessed model
+m1_tran_pred <- predict(m1_ranger_processed, valid_tran)
+m1_processed_pred <- expm1(m1_tran_pred$predictions)
+caret::RMSE(m1_processed_pred, validation$Sale_Price)
+```
+
+#### Tuning {#ranger-regression-tune}
+
+
+
+
+
+
+
+
+
+
+## State Space Model
+DLM
+KFAS: non-gaussian distribution dealt
+
+observation model
+$$
+y_t=\alpha_t+\epsilon_t, \epsilon_t = Normal(0,H)
+$$
+
+state model
+$$
+\alpha_{t+1}=\alpha_t+\
+$$
+
+```{r eval=FALSE}
+library(KFAS)
+
+mod <- SSModel(Weight~SSMtrend(1,Q=NA),H=NA)
+fit <- fitSSM(mod, numeric(2),method="BFGS")
+# set method for improvming calculation speed - not required
+kfs <- KFS(fit$model)
+kfs
+
+# confidential interval
+alphahatconf <- predict(fit$model, interval="confidence", level=0.95)
+
+
+# impute missing NA
+WeightNA <- Weight[c(1:20), rep(NA,20),41:6]
+
+# visualization - forecast() package
+library(forecast)
+forecast::autoplot(Weight)+
+  autolayer(alphahatconf)
+```
+
+## Multivariable local level model
+variance-covariance matrix is assumed for the error term distribution. $h_{12}$ shows the covariance between two errors. Thus, we need to set up a matrix. However, the covariance is identical between $h1_{12}$ and $h_{21}$. 
+
+```{r eval=FALSE}
+library(tidyverse)
+modSUTSE <- SSModel(cbind(Weight, Bodyfat)~
+                     SSMtrend(1,Q=matrix(NA,2,2)), H=matrix(NA,2,2))
+
+fitSUTSE <- fitSSM(modSUTSE, numeric(6), method="BFGS")
+kfsSUTSE <- KFS(fitSUTSE$model)
+
+alphahatconf <- predict(fitSUTSE$model, interval="confidence", level=0.95)
+alphahatconf
+
+library(forecast)
+forecast::autoplot(Weight)+
+  autolay
+  autolayer(alphahatconf, facets=TRUE)
+```
+local level model
+Cons: 
+- prediction is horizontal based, not accurate for upward/downward trend data
+
+Linear trend model
+Cons:
+- dependent on analysis period. and not good for prediction
+
+
+
+
