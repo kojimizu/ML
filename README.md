@@ -22,8 +22,9 @@ Introduction materials are from useR2018 by Max Kuhn
 # Avaiable from CRAN
 install.packages("recipes")
 ```
-Furthermore, Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The material is stored in the below repository.  
+Furthermore, Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The material is stored in the below repository.   
 https://github.com/kojimizu/rstudio-conf-2018  
+The latest repository is [here](https://github.com/topepo/rstudio-conf-2019).
 
 ## Feature Engineering and Selection (FES)  
 A Bookdown page prepared by Max Kuhn  
