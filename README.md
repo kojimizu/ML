@@ -24,9 +24,12 @@ install.packages("recipes")
 ## Feature Engineering and Selection (FES)  
 A Bookdown page prepared by Max Kuhn  
 http://www.feat.engineering/  
-https://github.com/kojimizu/FES  
+Reference: https://github.com/kojimizu/FES  
 
 ## Hands on Machine Learning with R
 Hands-on Machine Learning with R: An applied book covering the fundamentals of machine learning with R.  
+This book covers multiple models 1) gm, 2) regularized glm, 3) random forest and 4) gradient boosting methods.
+From 2018 to 2019 January
 https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/  
 https://github.com/bradleyboehmke/hands-on-machine-learning-with-r  
+
