@@ -1,0 +1,2493 @@
+---
+title: "Applied Machine Learning by RStudio2017"
+author: "Koji Mizumura"
+date: ' October 22, 2018'
+always_allow_html: yes
+output:
+  word_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_number: yes
+---
+
+https://github.com/topepo/rstudio-conf-2018  
+
+```{r include=FALSE}
+library(tidyverse) #tidying
+library(magrittr) #tidying
+library(rsample)
+
+library(AmesHousing) #data
+ 
+library(recipes) #pre-processing
+library(caret) # modeling
+library(AppliedPredictiveModeling) # modeling
+library(broom) # modeling
+
+library(data.table)
+
+```
+
+# Getting started
+## Course Overview
+
+The session will step through the process of building, visualizing, testing and comparing models that are focused on prediction. The goal of the course is to provide a through workflow in R that can be used with many different regression or classification techniques. Case studies are illustrated functionality.
+
+The goal is to be able to easily build predictive/machine learning models in R using a variety of packages and model types. 
+- "Moldes that are focused on prediction": what does that mean?
+- "Machine learning": so this is deep learning with massive data sets, right?
+
+The course is broken up into sections for regression (predicting numeric outcome) and classification (predicting a category).
+
+## Why R for modeling?
+1. R has *cutting edge models*. Machine learning developers in some domains use R as their primary computing environment and their work often results in R packages.
+2. It is easy to port or link to other applications. R doesn't try to be everything to everyone. If you prefer models implemented in `C`, `C++`, `tensorflow`, `keras`, `python`, `stan`, or `Weka`, you can access these applications without leaving R.
+3. R and R packages are built by people who **do** data analysis.
+4. The S language is very mature.
+5. The machine learning environment in R is extremely rich.
+
+## Downsides to modeling in R
+1.  R is a data analysis language and is not C or Java. If a high performance deployment is required, R can be treated like a prototyping language.
+2. R is s mostly memory-bound. There are plenty of exceptions to this though.
+3. The main issue is one of consistency of interface. 
+
+For example:
+- here are two methods for specifying what terms are in a model1. Not all models have both.
+- 99% of model functions automatically generate dummy variables.
+- Sparse matrices can be used (unless the can't).
+
+## Syntax for computing predicted class probabilities
+|**Function**  | **Package**                 | **Code**                                   |
+| :------------| :-------------------------- | :----------------------------------------- |
+| lda          | MASS                        |  predict(obj)                              |
+| glm          | stats                       |  predict(obj, type = "response")           |
+| gbm          | gbm                         |  predict(obj, type = "response", n.trees)  |
+| mda          | mda                         |  predict(obj, type = "posterior")          |
+| rpart        | rpart                       |  predict(obj, type = "prob")               |
+| Weka         | RWeka                       |  predict(obj, type = "probability")        |
+| logitboost   | LogitBoost                  |  predict(obj, type = "raw", nIter)         |
+
+## Different philosophies used here
+There are two main philosophies to data analysis code that will be discussed in this workshop:
+
+The main traditional approach uses high-level syntax and is perhaps the most **untidy** code that you will encounter. 
+
+`caret` is the primary package for untidy predictive modeling:
+1. More traditional R coding style.
+2. High-level "I do that for you" syntax.
+3. More comperehensive (for now) and less modlular.
+4. Contains many optimizations and is easily parallelized.
+
+The *tidy* modeling approach espouses the tenets of the `tidyverse`
+1. Reuses existing data structures
+2. Compose simple functions with the pipe
+3. Embrase functional programming
+4. Design for humans
+
+This approach is exemplified by packages such as:
+`modelr`, `broom`, `recipes`, `rsample`, `yardstick` and `tidyposterior`.
+
+## Example data set - house prices
+
+For regression problems, we will use the Ames IA housing data. 
+There are 2,930 properties in the data. 
+
+The sale price was recorded along 81 predictors, including
+- Location (e.g. neighborhood) and lot information.
+- House components (garage, fireplace, pool, porch, etc.).
+- General assessments such as overall quality and condition.
+- Number of bedrooms, baths, and so on.
+
+More details can be found in De Cock (2011, Journal of Statistics Education).
+
+he raw data are at http://bit.ly/2whgsQM but we will use a processed version found in the `AmesHousing` package.
+```{r}
+library(AmesHousing)
+AmesHousing::ames_raw
+```
+
+```{r}
+library(AmesHousing)
+ames_geo 
+```
+
+
+```{r warning=FALSE, echo=FALSE}
+library(leaflet)
+
+leaflet() %>% 
+  addTiles() %>%
+  addCircleMarkers(data=ames_geo, radius=3)
+  # addMarkers(lng=ames_geo$Longitude, lat=ames_geo$Latitude)
+```
+
+## Example data set - Fuel economy
+
+The data that are used here are an extended version of the ubiquitous `mtcars` data set. [fueleconomy.gov](https://www.fueleconomy.gov/feg/download.shtml) was used to obtain fuel efficiency data on cars from 2015-18.
+
+Over this time range, duplicate ratings were eliminated; these occur when the same car is sold for several years in a row. As a result, there are 3294 cars that are listed in the data. The predictors include the automaker and addition information about the cars (e.g. intake valves per cycle, aspiration method, etc).
+
+In our analysis, the data from 2015-2017 are used for training to see if we can predict the 609 cars that were new in 2018.
+
+These data are supplied in the GitHub repo.
+
+## Example data set - Predicting profession
+OkCupid is an online data site that serves international users. Kim and Escobedo-Land (2015, Journal of Statistics Education) describe a data set where over 50,000 profiles from the San Fransisco area were made available by the company.
+
+The data contains several types of fields:
+
+- a number of open text essays related to interests and personal descriptions
+- single choice type fields, such as profession, diet, gender, body type, etc.
+- multiple choice data, including languages spoken, etc.
+- **no** usernames or pictures were included.
+
+We will try to predict whether someone has a profession in the STEM fields (science, technology, engineering, and math) using a random sample of the overall dataset.
+
+## Tidyverse syntax
+Many tidyverse functions have syntax unlike base R code. For example:
+
+- vectors of variable names are eschewed in favor of *functional programming*. For example:
+```{r warning=FALSE, eval=FALSE}
+contains("Sepal")
+
+# instead of
+c("Sepal.Width", "Sepal.Length")
+```
+
+- The *pipe* operator is preferred. For example:
+```{r eval=FALSE}
+merged <- inner_join(a, b)
+# is equal to
+merged <- a %>%
+  inner_join(b)
+```
+
+- Functions are more *modular* than their traditional analogs (`dplyr`'s `filter` and `select` VS `base::subset`).
+
+## Some example data manipulation code
+```{r eval=FALSE}
+library(tidyverse)
+
+ames <- read_delim("http://bit.ly/2whgsQM", delim = "\t") %>%
+  rename_at(vars(contains(' ')), funs(gsub(' ', '_', .))) %>%
+  rename(Sale_Price = SalePrice) %>%
+  filter(!is.na(Electrical)) %>%
+  select(-Order, -PID, -Garage_Yr_Blt)
+```
+
+```{r}
+ames <- ames_raw %>% 
+  rename_at(vars(contains(' ')), funs(gsub(' ', '_', .))) %>%
+  rename(Sale_Price=SalePrice) %>% 
+  filter(!is.na(Electrical)) %>% 
+  select(-Order,-PID, -Garage_Yr_Blt)
+  
+  
+ames %>% 
+  group_by(Alley) %>% 
+  summarize(mean_price=mean(Sale_Price/1000),
+            n=sum(!is.na(Sale_Price)))
+```
+
+## Example `ggplot2` code
+```{r}
+library(ggplot2)
+
+ggplot(ames,
+       aes(x=Garage_Type,
+           y=Sale_Price))+
+  geom_violin()+
+  coord_trans(y="log10")+
+  xlab("Garage Type")+
+  ylab("Sale Price")
+```
+
+## Examples of `purrr::map*`
+```{r}
+library(purrr)
+
+# Summarize via purrr::map
+by_alley <- split(ames, ames$Alley)
+is_list(by_alley)
+# glimpse(by_alley)
+```
+
+```{r}
+map(by_alley, nrow)
+```
+
+```{r}
+map_int(by_alley, nrow)
+```
+
+```{r}
+# work on no-list vectors too
+ames %>% 
+  mutate(Sale_Price=Sale_Price %>% 
+           map_dbl(function(x)x/1000)) %>% 
+  select(Sale_Price, Yr_Sold) %>% 
+  head()
+```
+
+## Quick data investigation
+To get warmed up, let's load the Ames data and do some basic investigations into the variables, such as exploratory visualizations or summary statistics. The idea is to get a feel for the data.
+```{r}
+library(AmesHousing)
+ames <- make_ames()
+```
+
+
+## Where we go from here
+
+**Part 2** Basic Principles
+- Data Splitting, Models in R, Resampling, Tuning(`rsample`)
+
+**Part 3** Feature engineering preprocessing
+- Data treatment (`recipes`)
+
+**Part 4** Regression Modeling
+- Measuring Performance, penalized regression, multivariate adaptive regression splines (MARS), ensembles (`yardstick`, `recipes`, `caret`, `earth`, `glmnet`, `tidyposterior`, `doParallel`)
+
+**Part 5** Classification Modeling
+- Measuring Performance, trees, ensembles, naive Bayes (`yardstick`, `recipes`, `caret`, `rpart`, `klaR`, `tidyposterior`)
+
+## Resources
+http://www.tidyverse.org/
+[R for Data Science](http://r4ds.had.co.nz/)
+[Jenny's purrr tutorial](https://jennybc.github.io/purrr-tutorial/) or [Happy R Users Purrr](https://www.rstudio.com/resources/videos/happy-r-users-purrr-tutorial/)
+[Programming with dplyr vignette](https://cran.r-project.org/web/packages/dplyr/vignettes/programming.html)
+[Selva Prabhakaran's ggplot2 tutorial](http://r-statistics.co/Complete-Ggplot2-Tutorial-Part1-With-R-Code.html)
+[caret package documentation](https://topepo.github.io/caret/)
+[CRAN Machine Learning Task View](https://cran.r-project.org/web/views/MachineLearning.html)
+
+About these slides.... they were created with Yihui's xaringan and the stylings are a slightly modified version of Patrick Schratz's Metropolis theme.
+
+# Part2 Basic principles
+
+## Introduction
+In this section, we will introduce concepts that are useful for any type of machine learning model:
+- modeling versus the model
+- data splitting
+- resampling
+- tuning parameters and overfitting
+- model tuning
+
+Many of these topics will be put into action in later sections.
+
+### The modeling process
+Common steps during model building are:
+
+- estimating model parameters (i.e., training models)
+- determining the values of *tuning parameters* that cannot be directly calculated from the data
+- model selection (within a model type) and model comparison (between types)
+- calculating the performance of the final model that will generalize to new data
+
+Many books and course portray predictive modeling as a short sprint. A better analogy would be a marathon or campaign (depending on how hard the problem is).
+
+### What the modeing process usually look like
+```{r}
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/intro-process-1.png")
+```
+
+## Data usage
+### Data Splitting and spending
+
+How do we "spend" the data to find an optimal model?
+We typically split data into training an test data sets:
+
+- **Training set**: these data are used to estimate model parameters and pick the values of the complexity parameter(s) for the model.
+- **Test set**: these data can be used to get an independent assessment of model efficacy. They should not be used during model training. 
+
+The more data we spend, the better estimates we'll get (provided the data is accurate). 
+
+Given a fixed amount of data:
+- too much spent in training won't allow us to get a good assessment of predictive peformance. We may find a model that fits the training data very well, but is not generalizable (overfitting)
+- too much spent in testing won't allow us to get a good assessment of model parameters
+
+Statisticall,y the est course of action would be use all the data for model building and use statistical methods to get estimates of error.
+
+From a non-statistical perspective, many consmers of complex models emphasize the need for untouched set of sampled to evaluate performance.
+
+### Large data set
+When a large amount of data are available, it might seem like a good idea to put a large amount into the training set. *Personally*, I think that this causes more trouble than it is worth due to diminishing returns on performance and the added cost and compexity of the required infrastructure.
+
+Alternatively, it is probably a better idea to reserve good percentages of the data for specific parts of the modeling process. For example: 
+
+- Save a large chunk of data to perform feature selection prior to model building
+- Retain data to calibrarate class probabilities or determine a cutoff via an ROC curve. 
+
+Also there may be little need for iterative resampling of the data. A single holdout (aka validation set) may be sufficient in some cases if the data are large enough and the data sampling mechanism is solid.
+
+
+### Mechanis of data splitting
+
+There are a few different ways to do the split: simple random sampling, stratified sampling based on the `outcome`, by `date`, or `methods` that focus on the distribution of the predictors.
+
+For stratification:
+- **classification**: this would mean sampling within the classes as to preserve the distribution of the outcome in the training and test sets
+- **regression**: determine the quartiles of the data set and samples within those artificial groups
+
+### Ames Housing data
+```{r}
+ames <- make_ames()
+dim(ames)
+```
+
+```{r warning=FALSE}
+library(rsample)
+
+# make suret you get the same random numbers
+set.seed(4595)
+
+data_split <-initial_split(ames,strata="Sale_Price") 
+
+ames_train <- training(data_split)
+ames_test <- testing(data_split)
+
+nrow(ames_train)/nrow(ames)
+```
+
+### Outcome distribution
+```{r}
+library(ggplot2)
+
+# Do the distribution line-up?
+ggplot(ames_train,aes(x=Sale_Price))+
+   geom_line(stat = "density", 
+            trim = TRUE) + 
+  geom_line(data = ames_test, 
+            stat = "density", 
+            trim = TRUE, col = "red")
+```
+
+## Creating models in R
+### Specifying models in R using formulas
+To fit a model to the housing data, the model terms must be specified. Historically, there are two main interfaces for doing this. 
+
+The fomula interface using R [fomula rules](https://cran.r-project.org/doc/manuals/r-release/R-intro.html#Formulae-for-statistical-models) to specify a symbolic representation of the terms and variables. For example:
+```r
+foo(Sale_Price ~ Neightborhood + Year_Sold + Neighborhood:Year_Sold, data=ames_train)
+```
+
+OR 
+
+```r
+foo(Sale_Price~., data=ames_train)
+```
+
+OR 
+```r
+foo(log10(Sale_Price)~ns(Longitude, df=3)+ns(Latitude,df=3),data=ames_train)
+```
+
+This is very convenient but it has some disadvantages.
+
+### Downsides to formulas
+- You can't nest in-line functions such as `foo(y ~ pca(scale(x1), scale(x2), scale(x3)), data =dat)`.
+- All the model matrix calculations happen at once and can't be recycled when used in a model function. 
+- For very *wide* data sets, the formula method can be extremely inefficient.
+- There are limited *roles* that variables can take which has led to several re-impementations of formulas.
+- Specifyng multivarite outcomes
+- Not all model functions have a formula method.
+
+### Specifying model without formulas
+Some modeling function have the non-formula interface. This usually has arguments for the predictors and the outcome(s):
+```r
+# Usually, the variable must all be numeric
+
+pre_vars <- c("Year_Sold","Longitude","Latitude")
+foo(x=ames_train[,pre_vars],
+    y=ames_train$Sale_Price)
+```
+
+This is inconvenient if you have transformations, factor variables, interactions or any other operations apply prior to modeling. 
+
+Overall, it is difficult to predict if a package has one or both of these interfaces. For example, `lm` only has formulas. 
+
+There is a **third interface** using *recipes* that will be discussed later that solve some of these issues.
+
+### A linear regression model
+Let's start by fitting an ordinary linear regression model to the training set. You can choose the model terms for your model but I will use a very simple model:
+```{r}
+head(ames_train)
+
+
+simple_lm <- lm(log10(Sale_Price)~Longitude+Latitude, data=ames_train)
+```
+
+Before looking at coefficients, we should do some model checking to see if there is anything obviously wrong with the model.
+
+To get the statistics on the individual points, we willl use the awesome `broom` package:
+```{r}
+library(broom)
+library(magrittr)
+
+simple_lm_values <- augment(simple_lm)
+simple_lm_values %>% names()
+```
+
+### Hands-on: some basic diagnostics
+From these results, let's do some visualizations:
+
+- Plot the observed versus fitted values
+- Plot the residuals
+- Plot the predicted versus resdiduals
+
+Are there any downsides to this approach?
+
+## Model evaluation
+### Overall model statistics
+If you use the `summary` method on the `lm` object, the buttom shows some statistics.
+```{r}
+summary(simple_lm)
+```
+
+These statistics are the result of predicting the same data that was used to derive the coefficients. This is problematic because it can lead to optimistic results, especially for models that are extremely flexibile. 
+
+The test set is used for assessing performance. **Should we predict the test set** and use those results to estimate these statistics. 
+
+**NOPE!**
+
+### Assessing models
+Save the test set until the very end when you have one or two models that are your favorite. We'll need to use the training set but...
+
+For some models, it is possible to get very small residuals by predicting the training set. That's an issue since we will need to make comparisons between models, create diagnostic plots, etc. 
+
+If only we had a method for getting honest performance estimates from the training set..
+
+### Resampling methods
+
+There are additional data splitting schemes that are applied to *training set*. They attempt to stimulate slightly different versions of the traing set. These versions of the original are split into two model subsets. 
+
+- The analysis set is used to fit the model (analogous to the training set)
+- Performance is determined using the assessment set.
+
+This process is repated many times. There are different flavors or resampling but we will focus on two methods.
+
+
+
+### V-Fold Cross-validation
+
+```{r }
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/resampling methods.PNG")
+```
+
+These are additonal data splitting that are applied to the *training* set.
+They attempt to simpuate slightly different versions of the *training* set. These versions of the oroginal are split into two model subsets. 
+- The *analysis* set ised o fit the model (analogous to the training set)
+- Peformance is determined using the *assessment* set.
+
+This process is repeated many times.
+
+There are different flavors or resampling but we will focus on two methods.
+
+### V-Fold Cross Validation
+Here, we randomly split the training data into V distinct blocks of roughly equal size. 
+- We leave out the first block of analysis data and fit a model.
+- This model is used to predict the held-out block of assessment data.
+- We continue this process until we've predicted all V assessment blocks.
+
+The final performance is based on the hold-out predictions by *averaging* the statistics from the V blocks. V is usually taken to be 5 or 10 and leave one out cross-validation has each sample as a block.
+
+### 10-Fold Cross-Validation with n=50
+```{r}
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/cv-plot-1.png")
+```
+
+### Bootstrapping
+A **boostrap sample** is the same size as the training set but each data point is selected with replacement. 
+
+This means that the analysis set will have more than one replicate of a training set instance. 
+
+The assessment set contains all samples that were never included in the bootstrap set. It is often called the out-of-bag sample and can vary in size. 
+
+On average, 63.1220559% of the training set is contained at least once in the bootstrap sample.
+
+```{r}
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/boot-plot-1.png")
+```
+
+### Comparing Resampling methods
+
+If you think of resampling in the same manner as statistical estimators (e.g., maximum likelihood), this becomes a trade-off bias and variance:
+
+- variance is (mostly) driven by the number of resamples (e.g., 5-fold CV larger variance than 10-folds).
+- Bias is (mostly) related to how much data is held back. The bootstrap has large bias compared to 10-fold CV. 
+
+There are length blog posts about this subject [here](http://appliedpredictivemodeling.com/blog/2014/11/27/vpuig01pqbklmi72b8lcl3ij5hj2qm) and [here](http://appliedpredictivemodeling.com/blog/2014/11/27/08ks7leh0zof45zpf5vqe56d1sahb0).
+
+I tend to favor 5 repeats of 10-fold cross-validation unless the size of the assessment data is "large enough".
+
+For example, 10% of the Ames training set is 219 properties and this is probably good enough to estimate the $RMSE$ and $R^2$.
+
+### Cross-validating using `rsample`
+```{r}
+library(AmesHousing)
+library(rsample)
+
+set.seed(2433)
+cv_splits <- vfold_cv(ames_train, v=10, strata="Sale_Price")
+cv_splits
+```
+
+The `split` objects contain the information about the sample size.
+```{r}
+cv_splits$splits[[1]]
+```
+
+We use the `analysis` and `assessment` functions to get the data.
+```{r}
+analysis(cv_splits$splits[[1]]) %>% dim()
+
+assessment(cv_splits$splits[[1]]) %>% dim()
+```
+
+### Resampling the linear model
+We Will need to write a function to fit the model to each data set and another to compute performance. 
+```{r}
+library(yardstick)
+
+lm_fit <- function(data_split, ...){
+  lm(..., data=analysis(data_split))}
+
+# A formula is also needed for each model:
+form <- as.formula(
+  log10(Sale_Price)~Longitude+Latitude)
+```
+
+For performance, the first argument should the `rsplit` objected contained in `cv_splits$splits:`
+
+```{r}
+model_perf <- function(data_split, mod_obj) {
+  vars <- rsample::form_pred(mod_obj$terms)
+  assess_dat <- assessment(data_split) %>%
+      select(!!!vars, Sale_Price) %>%
+      mutate(
+          pred = predict(
+              mod_obj, 
+              newdata = assessment(data_split)
+          ),
+          Sale_Price = log10(Sale_Price)
+      )
+  rmse <- assess_dat %>% 
+      rmse(truth = Sale_Price, estimate = pred)
+  rsq <- assess_dat %>% 
+      rsq(truth = Sale_Price, estimate = pred)
+  data.frame(rmse = rmse, rsq = rsq)
+}
+```
+
+### Resamling the linear model
+
+The `purrr` package will be used to fit the model to each analysis set. There will be saved in a column called `lm_mod`:
+```{r}
+library(purrr)
+cv_splits <- cv_splits %>%
+  mutate(lm_mod = map(splits, lm_fit, formula = form))
+cv_splits
+```
+
+### Resampling the linear model (cont.)
+Now, let's compute the two performance measures:
+```{r }
+# map2 can be used to move over two objects of equal length
+library(dplyr)
+lm_res <- map2_df(cv_splits$splits, cv_splits$lm_mod, model_perf) %>% 
+  dplyr::rename(rmse_simple = rmse, rsq_simple = rsq)
+head(lm_res, 3)
+```
+
+```{r }
+## Merge in results:
+cv_splits <- cv_splits %>% bind_cols(lm_res)
+## Rename the columns and compute the resampling estimates:
+cv_splits %>% select(rmse_simple, rsq_simple) %>% colMeans
+```
+
+### What was the ruckus?
+Previously, I mentioned that the performance metrics that were naively calculated from the training set could be optimistic. However, this approach estimates the RMSE to be 0.1614, and cross-validation produced an estimate of 0.1613. What was trhe big deal?
+
+Linear regression is a high bias model. This means that it is fairly incapable at beign able to adpt the underlying model function (unless it is linear). For this reason, linear regression is unlikely to overfit to the training set and our two estimates are likely to be the same.
+
+We'll consider another model shortly that is low bias since it can, theoretically, easily adapt to a wide variety of true model functions.
+
+
+However, as before, there is also variance to consider. Linear regression is very stable since it leverages all of the data points to estimate parameters. Other methods, such as tree-based models, are not and can drastically change if the training set data is slightly perturbed.
+
+tl;dr: the earlier concern is real but linear regression is less likely to be affected.
+
+### Diagnostics Again
+Now let's look at diagnostics using the predictions from the assessment sets.
+```{r}
+get_assessment <- function(splits, model)
+  augment(model, newdata=assessment(splits)) %>% 
+  mutate(.resid=log10(Sale_Price)-.fitted)
+
+holdout_results <- map2_df(cv_splits$splits, cv_splits$lm_mod, get_assessment)
+holdout_results %>% dim()
+```
+
+```{r}
+ames_train %>% dim()
+```
+
+### Hands-on partial residual plots
+A partial residual plot is used to diagnose what variables should have been in the model.We can plot the hold-out residuals versus different variables to understand if they should have been in the model
+- If the residuals have no pattern in the data, they are likely to be irrelevant.
+- If a pattern is seen, it suggests that the variable should have been in the model.
+
+Take 10 min and use `ggplot` to investigate other predictors using the `holdout_results` data frame. `geom_smooth` might come in handy.
+
+## Tuning parameters and overfitting
+### K-Nearest Neighbors Model
+
+Now let's consider a more flexible model that is low bas: K-nearest neighbors.The model stores the training set(including the outcome). When a new sample is predicted, $K$ training set points are found that are most similar to the new sample being predicted.
+
+The predicted value for the new sample is some summary statistic of the neighbors, usually:
+- the mean for regression, or
+- the mode for classification
+
+When $K$ is small, the model might be too responsive to underlying data. When $K$ is large, it begins to "oversmooth" the neighbors and performance suffers.
+
+Ordinary, since we are computing a **distance**, we would want to center and scale the predictors. Our two predictors are already on the same scale so we can skip this step.
+
+Consider the 2-nearest neighbor model. Would there be a difference in the estimated model performance between re-prediction and cross-validation?
+
+`caret` has a `knnreg` function that can be used (the `kknn` package is another option). IT has a formula method and we'll use this to illustrate the model:
+```{r}
+library(caret)
+knn_train_mod <- knnreg(log10(Sale_Price) ~ Longitude + Latitude, 
+                        data = ames_train,
+                        k = 2)
+repredict <- data.frame(price = log10(ames_train$Sale_Price)) %>%
+  mutate(pred = 
+           predict(knn_train_mod, 
+                   newdata = ames_train %>% select(Longitude, Latitude)
+           )
+  )
+repredict %>% rsq(truth = "price", estimate = "pred") # <- the ruckus is here
+```
+
+Thats pretty good, but are we tricking ourselves? One of those two neighbors is always itself. To resample, let's create another function to fit this model and follow the same resampling process as before:
+```{r}
+knn_fit <- function(data_split, ...) 
+  knnreg(..., data = analysis(data_split))
+cv_splits <- cv_splits %>%
+    mutate(knn_mod = map(splits, knn_fit, formula = form, k = 2))
+
+knn_res <- map2_df(cv_splits$splits, cv_splits$knn_mod, model_perf) %>% 
+  rename(rmse_knn = rmse, rsq_knn = rsq)
+
+## Merge in results:
+cv_splits <- cv_splits %>% bind_cols(knn_res)
+colMeans(knn_res)
+```
+
+### Making formal comparisons
+The model appears to be a drastic improvement over simple linear regression, but we are definitely getting highly optimistic results by re-predicting the training set.
+
+We can try to make a more formal assesment of the two current models. Both models used the same resamples, so we have 10 estimates of performance that are matched. Does the matching mean anything? 
+
+Most likely **YES**. It is very common to see that there is a resample effect. Similar to repeated measures designs, we can expect a relationship between models and resamples. For example, some resamples will have the worst performance over different models and so on. 
+
+In other words, there is usually a within-resample correlation. For the two models, the estimated correlation in RMSE values is 0.85.
+
+### The resample effect
+```{r}
+rs_comp <- data.frame(
+	rmse = c(cv_splits$rmse_simple, cv_splits$rmse_knn),
+	Model = rep(c("Linear\nRegression", "2-NN"), each = nrow(cv_splits)),
+	Resample = cv_splits$id
+)
+
+rs_comp
+
+ggplot(rs_comp, aes(x = Model, y = rmse, group = Resample, col = Resample)) + 
+  geom_point() + 
+  geom_line() + 
+  theme(legend.position = "none")
+
+```
+
+### Model comparison accounting for resampling
+With only two models, a paired t-test can be used to estimate the difference in RMSe between the models:
+```{r eval=FALSE}
+t.test(cv_splits$rmse_simple, cv_splits$rmse_knn, paired=TRUE)
+```
+
+Hothorn et al (2012) is the [original paper](https://scholar.google.com/scholar?hl=en&q=analysis+of+benchmark+experiments&btnG=&as_sdt=1%2C7&as_sdtp=) on comparing models using resampling.
+
+We'll do more extensive analyses with tidyposterior soon.
+
+### Overfitting
+
+Overfitting occurs when a model inappropriately pick up on trends in the training set that do not generalize to new samples. When this occurs, assesment of the model based on the training set can show good performance that does not reproduce in future samples.
+
+Some models have specific "knobs" to control over-fitting
+- neighborhood size in nearest neighbor models is an example
+- the number of splits in a tree model
+
+often poor choices for these parameters can result in overfitting
+
+For example, the next slide shows a data set with two predictors. We want to be able to produce a line (i.e., decision boundary) that differentiates two classes of data.
+
+### Two class example,
+On the next slide, two classification boundaries are shown for a different model type not yet discussed. The differece in the two panes is solely due to different choices in tuning parameters. One overfits the training data. 
+```{r}
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/two-class-overfit-1.png")
+```
+
+We usually don't have two-dimensional data so a quantitative method for under measureing overfitting is needed. **Resampling** fits that description. A simple method for tuning a model is used to grid search:
+
+├── Create a set of candidate tuning parameter values
+└── For each resample
+???   ├── Split the data into analysis and assessment sets
+???   ├── [preprocess data]
+???   ├── For each tuning parameter value
+???   ???   ├── Fit the model using the analysis set
+???   ???   └── Compute the performance on the assessment set and save 
+├── For each tuning parameter value, average the performance over resamples
+├── Determine the best tuning parameter value
+└── Create the final model with the optimal parameter(s) on the training set
+
+**Random search** is a similar technique where the candidate set of parameter values are simulated at random across a wide range. Also, an example of nested resampling can be found [here](http://appliedpredictivemodeling.com/blog/2017/9/2/njdc83d01pzysvvlgik02t5qnaljnd).
+
+### Grid search computations
+
+The bad news is that all of the models (except the final model) are discared. However, as the good news, all of the models (except the final model) can be run in parallel. Let's look at the Ames K-NN model and evaluate $K=1,2,\dot,20$ using the same 10-fold cross-validation as before. 
+
+We'll start coding this algorithm from the inside out.
+
+These steps are:
+ ├── Fit the model using the analysis set 
+   └── Compute the performance on the assessment set and save  
+
+`split` will be the one of elements of `cv_splits$splits`.
+```{r}
+knn_rmse <- function(k, split) {
+    mod <- knnreg(log10(Sale_Price) ~ Longitude + Latitude, 
+                                data = analysis(split),  
+                                k = k)
+    # Extract the names of the predictors
+    preds <- form_pred(mod$terms)
+    data.frame(Sale_Price = log10(assessment(split)$Sale_Price)) %>%
+        mutate(pred = predict(mod, assessment(split) %>% select(!!!preds))) %>%
+        rmse(Sale_Price, pred)
+}
+```
+
+### Fit the model across values of K
+
+???   ├── For each tuning parameter value 
+???   ???   └── Run `knn_rmse` 
+
+```{r}
+knn_grid <- function(split) {
+    # Create grid
+  tibble(k = 1:20) %>%
+    # Execute grid for this resample
+    mutate(
+      rmse = map_dbl(k, knn_rmse, split = split),
+      # Attach the resample indicators using `lables`
+      id = labels(split)[[1]]
+    )
+}
+
+```
+
+The return values here is a tibble with columns for *k*, the *RMSE*, and the fold ID (e.g., `Fold01`).
+
+### Top-level iteration over resamples
+
+└── For each resample 
+???   └── Run `knn_grid` 
+
+Here, `resamp` is the resample object `cv_splits`
+```{r}
+iter_over_resamples <- 
+    function(resamp) {
+        map_df(resamp$splits, knn_grid)}
+```
+
+### Running the code
+```{r }
+library(rsample)
+
+cv_splits
+
+knn_tune_res <- iter_over_resamples(cv_splits)
+knn_tune_res %>% head(15)
+## # A tibble: 15 x 3
+##        k   rmse id    
+##    <int>  <dbl> <chr> 
+##  1     1 0.111  Fold01
+##  2     2 0.0939 Fold01
+##  3     3 0.0930 Fold01
+##  4     4 0.0892 Fold01
+##  5     5 0.0903 Fold01
+##  6     6 0.0920 Fold01
+##  7     7 0.0910 Fold01
+##  8     8 0.0911 Fold01
+##  9     9 0.0901 Fold01
+## 10    10 0.0896 Fold01
+## 11    11 0.0914 Fold01
+## 12    12 0.0926 Fold01
+## 13    13 0.0934 Fold01
+## 14    14 0.0946 Fold01
+## 15    15 0.0952 Fold01
+```
+
+### The performance profile
+To summarize the results for each value of $K$:
+```{r}
+library(tidyverse)
+
+rmse_by_k <- knn_tune_res %>% 
+  group_by(k) %>% 
+  summarize(rmse=mean(rmse))
+
+ggplot(rmse_by_k, aes(x=k, y=rmse))+
+  geom_point()+geom_line()
+```
+
+Although it is numerically optimal, we are not required to use a value of 4 neighbors for the final model.
+
+### Resampling variation
+
+How stable is this? We can also plot the individual curves and their minimums.
+```{r}
+best_k <- knn_tune_res %>% 
+  group_by(id) %>% 
+  summarize(k=k[which.min(rmse)],
+            rmse=rmse[which.min(rmse)])
+
+ggplot(rmse_by_k, aes(x=k, y=rmse))+
+  geom_point()+
+  geom_line()+
+  geom_line(data=knn_tune_res,
+            aes(group=id, col=id),
+            alpha=0.2,lwd=1)+
+  geom_point(data=best_k,
+             aes(col=id),
+             alpha=0.5, cex=2)+
+  theme(legend.position = "none")
+
+```
+
+### The next Steps
+At this point, we would decide on a good value for $K$ and then fit the model used going foward:
+```{r}
+final_knn <- knnreg(log10(Sale_Price)~Longitude+Latitude,
+                    data=ames_train,
+                    k=4)
+```
+
+To reiterate: the previous 200 models created during the grid search are not used once K is set. Later, we will look at the high-level API in `caret` that stremalines almost all of this process for different models.
+
+## Part3: Feature engineering and preprocessing
+
+### Preprocessing and feature engineering
+This part mostly concerns what we can do to do our variables to make the models more effective., which is related to the predictors. Operations that we might use are:
+- transformations of individual predictors or groups of variables,
+- alternate encodings of a variable,
+- elimination of predictors(unsupervised) etc.
+
+In statistics, this is generally called `preprocessing` the data. As usual, the computer science side of modeling has a much flashier name: **feature engineering**.
+
+### Reasons for modifying the data
+
+Some models(KNN, SVMs, PLS, neural networks) require that the predictors variables have the same unit: **centering**, **scaling** the predictors can be used for this purpose.
+
+Other models are very sensitive to correlations between the predictors and **filters** or **PCA signal extraction** can improve the model.
+
+As we'll see an example, changing the scale of predictors using a **transformation** can lead to a big improvement. In other cases, the data can be encoded **encoded** in a way that maximizes its effect on the model. Representing the data as the day of or the week can be effective for modeling public transportation data.
+
+Many models cannot cope with missing data so **imputation** strategies might be necessary. Development of new *features* that represent something important to the outcome (e,g,m compute distances to public transportation, university buildings, public schools etc.).
+
+### A bivariate example
+The plot on the right side shows two predictors from a real *test* set where the object is to predict two classes. The predictors are strongly correlated and each has a right skewed distribution. There appeas to be some class separation but only in the bivariate plot: the individual predictors show poor discrimination of the classes.
+
+Some models might be sensitive to highly correalted and/or skewed predictors. Is there something that we can do to make the predictors easier for the model to use?
+
+```{r}
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/bivariate-plot-natural-1.PNG")
+```
+
+
+We might start by estimating transformations of the predictors to resolve the skewness. The **Box-Cox transformation** is a family of transformations originally designed for the outcomes of models. We can use it here for the predictors. 
+
+It uses the data to estimate a wide variety of transformations including the inverse, log, sqrt and polynomial functions. Using each factor in isolation, both predictors were determined to need **inverse transformation** (approximately). The figure on th right shows the data after these transformations have been applied. A logistic regression model shows a substantial improvement in classifying using the altered data.
+```{r}
+knitr::include_graphics("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/bivariate-plot-inverse-1.PNG")
+```
+
+
+### Resampling and preprocessing
+It is important to realize that almost all preprocessing steps that involve estimation sohuld be bundled inside of the resampling process so that the performance estimates are not biased.
+
+- **Bad**: preprocess the data, resample the model
+- **Good**: resample the processing and modeling
+
+Also, 
+- avoid information *leakage* by having all operations in the modeling process occur only on the training set.
+- Do not reestimate anything on the test set. For example, to center new data, the training set mean is used.
+
+
+## Preprocessing categorical predictors
+### Dummy variables
+
+One common procedure for modeling is to create numeric representations of categorical data. This is usually done via *dummy variables*: a set of binary 0/1 variables for different levels of an R factor.
+
+For example, the Ames housing data contains a predictor called `Alley` with levels: `Gravel`; `No_Alley_Access`; `Paved`. Most dummy variable procedure would make two numeric variables from this predictor that are zero for a level and one otherwise. 
+
+Data              Dummy variables
+                  No_Alley_Access Paved
+Gravel            0               0
+No_Alley_Access   1               0  
+Paved             0               1
+
+
+If there are $C$ levels of the factor, only $C-1$ dummy variables are created since the last can be infered from the others. There are different contrast schemes for creating the new variables. 
+
+For ordered factors, *polynnomial* contrasts are used. See this [blog post](http://appliedpredictivemodeling.com/blog/2013/10/23/the-basics-of-encoding-categorical-data-for-predictive-models). 
+
+
+How do you create them in R?
+
+The formula method does this for you. Otherwise, the traditional method is to use the `model.matrix` function to create a matrix. However, there are some caveats to this tha can make things difficult. We'll show another method for making them shortly.
+
+* Almost always at least. Tree- and rule-based model functions do not. Example are `randomforest::randomForest`, `ranger::ranger`, `rpart::rpart`, `C50::C5.0`, `Cubist::cubist`, `klaR::NaiveBayes`. 
+
+
+### Infrequent levels in categorical factors
+One issue is what happens when there are very few values of a level? Consider the Ames training set and the `Neighborhood` variable. If these data are resampled, what would happen to Landmark and similar locations when dummy variables are created?
+
+A $zero-$ variance predictor that has only a single value (zero) would be the result. For many models (e.g., linear/logistic regression, etc.) would find this numerically problematic and issue a warining and `NA` values for that coefficient. Trees and similar models would not notice. 
+
+There are two main approaches to dealing with this:  
+
+1) Run a filter on the training set predictors prior to running the model and remove the zero-variance predictors
+2)  Recode the factor so that infrequently occuring predictors (and possibly new values) are pooled into an "other" category.
+
+However, `model.matrix` and the formula method are incapable of doing either of these.
+
+### Recipes 
+**Recipes** are an alternative method for creating the data frame of predictors for a model. They allow for a sequence of steps that define how data should be handled. Recall that previous part where we used the formula `log10(Sale_Price) ~ Longitude + Latitude`? These steps are:
+
+1) Assign `Sale_Price` to be the outcome
+2) Assign `Longitude` and `Latitude` are predictors
+3) Log transform the outcome
+
+To start using a recipe, the these steps can be done using
+```{r}
+library(recipes)
+
+mod_rec <- recipe(Sale_Price ~ Longitude + Latitude, data=ames_train) %>% 
+  step_log(Sale_Price, base=10)
+
+```
+
+This creates the recipe for data preprocessing (but does not execute it yet)/
+
+### Recipes and categorical predictors
+
+To deal with the dummy variable issue, we can expand the recipe with more steps:
+```{r}
+
+mod_rec <- recipe(Sale_Price ~ Longitude + Latitude+Neighborhood, data=ames_train) %>% 
+  step_log(Sale_Price, base=10) %>% 
+  
+  # Lump factor levels that occur in <=5% of data as "others"
+  step_other(Neighborhood, threshold=0.05) %>% 
+  
+  # create dummy variables for _any_ factor variables
+  step_dummy(all_nominal())
+
+mod_rec
+```
+
+### Preparing the recipe
+
+Now that we have a preprocessing *specification*, let's run it on the training set to *prepare* the recipe: 
+```{r}
+mod_rec_trained <- prep(mod_rec, training=ames_train, retain=T, verbose=T)
+```
+
+Here, the `training` is to determine which factors to pool and to enumerate the factor levels of the `Neighborhood` variable, `retain` keeps the processed varion of the training set around so we don't have to recompute it.
+```{r}
+mod_rec_trained
+```
+
+### Getting the values
+Once the recipe is prepared, it can be applied to any data set using `bake`:
+```{r}
+ames_test_dummies <- bake(mod_rec_trained, newdata=ames_test)
+names(ames_test_dummies)
+```
+
+If `retain = TRUE` the training set does not need to be "rebaked". The `juice` function can return the processed verion of the training data. Selection can be used with `bake` and the default is `everything`
+
+
+### Hands-on: zero-variance filter
+
+Instead of using `step_other`, take 10 minutes and research how to eliminate any zero-variance predictors using the `recipe` [reference site](https://topepo.github.io/recipes/reference/index.html). 
+
+Re-run the recipe with this step. What were the results? Do you prefer either of these approaches to the other?
+
+## Interaction effects
+### Interactions
+
+An interaction between two predictors indicates that the relationship between the predictors and the outcome cannnot be described using only one of the variables.For example, let's look at the relationship between the price of a house and the year in which it was built. The relationship appears to be slightly nonlinear, possible quadratic. 
+
+```{r}
+library(ggplot2)
+
+price_breaks <- (1:6)*(10^5)
+
+ggplot(ames_train, 
+       aes(x = Year_Built, y = Sale_Price))+
+  geom_point(alpha = 0.4) +
+  scale_x_log10() + 
+  scale_y_continuous(breaks = price_breaks,
+                     trans = "log10")+
+  geom_smooth(method = "loess")
+```
+
+### Interactions
+
+However, what if we separate this trend based on whether the property has air conditioning (93.4% of the training set) or not (6.6%).
+```{r}
+library(MASS)
+# To get rubust linear regression model
+
+ggplot(ames_train,
+       aes(x=Year_Built,
+           y=Sale_Price))+
+  geom_point(alpha=0.4)+
+  scale_y_continuous(breaks=price_breaks,
+                     trans="log10")+
+  facet_wrap(~Central_Air, nrow=2)+
+  geom_smooth(method="rlm")
+```
+
+### Interactions
+
+It appears as though the relationship between the year built and the sale price is somewhat different for the two groups. 
+
+- When there is no AC, the trend as perhaps flat or slightly decreasing
+- With AC, there is a linear trend or is perhaps slightly quadratic with some outliers at the low end.
+
+```{r}
+mod1 <- lm(log10(Sale_Price)~Year_Built+Central_Air, data=ames_train)
+mod2 <- lm(log10(Sale_Price)~Year_Built+Central_Air+Year_Built:Central_Air, data=ames_train)
+
+anova(mod1, mod2)
+```
+
+### Interactions in Recipes
+We first create the dummy variables for the qualitative predictor (`Central_Air`) then use a formula to create the interaction using the **:** operator in addition step:
+
+```{r}
+recipe(Sale_Price ~ Year_Built+Central_Air, data=ames_train) %>% 
+  step_log(Sale_Price) %>% 
+  step_dummy(Central_Air) %>% 
+  step_interact(~starts_with("Central_Air"):Year_Built) %>% 
+  prep(training=ames_train, retain=T) %>% 
+  juice %>% 
+  # select a few rows with different values
+  slice(153:157)
+```
+
+## Adding Recipes to our `rsample` worflows
+### recipes and rsample
+
+Let's got back to the Ames housing data and work on building models with `recipes` using code similar to the previous set of notes. Previously:
+```{r}
+library(AmesHousing)
+ames <- make_ames()
+
+library(rsample)
+set.seed(4595)
+
+data_split <- initial_split(ames,strata="Sale_Price")
+ames_train <- training(data_split)
+
+set.seed(2453)
+cv_splits <- vfold_cv(ames_train, v=10, strata="Sale_Price")
+
+```
+
+### Linear models again
+
+Let's add a few extra predictors and some preprocessing
+- Two numeric predictors are very skewed and could use a transformation(`Lot_Area` and `Gr_Liv_Area`). 
+- We'll add neighborhood in as well and a few other house features.
+- The K-NN model suggests that the coordinates can be helpful but probably require a nonlinear representation. We can add thewse using **B-splines** with 5 degrees of freedom. To evaluate this, we will create two versions of the recipe to evaluate this hypothesis.
+
+```{r}
+lin_coords <- recipe(Sale_Price ~ Bldg_Type + Neighborhood+Year_Built+
+                       Gr_Liv_Area + Full_Bath + Year_Sold + Lot_Area+
+                       Central_Air + Longitude + Latitude,
+                     data=ames_train) %>% 
+  step_log(Sale_Price, base=10) %>% 
+  step_YeoJohnson(Lot_Area, Gr_Liv_Area) %>% 
+  step_other(Neighborhood, threshold = 0.05) %>% 
+  step_dummy(all_nominal()) %>% 
+  step_interact(~starts_with("Central_Air"):Year_Built)
+
+coords <- lin_coords %>% 
+  step_bs(Longitude, Latitude, options=list(df=5))
+```
+
+### Longitude
+```{r}
+library(ggplot2)
+
+ggplot(ames_train,
+       aes(x=Longitude, y=Sale_Price))+
+  geom_point(alpha=.5)+
+  geom_smooth(
+    method="lm",
+    formula=y~splines::bs(x,5),
+    se=FALSE)+
+  scale_y_log10()
+```
+
+Splines add non-linear versions of the predictor to a linear model to create smooth and flexible relationships between the predictor and outcome. This "basis expansion" technique will be seen against in the regression section of the workshop.
+
+### Latitude
+```{r}
+ggplot(ames_train,
+       aes(x=Latitude, y=Sale_Price))+
+  geom_point(alpha=.5)+
+  geom_smooth(
+    method="lm",
+    formula=y~splines::bs(x,5 ),
+    se=FALSE
+  )+
+  scale_y_log10()
+```
+
+### Preparing the Recipes
+
+Our first step is the run `prep()` on the `coords` recipe but using each of the analysis sets. `rsample()` has a function that is a wrapper around `prep()` that can be used to map over the split objects.
+```{r}
+rsample::prepper
+```
+
+```{r}
+library(purrr)
+
+cv_splits <- cv_splits %>% 
+  mutate(coords = map(splits, prepper, recipe = coords, retain = TRUE))
+```
+
+### Fitting the models
+We can use code that is very similar to the previous section. This corde will use the recipe object to get the data. Since each analysis set is used to train the recipe, our previous use of `retain=TRUE` means that the processed version of the data is withing the recipe.
+
+This can be returned via the `juice` function.
+
+```{r}
+lm_fit_rec <- function(rec_obj, ...) 
+  lm(..., data = juice(rec_obj))
+cv_splits <- cv_splits %>% 
+  mutate(fits = map(coords, lm_fit_rec, Sale_Price ~ .))
+
+cv_splits
+glance(cv_splits$fits[[1]])
+```
+
+### Predicting the assessment set
+
+This is alittle more complex. We need three elements contained in our tibble:
+- the split object (to get the assessment data)
+- the recipe object (to process the data)
+- the linear model(for predictions)
+
+The function is not too bad:
+```{r}
+assess_predictions <- function(split_obj, rec_obj, mod_obj){
+  raw_data <- rsample::assessment(split_obj)
+  proc_x <- bake(rec_obj, newdata=raw_data, all_predictors())
+  # now save all of the columns and add predictions
+  bake(rec_obj, newdata=raw_data, everything()) %>% 
+    mutate(
+      .fitted=predict(mod_obj, newdata=proc_x),
+      .resid=Sale_Price - .fitted, # Sale_Price is already logged by the recipe
+    # Save the original row number of the data
+      .row=as.integer(split_obj, data="assessment")
+      )
+}
+```
+
+Since we have three inputs, we will use `purrr`'s `pmap` function to walk along all three columns in the tibble.
+```{r}
+cv_splits <- cv_splits %>%
+  mutate(
+    pred = 
+      pmap(
+        lst(split_obj = cv_splits$splits, rec_obj = cv_splits$coords, mod_obj = cv_splits$fits),
+        assess_predictions 
+      )
+  )
+```
+
+We do get soem warnings that the assessment data are outside the range of the analysis set values:
+
+`yardstick::metric` will compute a small set of summary statistics for metrics model based on the type of outcome (e.g., regression, classification, etc.)
+```{r}
+library(yardstick)
+# compute the summary stats
+purrr::map_df(cv_splits$pred, metrics, truth=Sale_Price, estimate=.fitted) %>% 
+  colMeans
+```
+
+These results are better than our K-NN model but "the only way to be comfortable with your results is to never look at them"
+
+### Graphical checks for fit
+```{r}
+assess_pred <- bind_rows(cv_splits$pred) %>% 
+  mutate(Sale_Price=10^Sale_Price,
+         .fitted=10^.fitted)
+
+ggplot(assess_pred,
+       aes(Sale_Price, .fitted))+
+  geom_abline(lty=2)+
+  geom_point(alpha=.5)+
+  geom_smooth(se=FALSE, col="red")
+```
+
+The current model is 
+- drastically *over*-predicting the price of three houses
+- significantly *under*-predicting the price of a number of expensive houses
+
+What would we do next?
+
+1. Try to understand the two big residuals. Are these aberrant houses or does this have something to do with our model? Maybe those extrapolation warning?
+2. Find more predictors that differentiate the more expensive houses with the others
+3. Try a different model
+
+### About these five houses
+
+From Dmytro Perepolkin via [GitHub/topepo/AmesHousing](https://github.com/topepo/AmesHousing/issues/2#issuecomment-351005269): I did a little bit of research on Kaggle regarding those  ve houses (three "partial sale" houses in Edwardsand two upscale in Northridge):
+
+In fact all three of Edwards properties were sold within three months by the same company. The
+lots are located next to each other in Cochrane Pkwy Ames, IA. I guess the story was that
+developer was either in trouble or wanted to boost sales, so they were signing sales contracts
+on half- nished houses in a new development area at a deep discount. Those few houses are
+likely to have been built  rst out of the whole residential block that followed.
+Two of the upscale houses in Northridge (sold at 745 and 755 thousand, respectively) are located next to each other. Houses are, of course, eyecandies (at least to my taste). They are outliers with regards to size in their own neighborhoods!
+
+Sometimes it really pays off to be a [forensic statistician](https://projecteuclid.org/euclid.aoas/1267453942).
+
+# Regression modeling
+- Example data
+- Regularized linear models
+- Multiavariate Adaptive Regression Splines (MARS)
+- Ensembles of MARS models
+- Model comparison via Bayesian analysis
+
+## Example data
+### Expanded car MPG data
+The data that are used here are an extended version of the ubiquitous `mtcars` data set.
+
+[fueleconomy.gov](https://www.fueleconomy.gov/feg/download.shtml) was used to obtain fuel efficiency data on cars from 2015-2018. 
+
+Over this time range, duplicate ratings were eliminated; these occur when the same car is sold for several years in a row. As a result, there are 3294 cars that are listed in the data. The predictors include the automaker and additional information about the cars (e.g., intake valves per cycle, asipration method etc.).
+
+In our analysis, the data from 2015-2017 are used for training to see if we can predict the 609 cars that were new in 2018.
+```{r}
+cars <- load("C:/Users/kojikm.mizumura/Desktop/Data Science/UseR 2018/Applied ML/car_data.RData")
+
+library(dplyr)
+
+# train data
+car_train <- car_data %>%
+  filter(model_year < 2018)
+car_test <- car_data %>%
+  filter(model_year == 2018)
+```
+
+### Some acronyms and codes 
+- Drive codes:
+F=2-Wheel Drive, Front
+R=2-Wheel Drive, Rear
+4=4-Wheel Drive
+A=All Wheel Drive
+P=Part-time 4-Wheel Drive
+
+- Fuel;
+DU=Diesel, ultra low sulfur (15 ppm, maximum)
+G=Gasoline (Regular Unleaded Recommended)
+GM=Gasoline (Mid Grade Unleaded Recommended)
+GP=Gasoline (Premium Unleaded Recommended)
+GPR=Gasoline (Premium Unleaded Required)
+
+- Transmission:
+A=Auto(A10)               SA=Auto(S10)
+A=Auto(A4)                SA=Auto(S4)
+A=Auto(A5)                SA=Auto(S5)
+A=Auto(A6)                SA=Auto(S6)
+A=Auto(A7)                SA=Auto(S7)
+A=Auto(A8)                SA=Auto(S8)
+A=Auto(A9)                SA=Auto(S9)
+AM=Auto(AM5)              SCV=Auto(AV-S10)
+AM=Auto(AM6)              SCV=Auto(AV-S6)
+AM=Auto(AM7)              SCV=Auto(AV-S7)
+AM=Auto(AM8)              SCV=Auto(AV-S8)
+AMS=Auto(AM-S6)
+AMS=Auto(AM-S7)
+AMS=Auto(AM-S8)
+AMS=Auto(AM-S9)
+CVT=Auto(AV)
+gM=Manual(M5)
+M=Manual(M6)
+M=Manual(M7)
+
+### Hands-on: explore the car data
+As before, let's take 10 minutes to get familar with the training set using numerical summaries and plots. `geom_smoooth` is very helpful here to discover the nature of relationships between the outcome (`mpg`) abd the potential predictors.
+
+## Linear models
+### Linear regression analysis
+
+We'll start by fitting linear regression models to these data. As a reminder, the "linear" part means that the model is linear in the _parameters_; we can add nonlinear terms to the model (e.g., x^2 or log(x)) without causing issues.
+
+We could start by using `lm` and the formula method using what we've learnt so far.
+```{r}
+lm <- lm(mpg ~ . -carline + poly(eng_displ, 2), data = car_train)
+summary(lm)
+```
+
+However,
+```{r}
+car_train %>% 
+  group_by(division) %>% 
+  count() %>% 
+  arrange(n) %>% 
+  head(8)
+```
+
+If one of these low occurence car divisions in only in the assessment set, it may cause issues (or errors) in some models.
+
+### Linear regression analysis for the car data
+With __recipes__, variables can have different roles, such as case-weights, cluster, censotring indicator inc. We should keep `carline` in the data so that we can use it to diagnose issues but we don't want it as a predictor. 
+
+The role of this variable will be changed to "car name".
+```{r}
+library(recipes)
+basic_rec <- recipe(mpg ~ ., data = car_train) %>%
+  # keep the car name but don't use as a predictor
+  add_role(carline, new_role = "car name") %>%
+  # collapse some divisions into "other"
+  step_other(division, threshold = 0.005) %>%
+  step_dummy(all_nominal(), -carline) %>%
+  step_zv(all_predictors())
+```
+
+### Potential issues with linear regression
+
+We'll look at the car data and examine a few different models to illustrate some more complex models and approaches to optimizing them. We'll start with linear models.
+
+However, some potential issues with linear methods:
+- They do not automatically do feature selection and including irrelevant predictors may degreade performance
+- Linear models are sensitive to situations where the predictors are highly correlated (aka **collinearity**). This isn't too big of an issue for these data though.
+
+```{r eval=FALSE}
+# column division, carline, car_class has too many classes
+GGally::ggpairs(car_train[,c(-2,-3,-15)])
+```
+
+
+To mitigate these two secnarios, **regularization** will be used. This approach adds a penalty to the regression parameters. In order to have a large slope in the model, the predictor will need to have a large impact on the model. 
+
+There are different types of regularization methods.
+
+### Effect of collenearity
+As an example of collinearity, the `longley` contains economic data. We can try to predict the number of people employed per year as a function of the population size and the nation's gross domestic product (GDP). 
+
+The issue is that the two predictors have a correlation near 1. What happens when we fit models with both ppredictors versus one-at-a-time?
+
+The coefficients can drastically change depending on what is in the model.
+
+### Regularized linear regression
+
+Now suppose we want to see if regularizing the regression coefficients will result in better fits. The `glmnet model` can be used to build a linear model using $L_1$ or $L_2$ regularization (or mixture of the two).
+
+- an $L_1$ penalty (penalty is $\lambda_1 \Sigma|\beta_j|$) can have the effect of setting coefficnets to zero
+- $L_2$ regularization ($\lambda_2 \Sigma\beta_j^2$) is basically the regression where the magnitude of the coefficients are dampered to avoid overfitting
+
+For a `glmnet` model, we need to determine the total amount regularization (called `lambda`) and the mixture of $L_1$ and $L_2$ (called `alpha`).
+- `alpha=1` is a *lasso model* while `alpha=0` is *ridge regression* (aka weight decay)
+
+The predictors require centering and scaling before being used in a `glmnet`, `lasso`, `ridge` regression model.
+
+### Tuning the `glmnet` model
+We have tw otuning parameters now (`alpha` and `lambda`). We can extend our previous grid search approach by creating a 2D grid of parameters to test.
+
+- $alpha$ must be between zero and one. A small grid is used for this parameter.
+- $lambda$ is not as clear-cut. We consider values on the $log_10$ scale. Usuallty values less than one are sufficient but this is not always true.
+
+We can create combinations of these parameters and store them in a data frame.
+```{r}
+glmn_grid <- expand.grid(alpha = seq(0, 1, by = .25), lambda = 10^seq(-3, -1, length = 20))
+nrow(glmn_grid)
+```
+
+Instead of using `rsample` to tune the model, the `train` function in the `caret` package will be introduced.
+
+### Caret
+`caret` was developed to:
+
+- create a unified interface for modeling and predictions to 238 models
+- streamline model tuning using resampling
+- provide a variety of "helper" functions and classes for day-today model building tasks
+- increase computational efficiency using parallel processing
+- enable serveral feature selection frameworks
+
+It was originally developed in 2005 and is still very active. 
+There is an extentisve [github.io](https://topepo.github.io/caret/) page and article in [JSS](http://www.jstatsoft.org/v28/i05/paper).
+
+### Caret Basics
+`train` can take a formula method, a recipe object, or non-formula approach (x/y) to specify the model.
+```{r eval=FALSE}
+train(recipe, data=dataset)
+# or 
+train(y~., data=dataset)
+# or 
+train(x=predictors, y=outcome)
+
+```
+
+Another argument, `method` is used to specify the type of model to fit. This is usually named after the fitting function. We will need to use `method="glmnet"` for that model. ?models has a list of all possibilities.
+
+One way of listing the submodels should be evaluated is to used the `tuneGrid` parameter:
+```{r eval=FALSE}
+train(recipe, 
+      data=car_train,
+      method="glmnet",
+      tuneGrid=glmn_grid)
+```
+
+Alternatively, the `tuneLength` argument will let `train` determine a grid sequence for each parameter. 
+
+### The resampling scheme
+
+How much (and how) should we resample these data to create the model?
+
+Previously, cross-validation was discussed. If 10-fold CV was used, the assessment set would consist of 268 cars (on average). That seems like an acceptable amount of data to determine the RMSE for each submodel. `train` has a control function that can be used to define parameters related to the numerical aspects of the search:
+```{r}
+library(caret)
+ctrl <- trainControl(
+  method = "cv", 
+  # Save the assessment predictions from the best model
+  savePredictions = "final",
+  # Log the progress of the tuning process
+  verboseIter = TRUE
+  )
+```
+
+### Fitting the model via `caret::train`
+
+Let's add some nonlinearity and centering/scaling to the preprocessing and run the search:
+```{r}
+glmn_rec <- basic_rec %>%
+  step_poly(eng_displ) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+set.seed(3544)
+
+glmn_mod <- train(
+  glmn_rec, 
+  data = car_train,
+  method = "glmnet", 
+  trControl = ctrl,
+  tuneGrid = glmn_grid
+  )  
+```
+
+### Aside: submodel trick
+Our grid contained 5 values for `alpha` and 20 values of `lambda`. Although it might seem like we are fitting 100 models per resample, we are not. For many models, including `glmnet`, there are some computational shortcuts that can be used. 
+
+In this case, for a fixed value of `alpha`, the `glmnet` model computes the results for all possible values of `lambda`. Predictions from any of these models can be obtained from the same objects. 
+
+This means that we only need fit 5 models per resample. Trees and otherm odels can often exploit this *submodel trick* and `caret` automatically does this whenever possible.
+
+### Resampling profile for `lambda`
+
+```{r}
+summary(glmn_mod)
+ggplot(glmn_mod)+scale_x_log10()+theme(legend.position="top")
+```
+
+### Model assessment using the assessment set
+Since we used `savePredictions="final"`, the predictions on the assessment sets are contained in the sub-object `glmn_mod$pred`. This can be used to plot the data.
+```{r}
+glmn_mod$pred %>% head(4)
+```
+
+```{r}
+ggplot(glmn_mod$pred, aes(x=obs,y=pred))+
+  geom_abline(col="green",alpha=.5, lwd=1)+
+  geom_point(alpha=.3)+
+  geom_smooth(se=FALSE, col="red",
+              lty=2,lwd=1,alpha=.5)
+```
+
+### Variable importance scores
+For a **linear model** such as glmnet, we can directly inspect and interpret the model coefficients to understand what is going on. 
+
+A more general approach of computing "variable importance scores" can be useful for assessing which predictors are driving the model. These are model-specific. 
+
+For this model, we can plot the absolute values of the coefficients. This is another good reason to center and scale the predictors before the model.
+
+```{r}
+reg_imp <- varImp(glmn_mod, scale=FALSE)
+ggplot(reg_imp, top=30)+xlab("")
+```
+
+
+### Notes on `train`
+Setting the seed just before calling `train` will ensure the same resamples are used between models. There is also [a help page on reproducibility](https://topepo.github.io/caret/model-training-and-tuning.html#repro).
+
+`train` calls the underlying model (e.g., `glmnet`) and arguments can be passed to the lower level functions via the ...
+
+You can write your own model code ()
+
+### Using `glmnet` object
+The `train` object saves optimized model that was fit t in the slot `finalModel`. This can be used as it normally would. The plot on the right is created using
+```{r}
+library(glmnet)
+plot(glmn_mod$finalModel,xvar="lambda")
+```
+
+However, **please don't predict with it!**. Use the `predict` method on the object that is produced by `train`.
+
+## Multivariate Adaptive Regression Splines
+### MARS 
+
+MARS is a nonlinear machine learning model that develops sequential sets of artificial features that are used in linear models (similar to the previous spline discussion). 
+
+The features are "hinge functions" or single knot splines that use the function:
+```{r eval=FALSE}
+h(x) <- function(x) ifelse(x>0, 0)
+```
+
+The MARS model does a fast search through every predictor and every value of each predictor to find a suitable "split" point for the predictor that results in best features.
+
+Suppose a value `x0` is found. The MARS model creates two model terms `h(x-x0)` and `h(x0-x)` that are added to the intercept column. This creates a type of segmented regression.
+
+These terms are the same as deep learning rectified linear units [ReLU](https://en.wikipedia.org/wiki/Rectifier_(neural_networks)).
+
+Let's look at some example data...
+
+### Simulated data
+
+y=2*exp(-6*x(-0.3)^2)+e
+```{r}
+
+x=seq(-1,0.5, by= 0.01)
+# replaced e to 3.14
+y=2*exp(-6*(x-0.3)^2)+3.14
+
+bind_cols(x=x,y=y) %>% 
+  ggplot(aes(x=x,y=y))+
+  geom_jitter()
+```
+
+
+### MARS feature creation - iteration #1
+
+After searching through these data, the model evaluates all possible values of `x0` to find the best "cut" of the data. It finally chooses a value of -0.404.
+
+To do this, it creates these two new predictors that isolate different regions of `x`. If we stop there, these two terms would be added into a linear regression model, yielding:
+```{r eval=FALSE}
+# y=
+# -.111
+# -0.262*h(-0.40175-x)
+# +2.41*h(x-0.40175)
+```
+
+### Fitted model with two features
+```{r, echo=FALSE, fig.align='center', fig.cap="Splitting data into training and test sets.", out.width=175}
+knitr::include_graphics("images/mars-sim-fit-1.png")
+```
+### Growing and Pruning
+
+Similar to tree-based models, MARS starts of  with a "growing" stage where it keeps adding new features until it reaches a pre-defined limit. After the first pair is created, the next cut-point is found using another exhaustive search to see which split of a predictor is best conditional on the existing features.
+
+Once all the features are created a **pruning phase** starts where model selection tools are used to eliminate terms that do not contribute meaningfully to the model. Generalized cross-validation [https://scholar.google.com/scholar?hl=en&as_sdt=0%2C7&q=%22generalized+cross+validation%22&btnG=] is used to efficiently remove model terms while still providing some protection from overfitting.
+
+### Generalized cross validation with MARS
+For linear models, this is a comuptational shortcut that can be used to approximilate leave-one-out cross-validation. GCV can be used since MARS is actually fit using OLS regression. The deafault MARS approach is to let GCV pick how many terms to retain.
+
+I usually don't use this methodology. Instead of include the number of retained terms as a tuning paramaeter, and use the usual resampling methods to optimize it. 
+
+In that way, the relationship between the outcome and the number of terms can be better understood. Also, I've found that using GCV with MARS increases the likelihood of overfitting (anecdotally).
+
+### The final model
+For the simulated data, the MARS model only requires 4 features to model the data (via GCV).
+```{r eval=FALSE}
+## y =
+##   0.0599
+##   - 0.126 * h(-0.404175 - x)
+##   +  1.61 * h(x - -0.404175)
+##   +  2.08 * h(x - -0.222918)
+##   -  5.27 * h(x - 0.244406)
+```
+
+The parameters are estimated by adding the MARS features into Ordinary linear regression models using least squares.
+
+```{r, echo=FALSE, fig.align='center', fig.cap="Splitting data into training and test sets.", out.width=175}
+knitr::include_graphics("images/mars-sim-final-1.png")
+```
+
+
+### Aspects of MARS models
+
+- The model also tests to see if a simple linear term is best (i.e., not split). This is also how dummy variables are evaluated.
+- The model automatically conducts *feature selection*; if a predictor is never used in a split, it is functionally independent of the model. This is really good!
+- If an additive model is used (as in the previous example), the functional form of each predictor can be determined (and visualized) independently for each predictor. 
+- A *second degree* MARS model also evaluates interaction of two hinge features (e.g., `h(x0~x)}h(y-y0)`). This can be useful in isolating regions of bivariate predictor space since it divides two dimensional space into four quadrants. 
+
+### Second degree MARS term example
+
+```{r, echo=FALSE, fig.align='center', fig.cap="Splitting data into training and test sets.", out.width=175}
+knitr::include_graphics("images/mars-2d-1.png")
+```
+
+### MARS in R
+
+The [`mda`](https://cran.r-project.org/web/packages/mda/index.html) package has a mars function but the [`earth`](https://cran.r-project.org/web/packages/earth/index.html) package is far superior. 
+
+The `earth` function has both formula and non-formula interfaces. It can also be used with generalized linear models and flexible discriminant analysis. 
+
+To use the nominal growing and GCV pruning process, the syntax is
+``` {r eval=FALSE}
+earth(y~., data)
+#or
+earth(x=x, y=y)
+```
+
+The feature creation process can be controlled using the `nk`, `nprune` and `pmethod` parameters although this can be somewhat complex. There is a variable method that tracks the changes in the GCV results as features are added to the model.
+
+### MARS via `caret`
+There are several ways to fit the MARS model using `train`.
+
+- `method="earth"` avoids pruning using `GCV` and uses external resampling to choose the number of retained model terms (using the sub-model trick). The two tuning parameters are `nprune` (number of retained features) and `degree`.  
+- `method="gcvEarth"` is also available and uses `GCV`. The `degree` parameter requires tuning.
+
+I usually use the manual method to better understand the pruning process. For preprocessing, there is *no* need to remove **zero-variance predictors** here (beyond computational efficiency), but dummy variables are required fro qualitative predictors. 
+
+Centering and scaling are *not* required.
+
+### Tuning the model
+
+We can reuse much of the `glmnet` syntax to tune the model.
+```{r}
+ctrl$verboseIter <- FALSE
+mars_grid <- expand.grid(degree = 1:2, nprune = seq(2, 60, by = 2))
+# Using the same seed to obtain the same 
+# resamples as the glmnet model.
+set.seed(3544)
+mars_mod <- train(
+  basic_rec, 
+  data = car_train,
+  method = "earth",
+  tuneGrid = mars_grid,
+  trControl = ctrl
+)
+
+summary(mars_grid)
+```
+
+Running the resampling models (plus the last one), this takes 4.5m.
+
+### While we wait, can I interest you in parallelism?
+
+There is no real barrier to running these in parallel. Can we benefit from splitting the fits up to run on multiple cores? These speed-ups can be very model - and data-dependent but this pattern generally holds?
+
+Note that there is little incremental benefit to using more workers than physical cores on the computer. (A lot more details can be found in [this blog post](http://appliedpredictivemodeling.com/blog/2018/1/17/parallel-processing))
+
+### Running in parallel for `caret`
+
+To loop through the models and data sets, `caret` uses the `foreach` package, which can parallelize for loops.
+
+`foreach` has a number of parallel **backends** which allow various technologies to be used in conjunction with the package.
+
+On CRAN, these are the "do{X}" packages, such as [doAzureParallel](https://github.com/Azure/doAzureParallel), [doFuture](https://www.rdocumentation.org/packages/doFuture), [doMC](https://www.rdocumentation.org/packages/doMC), [doMPI](https://www.rdocumentation.org/packages/doMPI), [doParallel](https://www.rdocumentation.org/packages/doParallel), [doRedis](https://www.rdocumentation.org/packages/doRedis), and [doSNOW](https://www.rdocumentation.org/packages/doSNOW).
+
+For example, `doMC` uses the `multicore` package, which forks processes to split computations (for unix and OS X). `doParallel` can be used for all operating systems.
+
+To use parallel processing in `caret`, no changes are needed when calling `train`. The parallel technology must be registered with `foreach` prior to calling train:
+
+```{r eval=FALSE}
+library(doParallel)
+cl <- makecluster(6)
+registerDoParallel(cl)
+
+# run train...
+stopCluster(cl)
+
+# can be helpful:
+parallel::detectCores(logical=FALSE)
+```
+
+### Resampling profile for MARS
+
+```{r}
+ggplot(mars_mod)+theme(legend.position = "top")
+```
+
+### Prediction plot
+```{r}
+ggplot(mars_mod$pred, aes(x = obs, y = pred)) +
+  geom_abline(col = "green", alpha = .5) + 
+  geom_smooth(se = FALSE, col = "red", 
+              lty = 2, lwd = 1, alpha = .5) + 
+  geom_point(alpha = .3)
+```
+
+### The underlying model
+```{r}
+library(earth)
+mars_mod$finalModel
+```
+
+### Variable importance scores
+
+Recall that as MARS adds or drops terms from the model, the change in the GCV statistic is used to determine the worth of the terms. `earth` tracks the changes for each predictor and measures the variable importance based on how much the GCV error *decreases* when the model term is added. 
+
+This is `cumulative` when multiple terms involve the same predictor multiple times.
+
+### Use GCV to tune the model
+
+```{r}
+set.seed(3544)
+
+mars_gcv_mod <- train(
+  basic_rec,
+  data=car_train,
+  method="gcvEarth",
+  tuneGrid = data.frame(degree=1:2),
+  trControl = ctrl
+)
+
+mars_gcv_mod$finalModel
+```
+
+It found the same model using GCV. This is not typical but it is faster (4.1-fold). We will explot this in a moment.
+
+## Ensenbles vs Bagging
+### Baggin models 
+
+[Baggin](https://scholar.google.com/scholar?cluster=18412826781870444603&hl=en&as_sdt=0,7) is a method of creating ensembles of the model type.
+
+Instead of using the training set, many variations of the data are created that spawn multiple versions of the same model. When predicting a new sample, the individual predictions are generated for each model in the ensemble, and these are blended into a single value. This reduces the variation in the predictions since are averaging pseudo-replicates of the model.
+
+Bagging creates the data sets using a **bootstrap sample** of the training set. 
+
+Bagging is most useful when the underlying model has some **instability**. This means that slight variations in the data cause significant changes in the model fit.
+
+For example, simple linear regression would not be a suitable candidate for ensembles but MARS has potential for improvement. It does have the effect of *smoothing* the model predictions. 
+
+### Bagging process
+```{r eval=FALSE}
+knitr::include_graphics("")
+```
+
+### Bagged additive MARS example
+
+```{r}
+knitr::include_graphics("images/mars-bag-final-1.png")
+```
+
+### Does bagging help the car model?
+```{r}
+set.seed(3544)
+mars_gcv_bag <- train(
+  basic_rec,
+  data=car_train,
+  method="bagEarthGCV",
+  tuneGrid=data.frame(degree=1:2),
+  trControl=ctrl,
+  # Number of bootstraps for `bagEarth`
+  B=50
+)
+```
+
+This will take about 39m to run without parallel processing.
+
+```{r}
+mars_gcv_bag
+```
+
+
+### Prediction plot
+```{r}
+ggplot(mars_gcv_bag$pred, aes(x=obs, y=pred))+
+  geom_abline(col="green",alpha=.5)+
+  geom_point(alpha=.3)+
+  geom_smooth(se=FALSE, col="red",
+              lty=2, lwd=1, alpha=.5)
+```
+
+### So what about those high MPG cars?
+
+All of the modesl have really missed some of the high MPG cars. 
+What is it about these?
+```{r eval=FALSE}
+car_train %>% 
+  arrange(mpg) %>% 
+  select(mpg, carline, model_year) %>% 
+  tail(10)
+```
+
+It turns out that there is no indicator in the data for hybrid and/or electric vehicles.
+
+## Comparing models via Bayesian analysis
+### Collecting and analyzing the resampling results
+
+First, we can use the `resamples` function in `caret` to collect and collate the cross-validation results across the different models. 
+```{r}
+rs <- resamples(
+  list(glmn=glmn_mod, MARS=mars_mod, bagged=mars_gcv_bag)
+)
+```
+
+The `tidyposterior` package is designed to estimate the relationship between the outcome metrics (i.e., RMSE) as a function of the model type (i.e., MARS) in a way to takes into account the resample-to-resample covariances that can occur. 
+
+A simple [Bayesian linear model](http://mc-stan.org/rstanarm/articles/continuous.html) is used here for that purpose. I recommend the book [statistical Rethinking](http://xcelab.net/rm/statistical-rethinking/) if you are new to Bayesian analysis. 
+
+
+### Bayesian Hierachical linear model
+
+If we did a basic ANOVA model to compare models, it might look like:
+$$
+RMSE=b_0+b_1m_1+b_2m_2
+$$
+
+where $m_j$ are the indicator variables for the models (`glmnet`, `MARS` etc.).
+
+However, there are usually resample-to-resample effects. To account fi this ,we can make this ANOVA model specific to a resample:
+$$
+RMSE_i = b_{i0}+b_{i1}m_1+b_2m_{i2}
+$$
+
+We might assume that each
+$$
+RMSE_{ij} - N(\beta_{i0}+\beta_{ij} m_{ij}, \sigma^2)
+$$
+ 
+and that the $b$ parameters have some multivariate normal distribution with mean $\beta$ and some covariance matrix. The distribution of the $\beta$ values, along with a distribution for the variance parameter, are the prior distributions.
+
+Bayesian analysis can be used to estimate these parameters. tidyposterior uses `Stan` to fit the model. 
+
+There are options to change the assumed distribution of the metric (i.e., gamma instead of normality) or to transform the metric to normality. Different variances per model can also be estimated and priors can be changed.
+
+### comparing modles using Bayesian analysis
+
+`tidyposterior::perf_mod` can take the `resamples` object as input, configure the Bayesian model, and  
+
+```{r}
+# install.packages("tidyposterior")
+library(tidyposterior)
+
+rmse_mod <- perf_mod(rs, seed=4344, iter=5000, metric="RMSE")
+```
+
+### Showing the posterior distributions
+
+Bayesian analysis can produce probability distributions for the estimated parameters (aka the posterior distributions). These can be used to compare models.
+
+```{r}
+posteriors <- tidy(rmse_mod, seed=366784)
+summary(posteriors)
+```
+
+These are 90% credible intervals.
+```{r}
+ggplot(posteriors)
+```
+
+### Comparing models
+
+Once the posteriors for each model are calculated, it is pretty easy to compute the posterior for the differences between models and plot them.
+
+```{r}
+differences <-
+  contrast_models(
+    rmse_mod,
+    list_1 = rep("bagged", 2),
+    list_2 = c("glmn", "MARS"),
+    seed = 2581
+  )
+```
+
+If we know the size of a practical differences in RMSE values, this can be included into the analysis to get [ROPE estimates](https://eyglms6.intellinex.com/eyg/lang-en/management/LMS_CNT_LaunchCourse.asp?LMStructure=0&UserMode=0&ActivityId=1619955&LangId=null) (Region of Practical Equivalence)
+
+```{r}
+ggplot(differences, size=.25)
+```
+
+### Comparing models
+
+If we think that 0.25 MPG is a real difference, we can assess which models are practically different from one another.
+```{r}
+summary(differences, size=.25)
+```
+
+`pract_neg` is the probability that the difference in RMSE is practically negative based on our thoughts about `size`.
+
+## Test set results
+### Predicting the test set
+
+Making predictions on new data is pretty simple:
+```{r}
+car_test <- car_test %>% 
+  mutate(pred=predict(mars_gcv_bag, car_test))
+
+library(yardstick)
+rmse(car_test, truth=mpg, estimate=pred)
+```
+
+```{r}
+ggplot(car_test, aes(x=mpg, y=pred))+
+  geom_abline(col="green",alpha=.5)+
+  geom_point(alpha=.3)+
+  geom_smooth(se=FALSE, col="red",
+              lty=2, lwd=1, alpha=.5
+              )
+```
+
+There are fewer new hybrid and electric models in the 2018 data.
+
+# Classification
+## Measuring performance in classification
+
+### Illustrative example
+
+`yardstick` contains another test set example in a data frame called `two_class_example`:
+```{r}
+library(yardstick)
+library(dplyr)
+two_class_example %>% head(4)
+```
+
+Both `truth` and `predicted` are factors with the same levels. The other two columns represent class probabilities.
+
+This reflects that most classification models can generate "hard" and "soft" predictions for models.
+
+The class predictions are usually created by thresholding some numeric output of the model. (e.g., class probability) or choosing the largest value.
+
+###  Class prediction metrics
+
+With class predictions, a common summary method is to produce a *confusion matrix* which is a simple cross-tabulation between the observed and predicted classes:
+
+```{r}
+two_class_example %>% 
+  conf_mat(truth=truth, estimate=predicted)
+```
+
+These can be visualized using [mosaic plots](https://en.wikipedia.org/wiki/Mosaic_plot).
+
+Accuracy is the most obvious metric for characterizing the performance of models. 
+```{r}
+two_class_example %>% 
+  accuracy(truth=truth, estimate=predicted)
+```
+
+However, it suffers when there is a *class imbalance*; suppose 95% of the data have a specific class. 95% accuracy can be achieved by predicting samples to be the majority class.
+
+There are measures that correct for the natural event rate, such as [Cohen's Kappa](https://en.wikipedia.org/wiki/Cohen%27s_kappa).
+
+### Two classes 
+
+There are a number of specialized metrics that can be used when there are two classes. Usually, one of these classes can be considered the event of interest or the positive class.
+
+One common way to think about performance is to consider false negatives and false positives.
+- the **sensitivity** is the *true positive rate*
+- the **specificity** is the rate of correctly predicted negatives, or 1-false positive rate.
+
+From this, assuming that *class1* is the event of interest.
+- $sensitivity = 227/(227+31)$
+- $Specificity=192/(192+50)$
+
+```{r}
+two_class_example %>% head()
+
+two_class_example%>% 
+  conf_mat(truth=truth, estimate=predicted)
+```
+
+### Conditional and unconditional measures 
+
+Sensitivity and specificity can be computed from the `sense` and `spec` functions respectively. It should be noted that these are conditional measures we need to know the true outcomes. 
+
+The event rate is the *prevalence* (or the Bayesian prior). Sensitivity and specificity analogous to the likelihood values. There are *unconditional* analogs to the posterior values called the positive predictive values and the negative predicted values. 
+
+A variety of other measures are available for two class systems, especially for information retrieval. One thing to consider - what happens if our **threshold to call a samle an event is not optimal?**
+
+### Changing the probability threshold
+For two classes, the 50% cutoff is customary; if the probability of class #1 is >=50%, they would be labeled as `Class1`.
+
+What happens when you change the cutoff?
+
+- Increasing it makes it harder to e called `class1`, which leads to fewer prediction events, specificity up, sensitivity down.
+- Decresing the cutoff makes it easier to be called `class1`, which leadsto more predicted events, specificity down, sensitivity up.
+
+With two classes, the **reciver operating characteristic (ROC) curve** can be used to estimate performance using a combination of sensitivity and specificity.
+
+To create the curve, many alternative cutoffs are evaluated. For each cutoff, we calculate the sensitivity and specificity. The **ROC curve** plots the sensitivity (e.g., true positive rate) versus 1-specificity (the false positive rate).
+
+The area under the ROC curve is a common metric of performance. 
+```{r}
+library(pROC)
+
+roc_obj <- roc(
+  response=two_class_example$truth,
+  predictor=two_class_example$Class1,
+  # If the first level is the event of interest:
+  levels=rev(levels(two_class_example$truth))
+)
+```
+
+```{r}
+auc(roc_obj)
+```
+
+```{r}
+plot(
+	roc_obj,
+	legacy.axes = TRUE,
+	print.thres = c(.2, .5, .8), 
+	print.thres.pattern = "cut = %.2f (Spec = %.2f, Sens = %.2f)",
+	print.thres.cex = .8
+)
+```
+
+### The receiver operating characteristic (ROC) curve
+
+The ROC curve has some major advantages:
+
+- It can allow models to be optimized for performance before a definitive cutoff is determined
+- It is robust to class imbalances; no matter the event rate, it does a good job at characterizing model performance
+- The ROC curve can be used to pick an optimal cutoff based on the trade-offs between the types of errors that can occur
+
+When there are two classes, it is advisable to focus on the area under the ROC curve instead of sensitivity and specificity. 
+
+Once an acceptable model is determined, a proper cutoff can be determined.
+
+### OkC Data
+These data contain several types of fields:
+- a number of open text essays related to interests and personal descriptions
+- single choice type fields, such as profession, diet, gender, body type etc.
+- multiple choice data, including language spoken, etc.
+
+We will try to predict whether someone has a profession in the STEM fileds (science, technology, engineering, and math) using a random sample of the overall dataset. 
+
+The data are included in the workship's GitHub repo
+
+```{r}
+library(dplyr)
+load("data/okc.RData")
+
+okc_train %>% dim()
+```
+
+```{r}
+okc_test %>% dim()
+```
+
+```{r}
+table(okc_train$Class)
+```
+
+### Dealing with class imbalances
+In our data, only 18.2% of the profles are in STEM professionals. This complicates the analysis since many models will overfit to the majority class. 
+
+There are two main strategies to deal with this.
+
+- _cost-sensitive learning_ where a higher cost is attached to the minority classes. I this way, the fitting process puts more emphasis on those sample. 
+- _sampling procedure_ that modify the rows of the data to re-balance the training set.
+
+Cost-sensitive models tend to only produce hard classification so we will focus on the latter. 
+
+### Class imbalance sampling
+
+There are a varierty of methods for subsampling the data. Some exclude or replicate rows in the training set while others try to synthesize new data points to balance the classes.
+
+The simplest method for dealing with the problem is _down-sample_ the data to make the number of STEM and non-STEM profiles the same.
+
+While it seems like throwing away most of the data is a bad idea, it tends to produce less pathological distributions of the class probabilities and might improve the ROC curve. 
+
+It is crucial that:
+
+- the sampling should be done inside of resampling. Otherwise, the peformance estimates can be optimistic. (https://topepo.github.io/caret/subsampling-for-class-imbalances.html#resampling)
+- these sampling methods take place on the analysis set and not the assessment set.
+
+Note that for a simple logistic regression model, this mainy has the effect of chainging the intercept. 
+
+### Calibration effect (Test set example)
+
+### Resampling and analysis strategy
+If we down-sample the data, the analysis set will consist of 1458 profiles (equally balanced). We'll again use 10-fold CV to resample the data. 
+
+Whithin each resample, the analysis data are down-sampled and the assessment sets are left alone.
+
+The number of STEM profiles held-out would be about 72 and this should be sufficient to compute sensitivity. 
+
+The model will be optimized on the area aunder the ROC curve.
+
+```{r}
+library(caret)
+ctrl <- trainControl(
+  method = "cv",
+  # Also predict the probabities 
+  classProbs = TRUE,
+  # Compute the ROC AUC as well as the sense and 
+  # spec from the default 50% cutoff, The function `twoClasssummary` will produce those.
+  summaryFunction = twoClassSummary,
+  savePredictions = "final",
+  sampling = "down"
+)
+```
+
+## Classification trees
+### Classification trees 
+
+Tree-based classifiers conduct searches of the predictors to find the best split of the data to create two subsets. "Best", in most cases, means that the class distributions is as `pure` as possible in the subset (i.e., is mostly one class).
+
+There are many different types of classification trees, including [conditional inference trees](https://cran.r-project.org/web/packages/BayesTree/index.html), [C5.0](https://cran.r-project.org/web/packages/BayesTree/index.html), [Bayesian additive regression trees](https://cran.r-project.org/web/packages/BayesTree/index.html), [globally optimal trees](https://cran.r-project.org/web/packages/evtree/index.html), [CART](https://cran.r-project.org/web/packages/rpart/index.html) and others. 
+
+We will focus on CART via the `rpart` package for these notes.
+
+### Two possible splits - which one is better?
+The data have benn down-sampled so that classes have equal frequencies.
+
+### Best first split
+The two sets were derived by the model and are not listed here dues to their sizes.
+
+### The next two splits
+Once the initial split is made, the model will then split the resulting two data sets using new searches in those leaves. The process continues until there are not enough data points left to accurately split or a pre-defined split limit has benen reached. 
+
+This is the _tree growing_ process, and once complete, most tree-based models begin to _prune_ the trees using some method that balances compexity with performance. 
+
+### Classification trees
+
+`caret` contains multiple method for training CART models. We'll go with `method="rpart2` which uses `maxdepth` as the tuning parameter. Also, we'll use the non-formula interface so that the factor predictors are not converted to indicator variables.
+
+```{r}
+set.seed(5515)
+
+cart_mod <- train(
+  x=okc_train[,names(okc_train) != "Class"],
+  y=okc_train$Class,
+  method="rpart2",
+  metric="ROC",
+  tuneGrid=data.frame(maxdepth=1:20),
+  trControl = ctrl
+)
+```
+
+```{r}
+cart_mod$finalModel
+```
+
+### CART resampling profile
+
+```{r}
+names(cart_mod$results)
+
+cart_mod$results %>% 
+  ggplot(aes(maxdepth, ROC))+
+  geom_point()+
+  geom_line()
+```
+
+### Variable importance scores
+
+CART tracks the decrease in impurity in the nodes when splits are made. Thse can be aggregated over the tree to produce another general importance score. `rpart` can also keep track of splits not used in the model (e.g., surroagate, completing) that can be used when there are missing predictor values. The `varImp` method has options to turn these on/off. Turning thse off gives only the splits uses in the official tree.
+
+```{r}
+cart_imp <- varImp(cart_mod, scale=FALSE, 
+                   surrogates=FALSE, 
+                   competes=FALSE)
+ggplot(cart_imp, top=7)+ xlab("")
+```
+
+### Hands-on: don't want to be dummy
+
+Take the previous code and use the formula method to create the model. For `train`, the formula method always create dummy variables for the predictors that are affect.
+
+- Is there any difference in performance?
+- Is final model affected? HowT?
+
+## Bagging 
+### Instability of trees
+
+Many types of trees are _unstable_ in that they have high varianc; if the data are slightly changed, a large impact can be seen on the structure of the model.
+
+This is generally bad and might make you question the interpretability of trees. For example, what happens if we were build our model based on the bootstrap sampling of the training set, In the three following plots, the max tree depth was capped at 5 to make the tree easier to visualize.
+
+### Bootstrap samples
+
+### Lemonade from lemons
+The nice thing about this instability is that it makes tree great candidates for __ensemble methods__. Since ensembles use multiple models, they are only effective when the constituent models are __diverse__; otherwise the same predictions are averaged. 
+
+Let's bag the CART trees by using bootstrap samples of the training set and growing the largest possible tree. `caret` wraps `ipred::bagging` using `method="treebag`.
+
+```{r}
+set.seed(5515)
+cart_bag <- train(
+  x=okc_train[,names(okc_train)!="Class"],
+  y=okc_train$Class,
+  method="treebag",
+  metric="ROC",
+  trControl = ctrl
+)
+```
+
+### Bagged CART results
+```{r}
+cart_bag
+```
+
+### Resampled confusion matrix
+
+As measured by the default cutoffs, there is some increase in accuracy that is achieved by improving the specificity (27% versus CART's 30.1%). 
+```{r}
+confusionMatrix(cart_bag)
+```
+
+### Bagged classification tree average ROC curve 
+
+```{r eval=FALSE}
+library(pROC)
+# plot.roc(cart_mod$pred)
+plot.roc(cart_bag$pred, col = "darkred", add = TRUE)
+
+plot_roc(cart_mod$pred)
+plot_roc(cart_bag$pred, 
+         col = "darkred", 
+         add = TRUE)
+```
+
+Although the bagged model's curve is uniformly better than the single tree, their performance is very similar for the cutoffs closest to upper left-hand corner. 
+
+### Variable importance scores
+
+When bagging, the CART importance scores for each tree are aggregated across trees. Many more predictors are used in this model.
+
+```{r}
+bag_imp <- caret::varImp(cart_bag, scale=F)
+ggplot(bag_imp, top=30)+xlab("")
+```
+
+### Hands-on: how many trees?
+
+As previously mentioned, `caret` uses `ipred::bagging` to create the model. Look at the help function to determine which `bagging` argument controls the number of bootstraps. How can we make `train` use a different value? 
+
+### Other ensemble methods
+
+There are a variety of other mthdos for creating ensembles.
+
+- __Random forests__ are just like bagging but the trees are made more diverse by randomly sampling a subset of predictors to be used in each split ([ranger](https://cran.r-project.org/web/packages/ranger/index.html))
+- __Boosting__ fits a sequence of trees and modifies the case-weights of each data point to increase diversity ([xgboost](https://cran.r-project.org/web/packages/xgboost/index.html),[C50](https://topepo.github.io/C5.0/))
+- __Rotation forests__ is PCA signal extraction on random subset of the data to creating the trees ([rotationForest](https://cran.r-project.org/web/packages/rotationForest/index.html))
+- Regression committees adjust the outcome data over a sequence of models ([Cubist](https://topepo.github.io/Cubist/))
+- __Stacking__ is an ensemble method where different types of models can be blended together through averaging (caretEnsemble)
+
+R has multiple implementations of these methods.
+
+## Bayes' Rule
+### Naive Bayes models
+
+This classification model is motivated directly from statistical theory based on Bayes' Rule:
+$$
+Pr[Class|Predictors]= \frac{Pr[Class] Pr[Predictors|Class]}{Pr[Predictors]}= \frac{Prior*Likelihood}{Evidence}
+$$
+In Englh: Given our predictor data, what is the probability of each class?
+
+The prior is the prevalence that was mentioned earlier (e.g., the rate of STEM profles). This can be estimated or set. Most of the action is in `Pr[Predictors|Class]`, which is based on the observed training set.
+
+### Why is it Naive?
+
+Determining `Pr[Predictors|Class]` can be very difficult without strong assumptions because it measures the _joint probability_ of all of the predictors. 
+- For example, what is the correlation between a person's length and their religion?
+
+To resolve this, __naive__ Bayes assumes that all of the predictors are independent and that their probabilities can be estimated separately. The join probability is then the product of all of the individual probabilities (an example follows soon). This assumption is almost certainly bogus but the model tends to do well despite this. 
+
+### The effect of independence
+The probability contours assume multivariate normality with different assumptions. Suppose the red dot is a new sample.
+
+### Conditional density for each class
+```{r}
+ggplot(okc_train, aes(x = essay_length, col = Class)) + 
+	geom_line(stat = "density")
+```
+
+### Combining predictor scores with the prior
+
+For an Athesis who wrote $e^8$ words, their likelihood values were:
+- $Pr[Essay\ Length=8|STEM] * Pr[Religion=Athesim|STEM]$ = 0.518*0.207=0.107
+- $Pr[Essay\ Length=8|Other] * Pr[Religion=Athesim|Other]$ = 0.428*0.103=0.044
+
+However, when these are combined with `prior` probability for each class, the `relative probabilies`  show
+
+- $Pr[Predictors|STEM]*Pr[STEM]$=0.107*0.182=0.02
+- $Pr[Predictors|Other]*Pr[Other]$=0.044*0.818=0.036
+
+We don't need to comute the evidence: we can just normalize these values to add up to 1. The results is that the posterior probability that this person is in a STEM field is 35.1%.
+
+### Shrinkage properties of Bayesian models
+
+When our observed data is of high quality (top panel), the likelihood is narrow and dominates the equation. However, when our observed information is poor, the likelihood can be very wide and diffuse. 
+
+When this occurs, Bayes' rule relies more on our prior belief than on the data in-hand. This is generlally called "shrinkage".
+
+### Pros and cons
+#### Good
+
+- This model can be very quickly trained (and theoretically in parallel)
+- Once trained, the prediction is basically a look-up table (i.e., fast)
+- Nonlinear class boundaries can be generated.
+
+#### Bad
+- Linearly diagonal boundaries can be difficult
+- With many predictors, the class probabilities become poorly calibrated and U shaped iwth most values near zero or one. For example
+```{r}
+prod(rep(.1,100))
+```
+
+```{r}
+prod(rep(.5,100))
+```
+
+### U-shaped class probability distribution 
+
+### Naive Bayes Data Preparations
+
+There is a step specifically designed for converting binary dummy variables into factors. First, we identify them, then use quasiquotation (via !!!) to pass them to the step function.
+
+```{r}
+library(recipes)
+is_dummy <- vapply(okc_train, function(x) length(unique(x))==2 & is.numeric(x), logical(1))
+
+dummies <- names(is_dummy)[is_dummy]
+no_dummies <- recipe(Class~., data=okc_train) %>% 
+  step_bin2factor(!!! dummies) %>% 
+  step_zv(all_predictors())
+```
+
+We can also modulate the smoothness of the density estimation for the continuous predictors using the `adjust` option to the `density` function. 
+
+```{r}
+smothing_grid <- expand.grid(usekernel=T, fL=0, adjust=seq(0.5,3.5, by=0.5))
+```
+
+### Naive Bayes training
+
+```{r}
+set.seed(5515)
+nb_mod <- train(
+    no_dummies,
+    data = okc_train,
+    method = "nb",
+    metric = "ROC",
+    tuneGrid = smoothing_grid,
+    trControl = ctrl
+)
+```
+
+Some warnings: ## Warning in FUN(X[[i]], ...): Numerical 0 probability for all classes with observation 1. This is due to the porly calibrated probabilities although the warning is a bit misleading. This issue does not generally affect performance and can be ignored. 
+
+### NAive Bayes resampling profile
+
+### Three ROC curves
+```{r}
+library(pROC)
+plot.roc(cart_mod$pred)
+plot.roc(cart_bag$pred, col="red", add=TRUE)
+#plot.roc(nb_mod$pred, col="blue", add=TRUE)
+```
+
+## Finalizing the model and predicting the test set
+
+### Formally comparing the models
+As before:
+```{r}
+rs <- resamples(
+  list(CART=cart_mod, Bagged=cart_bag, Bayes=nb_mod)
+)
+
+library(tidyposterior)
+roc_mod <- perf_mod(rs, seed=2560, iter=5000)
+```
+
+```{r}
+roc_dist <- tidy(roc_mod)
+summary(roc_dist)
+```
+
+```{r}
+differences <-
+    contrast_models(
+        roc_mod,
+        list_1 = c("Bagged", "Bayes"),
+        list_2 = c("CART", "Bagged"),
+        seed = 650
+    )
+```
+
+### Summarizing the results
+```{r}
+summary(differences, size=0.025)
+```
+
+```{r eval=FALSE}
+differences %>% 
+  mutate(contrast=paste(model_2, "vs",model_1)) %>% 
+  ggplot(aes(x=difference, col=contrast))+
+  geom_line(stat="density")+
+  geom_vline(xintercept=c(-0.025,0.025),lty=2)
+```
+
+### Test set results
+```{r eval=FALSE}
+test_res <- okc_test %>% 
+  dplyr::select(Class) %>% 
+  mutate(
+    prob=predict(nb_mod, okc_test,type="prob")[,"stem"],
+    pred=predict(nb_mod, okc_test)
+  )
+
+roc_curve <- roc(test_res$Class, test_res$prob, levels=c("other","stem"))
+```
+
+### Test set ROC curve
+```{r eval=FALSE}
+plot(
+	roc_curve,
+	print.thres = .5,
+	print.thres.pattern = "cut = %.2f (Sp = %.3f, Sn = %.3f)",
+	legacy.axes = TRUE
+)
+
+```
+
+### Test set class probabilities
+```{r eval=FALSE}
+roc_curve
+getTrainPerf(nb_mod)
+
+# Slide 64
+ggplot(test_res, aes(x = prob)) + geom_histogram(binwidth = .04) + facet_wrap(~Class)
+```
+
+
+
+
+
