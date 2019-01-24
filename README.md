@@ -35,7 +35,10 @@ From 2018 to 2019 January
 https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/   
 https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
-## Hands-on Machine Learning  
+## Tidymodels  
+Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
+
+
 
 
 
