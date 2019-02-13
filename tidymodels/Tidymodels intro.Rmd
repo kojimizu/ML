@@ -1,0 +1,2790 @@
+---
+title: "Tidyverse and Tidymodels packages"
+author: "Koji Mizumura"
+date: "December 22nd,2018 - `r Sys.Date()`"
+always_allow_html: yes
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    number_sections: yes
+    section_divs: yes
+    theme: "readable"
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+# Broom
+## [Broom by blog post by David Robinson](http://varianceexplained.org/r/broom-intro/)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(recipes)
+library(broom)
+```
+
+The concept of "tidy data" offers a powerful framework for data manipulation, analysis and visualization. Popular packages like `dplyr`, `tidyr` and `ggplot2` take greate advantage of this framework. Please explore several recent posts by others.
+
+But there is an important step in a tidy data workflow that so far has been missing: the __output__ of R statistical modeling functions isn't tidy, meaning it's difficult to manipulate and recombine in downstream analyses and visualizations. Hadley's paper makes a convincing statement of this problem.
+
+> While model inputs usually require tidy inputs, such attention to detail doesnÅft carry over to model outputs. Outputs such as predictions and estimated coefficients arenÅft always tidy. This makes it more difficult to combine results from multiple models. For example, in R, the default representation of model coefficients is not tidy because it does not have an explicit variable that records the variable name for each estimate, they are instead recorded as row names. In R, row names must be unique, so combining coefficients from many models (e.g., from bootstrap resamples, or subgroups) requires workarounds to avoid losing important information. This knocks you out of the flow of analysis and makes it harder to combine the results from multiple models. IÅfm not currently aware of any packages that resolve this problem.
+
+In this [new paper](https://arxiv.org/abs/1412.3565) I introduce the broom package available on CRAN, which bridges the gap from untidy outputs of predictions and estimations to the tidy data we want to work with. It takes the messy output of built-in statistical functions in R, such as `lm`, `nls`, `kmeans`, or `t.test` as well as popular third-party packages, like `gam`, `glmnet`, `survival` or `lme4`, and turns them into tidy data frames. This allows the results to be handed to other tidy packages for downstream analysis: they can be recombined using dplyr or visualized using ggplot2.
+
+## Three key components
+
+1. `tidy()`: summarize information about fit components
+2. `glance()`: report goodness of fit measures
+3. `augment()`: add information about observations to a dataset
+
+### Example: linear regression
+
+As a simple example, consider alinear regression on the built-in `mtcars` dataset:
+```{r}
+fit <- lm(mpg~wt+qsec, data=mtcars)
+summary(fit)
+```
+
+This summary shows many kinds of statistics describing the regression: coefficient estimates and p-values, information about the residuals, and model statistics like $R^2$ and the F-statistics. But, this format isnÅft convenient if you want to combine and compare multiple models, or plot it using ggplot2: you need to turn it into a data frame.
+
+The broom package provides three tidying methods for turning the contents of this object into a data frame, depending on the level of statistics youÅfre interested in. If you want statistics about each of the coefficients fit by the model, use the `tidy()` method:
+
+```{r}
+broom::tidy(fit)
+```
+
+
+Note that the rownames are now added as a column, `term`, meaning that the data can be combined with other models. Note also that the columns have been given names like `std_error` and `p.value` that are more easily accessed than `std_error` and `Pr(>|t|)`. This is true of all data frames broom returns: they're designed so they can be processed in additional steps.
+
+If you are interested in extracting __per-observation information__, such as fitted values and residuals, use the `argument` method, which adds these to the original data.
+
+```{r}
+fit %>% 
+  broom::augment()
+```
+
+Finally, `glance()` computes per-model statistics such as $R^2$, `AIC`, `BIC`:
+```{r}
+fit %>% 
+  glance()
+```
+
+The `tidy` method makes it easy to construct coefficient plots using __ggplot2__:
+```{r}
+
+library(ggplot2)
+
+td <- fit %>% 
+  broom::tidy(conf.int=TRUE)
+
+td %>% head()
+
+ggplot(td, aes(estimate, term, color = term)) +
+    geom_point() +
+    geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+    geom_vline(xintercept = 0)
+```
+
+When combined with dplyr's `group_by` and `do`, __broom__ also lets you perform regression within groups, such as within automatic and manual cars separately;
+
+```{r}
+library(dplyr)
+
+mtcars %>% 
+  group_by(am) %>% 
+  do(broom::tidy(lm(mpg ~ wt, .)))
+```
+
+This is useful for performing regressions or other analyses within each gene, country, or any other kind of division in your tidy dataset.
+
+### Using tidiers for visualization with ggplot2
+
+The broom package provides tidying methods for many otherp packages as well. These tidiers serve to connect various statistical models seamlessly with packages like `dplyr` and `ggplot2` . For instance, we could create a LASSO regression with the `glmenet` package.
+
+```{r glmnet_model, message=FALSE, warning=FALSE}
+library(glmnet)
+set.seed(03-19-2015)
+
+# generate data with 5 real variables and 45 null, on 100 observations
+
+nobs <- 100
+nvar <- 50
+real <- 5
+x <- matrix(rnorm(nobs*nvar), nobs)
+beta <- c(rnorm(real, 0,1), rep(0, nvar - real))
+y <- c(t(beta) %*% t(x)) + rnorm(nvar, sd=3)
+
+glmnet_fit <- cv.glmnet(x,y)
+```
+
+Then, we tidy it with broom and plot it using `ggplot2`:
+
+```{r glmnet_visualization}
+
+tidied_cv <- glmnet_fit %>% broom::tidy()
+glance_cv <- glmnet_fit %>% broom::tidy()
+
+tidied_cv %>% ggplot(aes(lambda, estimate))+
+  geom_line(color="red")+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, alpha = .2))+
+  scale_x_log10()
+  # geom_vline(xintercept = glance_cv$lambda.min) +
+  # geom_vline(xintercept = glance_cv$lambda.1se, lty = 2)
+```
+
+By plotting with ggplot2, rather than relying on glmnet's built in plotting methods, we gain access to all the tools and framework of the package. This allows us to customize or add attributes, or even to cmplare multiple LASSO cross-validations in the same plot. 
+
+The same is true of the [survivial](https://cran.r-project.org/web/packages/survival/index.html) package.
+
+```{r}
+
+library(survival)
+
+surv_fit <- survfit(coxph(Surv(time, status) ~ age + sex, lung))
+td <- broom::tidy(surv_fit)
+ggplot(td, aes(time, estimate))+ geom_line()+
+  geom_ribbon(aes(ymin=conf.low, ymax=conf.high),alpha=.2)
+``` 
+
+Others have explored how `broom` can help visualize [random effects estimated with lme4](https://rstudio-pubs-static.s3.amazonaws.com/38628_54b19baf70b64eb5936a3f1f84beb7da.html). Other packages for which tidiers are implemented include gam, zoo, lfe, and multcomp.
+
+The vignettes for the broom package offer other useful examples, including one on [combining broom and dplyr](https://cran.r-project.org/web/packages/broom/vignettes/broom_and_dplyr.html), a demonstration of [bootstrapping with broom](https://cran.r-project.org/web/packages/broom/vignettes/bootstrapping.html), and a simulation of [k-means clustering](https://cran.r-project.org/web/packages/broom/vignettes/kmeans.html). The broom manuscript offers still more examples.
+
+Tidying model outputs is not an exact science, and it is based on a judgment of the kinds of values a data scientist typically wants out of a tidy analysis (for instance, estimates, test statistics, and p-values). It is my hope that data scientists will propose and contribute their own features feature requests are welcome!) to help expand the universe of tidy analysis tools. 
+
+## Visualizing Imer model random effects
+
+I will be exploring the differences between three models:
+
+```{r eval=FALSE}
+library(lme4)
+subj_intercepts_mod <- lmer(rt ~ A + (1|Subject))
+subjA_intercepts_mod <- lmer(rt ~ 1 + (1|Subject:A))
+subj_slopes_mod <- lmer(rt ~ A + (A|Subject))
+```
+
+Granted, the second model is rarely encounted in practice. More common would be a nested structure (see this  [crossvalidated post](https://stats.stackexchange.com/questions/121504/how-many-random-effects-to-specify-in-lmer))
+
+```{r eval=FALSE}
+lmer(rt ~ 1 + (1|Subject) + (1|Subject:A))
+## the above random effects structure is often written as `(1|Subject/A)` the 
+## same way `y ~ A + B + A:B` is usually written as `y ~ A * B`.
+```
+
+Even though the non-nested `(1|)`
+
+I will work with a modified version of the sleepstudy dataset from `lme4`.
+```{r message=FALSE}
+library(lme4)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(broom)
+library(stringr)
+```
+
+```{r}
+head(sleepstudy)
+
+example <- sleepstudy %>% 
+  mutate(A = ifelse(Days<5, -0.5, 0.5)) %>% 
+  select(Subject, A, Reaction)
+
+example %>% head(n=11)
+```
+
+Let's plot means using `ggplot` and `stat_summary` functions.
+
+```{r}
+base_plot <- ggplot(example, aes(x=A, y=Reaction))+
+  stat_summary(aes(fill=factor(A)), fun.y=mean, geom="bar")+
+  scale_fill_manual(values=c("#66c2a5", "#8da0cb"))+ #colorbrewer2.rog
+  theme(legend.position = "above")
+
+base_plot
+```
+
+### Part1: subj_intercepts_mod
+First, I will fit an `lmer` model that allows the intercept to vary across subjects.
+
+```{r}
+subj_intercepts_mod <- lmer(Reaction ~ A + (1|Subject), data=example)
+# broom::tidy turns fixef(subj_intercepts_mod)` into a data.frame
+
+fixed_params <- subj_intercepts_mod %>% 
+  broom::tidy(effects="fixed") %>% 
+  select(term, estimate)
+
+fixed_params
+```
+
+Although its sometimes helpful to think about model parameters (and you can draw them easily with `ggplot::geom_abline()`), I find it more beneficial in a simple design like this to deal in estimates. I will write a little function to speed up this conversion that seems like overkill now but it will come in handy later.
+
+```{r}
+# converts parameters of a `Reaction ~ (Intercept) + A` model into estimates,
+# assumes A is a 0-centered, unit-weighted, dichotomous variable
+
+convert_parameters_to_estimates <- function(tidy_frame,id_var="."){
+  tidy_frame %>% 
+    dcast(as.formula(paste(id_var, "term", sep="~")), value.var = "estimate") %>% 
+    mutate(`-0.5` = `(Intercept)` - A/2, `0.5` = `(Intercept)` + A/2) %>%
+    select(-`(Intercept)`, -A) %>%
+    melt(idvars = id_var, measure.vars = c("-0.5", "0.5"),
+         variable.name = "A", value.name = "Reaction") %>%
+    mutate(A = as.numeric(as.character(A)))
+}
+
+fixed_estimates <- convert_parameters_to_estimates(fixed_params)[,c("A","Reaction")]
+
+fixed_estimates
+```
+
+```{r}
+#sanity check
+example %>% 
+  group_by(A) %>% 
+  summarise(Reaction = mean(Reaction)) %>% 
+  merge(., fixed_estimates, by="A", suffixes = c("_mean", "_model"))
+```
+
+It is possible to turn parameters from the model into estimates that make sense; now let's do the same thing with random effects. How will the model's random effect parameters, when converted to estimates, compare to the average for each subject that we can calculate by hand?
+
+```{r eval = FALSE}
+random_params <- broom::tidy(subj_intercepts_mod, effect = "random")
+random_estimates <- convert_parameters_to_estimates(random_params, id_var = "level")
+
+fixed_slopes_plot <- base_plot + 
+  geom_point(data = random_estimates, shape = 17, size = 3) +
+  geom_line(aes(group = level), data = random_estimates)
+fixed_slopes_plot
+```
+
+```{r eval = FALSE}
+fixed_slopes_plot +
+  stat_summary(aes(group = Subject), fun.y = mean,  # means from raw data
+               geom = "point", shape = 19, size = 4, color = "#fc8d62", alpha = 0.6)
+```
+
+Of course, the reason the two sets of points don't line up is because we are only allowing the subject's overall Reaction to vary, not the subject's overall Reaction in each condition. Applying the same slope to each subject, this is the best we can do to account for variance.
+
+```{r eval = FALSE}
+base_plot+
+  geom_line(aes(group = level), data = random_estimates)+
+  ## calculate mean Reaction by subject using `stat_summary`
+  stat_summary(aes(x=0.0, y=Reaction, group=level), data = random_estimates, fun.y = mean, geom = "point", shape = 17, size = 3) +
+  stat_summary(aes(x=0.0, group=Subject), fun.y = mean,
+               geom = "point", shape = 19, size = 4, color = "#fc8d62", alpha = 0.6)
+```
+
+A model that allows intercepts to vary across subjects does just that: it does a great job of estimating overall Reaction for each subject, but it is limited in estimating the effect of `A` on Reaction.
+
+### Part2: subjA_intercepts_mod
+
+We are looking for a way to capture the fact that all of the following by-subject lines don't have the same slope.
+
+```{r}
+subj_means_plot <- base_plot +
+  stat_summary(aes(group = Subject), fun.y = mean, geom = "point", shape =19, size =4, color = "#fc8d62")+
+  stat_summary(aes(group = Subject), fun.y = mean, geom = "line", size = 1.2, color = "#fc8d62")
+```
+
+One way to give the model some flexibility would be to "serve the connection" between the measurements on the left bar from those in the right bar.
+
+```{r eval=FALSE}
+example$SubAject <- with(example, paste(Subject, A, sep = ":"))
+subjA_intercepts_mod <- lmer(Reaction ~ 1 + (1|SubAject), data = example)
+```
+
+Why make a new, hideously-named variable `SubAject`? Because if the model can't understand the relationship between `Subject` and `A`, I shouldn't be able to either! We've severed the connection between scores on the left and scores on the right, and given the model more flexibility to estimate the effects.
+
+Of course, nothing is preventing 
+
+
+## [broom and dplyr](https://broom.tidyverse.org/articles/broom_and_dplyr.html)
+
+While broom is useful for summarizing the result of a single analysis in a consistent format, it is really designed for high-throughput applications, where you must combine results from multiple analyses. These could be subgrouped of data, analyses using different models, bootstrap replicates, permutations, and so on. In particular, it plays well with the `nest/unnest` functions in `tidyr` and the `map` function in `purrr`.
+
+For `purrr` package, please refer this [RStudio tutorial](https://www.rstudio.com/resources/videos/happy-r-users-purrr-tutorial/).
+
+Let's try this on a simple dataset, the built-in `Orange`. We start by coercing `Orange` to a `tibble`. This gives a nicer method that will especially useful later on when we start working with list-columns.
+
+```{r}
+library(broom)
+library(tibble)
+
+data("Orange")
+
+
+Orange <- as_tibble(Orange)
+Orange
+```
+
+This contains 35 observations of three variables: `Tree`, `age` and `circumference`. `Tree` is a factor with five levels describing five trees. As might be expected, age and circumference are correlated:
+
+```{r}
+cor(Orange$age, Orange$circumference)
+
+ggplot2::ggplot(Orange,
+                aes(age, circumference, color=Tree))+
+  geom_line(size=1)+
+  theme_minimal()
+```
+
+Suppose you want to test for correlations individually within each tree. You can do this with dplyr's `group_by`:
+
+```{r}
+library(dplyr)
+
+Orange %>% 
+  group_by(Tree) %>% 
+  summarise(correlations=cor(age,circumference))
+```
+
+Note that the correlations are much higher than the aggregated one, and furthermore we can now see it is similar across trees. Suppose that instead of simply estimating a correlation, we want to perform a hypothesis test with `cor.test`:
+
+```{r}
+ct <- cor.test(Orange$age, Orange$circumference)
+ct
+```
+
+This contains multiple values we could want in our output. Some are vectors of length 1, such as the p-value and the estimate, and some are longer, such as the confidence interval. We can get this into a nicely organized tibble using the `tidy` function:
+
+```{r}
+ct %>% broom::tidy()
+```
+
+Often, we want to perform multiple tests or fit multiple models, each on different part of the data. In this case, we recommend a `nest-map-unnest` workflow. For example, suppose we want to perform correlation tests for each different tree. We start by `nest` ing our data based on the group of interest.
+
+```{r message=FALSE, warning=FALSE}
+library(tidymodels)
+library(tidyverse)
+
+nested <- Orange %>% 
+  nest(-Tree)
+
+nested 
+```
+
+Then we run a correlation test for each nested tibble using `purrr::map`:
+```{r}
+nested %>% 
+  mutate(test = map(data, ~ cor.test(.x$age, .x$circumference)))
+
+# i come up with this formula - does this work as well?
+nested %>% 
+  mutate(test = map(data, ~ cor.test(.$age, .$circumference)))
+```
+
+This results in a list-column of S3 objects. We want to tidy each of the objects, which we can also do with `map`.
+
+```{r}
+nested %>% 
+  mutate(
+    test   = map(data, ~ cor.test(.x$age, .x$circumference)), # S3 list-col
+    tidied = map(test, broom::tidy)
+  ) %>% 
+  select(Tree, tidied) %>% 
+  unnest()
+
+nested2 <- nested %>% 
+  mutate(
+    test   = map(data, ~ cor.test(.x$age, .x$circumference)), # S3 list-col
+    tidied = map(test, broom::tidy)
+  )
+  
+nested2 %>% 
+  select(Tree, tidied) %>% 
+  unnest()
+```
+
+Finally, we want to unnest the tidied data frames so we can see the results in a flat tibble. All together, this looks like:
+```{r}
+Orange %>% 
+  nest(-Tree) %>% 
+  mutate(
+    test = map(data, ~ cor.test(.x$age, .x$circumference)), # S3 list-col
+    tidied = map(test, broom::tidy)
+  ) %>% 
+  unnest(tidied, .drop = TRUE)
+```
+
+Note that the `.drop` argument to tidyr::unnest is often useful. This workflow becomes even more useful when applied to regression. Untidy output for a regression looks like:
+
+```{r}
+
+lm_fit <- lm(age ~ circumference, data=Orange)
+summary(lm_fit)
+
+Orange %>% 
+  ggplot()+
+  geom_point(aes(x=circumference, y=age))+
+  geom_abline(xintercept=lm_fit$coefficients[[1]], slope=lm_fit$coefficients[[2]])
+```
+
+where we tidy these results, we get multiple rows of output for each model:
+```{r}
+broom::tidy(lm_fit)
+```
+
+Now we can handle multiple regressions at once using exactly the same workflow as before:
+```{r}
+Orange %>% 
+  nest(-Tree) %>% 
+  mutate(
+    fit    = map(data, ~ lm(age~circumference, data=.x)),
+    tidied = map(fit, broom::tidy)
+  ) %>% 
+  unnest(tidied)
+```
+
+You can just as easily use multiple predictors in the regressions, as shown here on the `mtcars` dataset. We nest the data into automatic and manual cars (the `am` column), then peform the regression within each nested tibble.
+
+```{r}
+data("mtcars")
+mtcars <- as_tibble(mtcars) # to play nicely with list-cols
+mtcars
+```
+
+```{r}
+mtcars %>% 
+  nest(-am) %>% 
+  mutate(
+    fit    = map(data, ~ lm(wt ~ mpg + qsec + gear, data=.x)),
+    tidied = map(fit, broom::tidy)
+  ) %>% 
+  unnest(tidied)
+```
+
+What if you want not just the `tidy` output, but the `argument` and `glance` outputs as well, while still performing each regression only once? Since we are using list-columns, we can just fit the model once and use multiple list-columns to store the tidied, glanced and augmented outputs. 
+
+```{r}
+regressions <- mtcars %>% 
+  nest(-am) %>% 
+  mutate(
+    fit     = map(data, ~ lm(wt ~ mpg + qsec + gear, data = .x)),
+    tidied  = map(fit, broom::tidy),
+    glanced = map(fit, glance),
+    augumented = map(fit, augment)
+  )
+
+regressions %>% 
+  unnest(tidied)
+```
+
+```{r}
+regressions %>% 
+  unnest(glanced, .drop=T)
+```
+
+```{r}
+regressions %>% 
+  unnest(augumented)
+
+regressions %>% 
+  unnest(augumented) %>% 
+  ggplot(aes(x=wt, y=.fitted))+
+  geom_point()
+```
+
+By combining the estimates and p-values across all groups into the same tidy data frame (instead of a list of output model objects), a new class of analyses and visualizations becomes straightforward. This includes
+
+- Sorting by p-value or estimate to find the most significant terms across all tests
+- P-value histograms
+- Volcano plots comparing p-values to effect size estimates
+
+In each of these cases, we can easily filter, facet, or distinguish based on the term column. In short, this makes the tools of tidy data analysis available for the results of data analysis and models, not just the inputs.
+
+## [Tidy bootstrapping](https://cran.r-project.org/web/packages/broom/vignettes/bootstrapping.html)
+
+Another place where combining model fits in a tidy way becomes useful is when performing bootstrapping or permutation tests. These approach have been explored, for instance, by 
+[Andrew MacDonald here](http://rstudio-pubs-static.s3.amazonaws.com/19698_a4c472606e3c43e4b94720506e49bb7b.html), and [Hadley has explored efficient support for bootstrapping](https://github.com/hadley/dplyr/issues/269) as a potential enhancement to dplyr. broom fits naturally with dplyr in performing these analyses.
+
+Bootstrapping consists of randomly sampling a dataset with replacement, then performing the analysis individually on each bootstrapped replicate. The variation in the resulting estimate is then a reasonable approximation of the variance in our estimate.
+
+Let's say we want to fit a nonlinear model to the weight/mileage relationship in the `mtcars` dataset.
+
+```{r}
+library(ggplot2)
+ggplot(mtcars, aes(mpg, wt)) + 
+    geom_point()
+```
+
+We might use the method of nonlinear least squares (via the `nls` function) to fit a model. 
+```{r}
+nlsfit <- nls(mpg~k/wt+b,
+              data = mtcars,
+              start = list(k=1, b=0))
+
+summary(nlsfit)
+
+ggplot(mtcars, aes(wt,mpg))+
+  geom_point()+
+  geom_line(aes(y=predict(nlsfit)))
+```
+
+While this does provide a p-value and confidence intervals for the parameters, these are based on model assumptions that may not hold in real data. Bootstrapping is a popular method for providing confidence intervals and predictions that are more robust to the nature of the data.
+
+We cna use the `bootstraps` function in the `rsample` package to sample bootstrap replications. First, we construct 100 bootstrap replications of the data, each of which as been randomly sampled with replacement. The resulting object is an `rset`, which is a dataframe with a column of `rsplit` objects.
+
+an `rsplit` object has two main components: an analysis dataset and an assessment dataset, accessible via `analysis(rsplit)` and `asessement(rsplit)` respectively. For bootstrap samples, the analysis dataset is the bootstrap sample itself, and the assessment dataset consists of all the out of bag samples.
+
+```{r bootstrap-prerequisites}
+library(dplyr)
+library(rsample)
+library(broom)
+library(purrr)
+```
+
+```{r bootstrap}
+set.seed(27)
+boots <- rsample::bootstraps(mtcars, times = 100)
+
+boots %>% head()
+boots$splits[[1]]
+```
+
+We create a helper function to fit an `nls` model on each bootstrap sample, and then use `purrr::map` to apply this to function to all the bootstrap samples at once. Similarly, we create an column of tidy coefficient information by unnesting.
+
+```{r}
+fit_nls_on_bootstrap <- function(split) {
+    nls(mpg ~ k / wt + b, analysis(split), start = list(k = 1, b = 0))
+}
+
+boot_models <- boots %>% 
+    mutate(model = map(splits, fit_nls_on_bootstrap),
+           coef_info = map(model, broom::tidy))
+
+boot_coefs <- boot_models %>% 
+  unnest(coef_info)
+```
+
+The unnested coefficient information contains a summary of each replication combined in a single data frame:
+```{r}
+boot_coefs
+```
+
+We can then calculate confidence intervals (using what is called the [percentile method](https://www.uvm.edu/~dhowell/StatPages/Randomization%20Tests/ResamplingWithR/BootstMeans/bootstrapping_means.html))
+
+```{r}
+alpha <- .05
+boot_coefs %>% 
+  group_by(term) %>% 
+  summarise(
+    low  = quantile(estimate, alpha /2),
+    high = quantile(estimate, 1-alpha/2)
+  )
+```
+
+or we can use histograms to get a more detailed idea of the uncertainty in each estimate:
+```{r}
+ggplot(boot_coefs, aes(estimate))+
+  geom_histogram(binwidth = 2)+
+  facet_wrap(~term, scales = "free")
+```
+
+or we can use `augment` to visualize the uncertainty in the curve.
+
+```{r}
+boot_aug <- boot_models %>% 
+  mutate(augmented = map(model,augment)) %>% 
+  unnest(augmented)
+
+boot_aug
+```
+
+```{r}
+ggplot(boot_aug, aes(wt, mpg))+
+  geom_point()+
+  geom_line(aes(y=.fitted,group=id),alpha=.2)
+```
+
+With only a few small changes, we could easily perform bootstrapping with other kinds of predictive or hypothetical tesing models, since the `tidy` functions work for many statistical outputs. As another example, we could use `smooth.spline` which fits a cubic smoothing spline to data:
+
+```{r}
+fit_spline_on_bootstrap <- function(split){
+  data <- analysis(split)
+  smooth.spline(data$wt, data$mpg, df=4)
+}
+
+boot_splines <- boots %>% 
+  mutate(spline    = map(splits, fit_spline_on_bootstrap),
+         aug_train = map(spline, augment))
+
+splines_aug <- boot_splines %>% 
+  unnest(aug_train)
+
+ggplot(splines_aug, aes(x,y,))+
+  geom_point()+
+  geom_line(aes(y = .fitted,group = id), alpha = .2)
+```
+
+
+## [kmeans with dplyr and broom](https://cran.r-project.org/web/packages/broom/vignettes/kmeans.html)
+
+### Tidy k-means clustering
+K-means clustering serves as a very useful example of tidy data, and especially the distinction between the three tidying functions: `tidy`, `agument` and `glance`.
+
+Let's start by generating some random two-dimensional data with three clusters. Data in each cluster will come from a multivariate gaussian distribution with different means for each cluster:
+
+```{r k-means-prerequisites}
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(tibble)
+library(tidyr)
+```
+
+```{r k-means-tidy-way}
+set.seed(27)
+
+centers <- tibble(
+  cluster = factor(1:3),
+  num_points = c(100, 150, 50), # the number in each cluster
+  x1 = c(5, 0, -3), # x1 coordinate of cluster center
+  x2 = c(-1, 1, -2) # x2 coordinate of cluster center
+)
+
+labeled_points <- centers %>% 
+  mutate(
+    x1 = map2(num_points, x1, rnorm),
+    x2 = map2(num_points, x2, rnorm)
+  ) %>% 
+  select(-num_points) %>% 
+  unnest(x1, x2)
+
+ggplot(labeled_points, aes(x1, x2, color=cluster))+
+  geom_point()
+
+```
+
+This is an ideal case for k-means clustering. We'll use the built-in `kmeans` function, which accepts a data frame with all numeric columns as its prinary argument.
+
+```{r}
+points <- labeled_points %>% 
+  select(-cluster)
+
+points %>% head()
+
+kclust <- kmeans(points, centers = 3)
+kclust
+
+summary(kclust)
+```
+
+The output is a list of vectors, where each component has a different length. There's one of length 300: the same as our original dataset. There are number of elements of length 3: `withiness`, `tot.withiness` and `betweeness` and `centers` is a matrix with 3 rows. And then there are the elements of length 1: `totss`, `tot.withiness`, `betweenss` and `iter`.
+
+These differing lengths have a deeper meaning when we want to tidy our dataset: they signify that each type of component communicates a _different kind_ of information.
+
+- `cluster` (300 values) contains information about each _point_
+- `centers`, `withinss` and `size` (3 values) contain information about each _cluster_
+- `totss`, `tot.withinss`, `betweenss`, and `iter` (1 value) contain information about the _full clustering_
+
+Which of these do we want to extract? There is no right answer: each of them may be interesting to an analyst. Because they communicate entirely different information (not to mention there is no straightfoward way to combine them), they are extracted by separate functions. `augment` adds the point classifications to the original dataset:
+
+```{r k-means-tidy}
+library(broom)
+broom::augment(kclust, points)
+```
+
+The `tidy` function summarizes on a per-cluster level:
+```{r}
+broom::tidy(kclust)
+```
+
+And as it always does, the `glance` function extracts a single-row summary:
+```{r}
+glance(kclust)
+```
+
+
+### broom and dplyr for exploratory clustering
+While these summaries are useful, they would not have been too difficult to extract out from the dataset yourself. The real power comes from combining these analyses with dplyr.
+
+Let's say we want to explore theeffects of different choices of `k`, from 1 to 9, on this clustering. First, cluster the data 9 times, each using a different value of `k`, then create columns containing the tidied, glanced and augmented data:
+
+```{r}
+kclusts <- tibble(k = 1:9) %>%
+  mutate(
+    kclust = map(k, ~kmeans(points, .x)),
+    tidied = map(kclust, broom::tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, points)
+  )
+
+kclusts
+```
+
+We can turn these into three separate datasets each representing a different type of data: Then tidy the clusterings three ways: using `tidy`, using `augment`, and using `glance`. Each of these goes into a separate dataset as they represent different types of data.
+
+```{r k-means-results-tidy-way}
+clusters <- kclusts %>%
+  unnest(tidied)
+
+assignments <- kclusts %>% 
+  unnest(augmented)
+
+clusterings <- kclusts %>% 
+  unnest(glanced, .drop=TRUE)
+```
+
+Now we can plot the original points, with each point colored according to the predicted cluster.
+
+```{r}
+p1 <- ggplot(assignments, aes(x1, x2))+
+  geom_point(aes(color=.cluster))+
+  facet_wrap(~k)
+
+p1
+```
+
+Already we get a good sense of the proper number of clusters (3), and how the k-means algorithm functions when k is too high or too low. We can then add the centers using the data from `tidy`:
+
+```{r}
+p2 <- p1 + geom_point(data=clusters, size=3, shape="X")
+p2
+```
+
+The data from `glance` fits a diffrent but equally important purpose: it lets you view trends of some summary statistics across values of `k`. Of particular interest is the total within sum of squares, saved in the `tot.withinss` column.
+
+```{r}
+ggplot(clusterings, aes(k, tot.withinss))+
+  geom_line()
+```
+
+This represents the variance within clusters. It decreases as `k` increases, but one can notice a bed (or elborw) right at k=3. This bend indicates that additional clusters beyond the third little value. (See [here](http://web.stanford.edu/~hastie/Papers/gap.pdf) for a more mathematically rigorous interpretation and implementation of this method). Thus, all three methods of tidying data provided by `broom` are useful for summarizing clustering output.
+
+## Rererence
+[Broom Vignette](https://broom.tidyverse.org/)
+
+# `rsample`
+`rsample` contains a set of functions that can create different types of resamples and corresponding classses for their analysis. The goal is to have modular set of methods that can be used across different R packages for:
+
+- traditional resampling techniques for estimating the sampling distribution of a statistic and
+- estimating model performance using a holdout set
+
+The scope of `rsample` is to provide the basic building blocks for creating and analyzing resamples of a data set but does not include for modeling or calculating statistics. The "Workking with Resample Sets" vignette gives demonstrations of how `rsample` tools can be used.
+
+```{r eval=FALSE}
+install.packages("rsample")
+
+# for the devel version::
+require(devtools)
+devtools::install_github("tidymodels/rsample")
+```
+
+Note that resampled data sets created by `rsample` are directly accessible ina resampling object but do not contain much overhead in memory. Since the original data is not modified, R does not make an automatic copy.
+
+For example, creating 50 bootstraps of a data set does not create an object that is 50-fold larger inmemory.
+```{r}
+library(rsample)
+library(mlbench)
+library(pryr)
+
+data(LetterRecognition)
+object_size(LetterRecognition)
+
+set.seed(35222)
+boots <- rsample::bootstraps(LetterRecognition, times=50)
+
+object_size(boots)
+
+# object size per resample
+object_size(boots)/nrow(boots)
+
+# Fold increase is <<< 50
+as.numeric(object_size(boots)/object_size(LetterRecognition))
+```
+
+
+
+## Nested resampling
+
+```{r nested-sampling-setup, include=FALSE}
+library(rsample)   
+library(purrr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(mlbench)
+library(kernlab)
+theme_set(theme_bw())
+```
+
+(A version of this article was originally published in the [_Applied Predictive Modeling_ blog](http://appliedpredictivemodeling.com/blog/2017/9/2/njdc83d01pzysvvlgik02t5qnaljnd))
+
+A typical scheme for splitting the data when developing a predictive model is to create an initial split of the data into a training and test set. If resampling is used, it is executed on the training set. A series of binary splits is created. In `rsample`, we use the term _analysis set_ for the data that are used to fit the model and _assessment set_ is used to compute performance
+
+A common method for tuning models is grid search where a candidate set of tuning parameters is created. The full set of models for every combination of the tuning parameter grid and the resamples is created. Each time, the assessment data are used to measure performance and the average value is determined for each tuning parameter.
+
+The potential problem is, once we pick the tuning parameter associated with the bet performance, this performance value is usually quoted as the performance of the model. There is a serious potential for _optimization bias_ since we uses the same data to tune the model and quote performance. This would result in an optimistinc estimate of performance.
+
+Nested resampling does an additional layer of resampling that separates the tuning activities from the process used to estimate the efficacy of the model. An _outer_ resampling scheme is used and, for every split in the outer resample, another full set of resampling splits are created on the original analysis set. For example, if 10-fold cross-validation is used on the outside and 5-fold cross-validation on the inside, a total of 500 models will be fit. The parameter tuning will be conducted 10 times and thebest parameters are determined from the average of the 5 assessment sets. This process occurs 10 times.
+
+We will simulate some regression data to illustrate the methods. The `mlbench` function `mlbench::mlbench.friedman1` can simulate a complex regression data structure from the [original MARS publication](https://scholar.google.com/scholar?hl=en&q=%22Multivariate+adaptive+regression+splines%22&btnG=&as_sdt=1%2C7&as_sdtp=). A training set size of 100 data points are generated as well as a large set that will be used to characterize how well the resampling procedure performed.  
+
+```{r sim-data}
+library(mlbench)
+sim_data <- function(n){
+  tmp <- mlbench.friedman1(n, sd=1)
+  tmp <- cbind(tmp$x, tmp$y)
+  tmp <- as.data.frame(tmp)
+  names(tmp)[ncol(tmp)] <- "y"
+  tmp
+}
+
+set.seed(9815)
+train_dat <- sim_data(100)
+large_dat <- sim_data(10^5)
+
+train_dat %>% head()
+train_dat %>% dim()
+```
+
+To get started, the types of resampling methods need to be specified. This isn't a large data set, so 5 repeates of 10-fold cross validation will be used as the _outer_ resampling method that will be used to generate the estimate of overall performance. To tune the model, it would be good to have precise estimates for each of the values of the tuning parameter so 25 iterations of the bootstrap will be used. 
+fit 
+This means that there will eventually be `5 * 10 * 25 = 1250` models that are fit to the data per tuning parameter. These will be discarded once the performance of the model has been quantified.
+
+```{r tibble-gen}
+library(rsample) 
+results <- nested_cv(train_dat, 
+                     outside = vfold_cv(repeats = 5), 
+                     inside = bootstraps(times = 25))
+results
+```
+
+The splitting information for each resample is contained in the `split` objects. Focusing on the second fold of the first repeat:
+
+```{r split-example}
+results$splits[[2]]
+```
+
+`<90/10/100>` indicates the number of data in the analysis set, assessment set, and the original data. 
+
+Each element of `inner_resamples` has its own tibble with the bootstrapping splits. 
+
+```{r inner-splits}
+results$inner_resamples[[5]]
+```
+
+These are self-contained, meaning that the bootstrap sample is aware that it is a sample of a specific 90% of the data:
+
+```{r inner-boot-split}
+results$inner_resamples[[5]]$splits[[1]]
+```
+
+To start, we need to define how the model will be created and measured. For our example, a __radial basis support vector machine__ model will be created using the function `kernlab::ksvm`. This model is generally thought of as having _two_ tuning parameters: the SVM cost value and the kernel parameter `sigma`. For illustration, only the cost value will be tuned and the function `kernlab::sigest` will be used to estimate `sigma` during each model fit. This is automatically done by `ksvm`. 
+
+After the model is fit to the analysis set, the root-mean squared error (RMSE) is computed on the assessment set. One important note: for this model, it is critical to center and scale the predictors before computing dot products. We don't do this operation here because `mlbench.friedman1` simulates all of the predictors to be standard uniform random variables. 
+
+Our function to fit the model and compute the RMSE is:
+
+```{r rmse-func}
+library(kernlab)
+
+# `object` will be an `rsplit` object from our `results` tibble
+# `cost` is the tuning parameter
+svm_rmse <- function(object, cost = 1) {
+  y_col <- ncol(object$data)
+  mod <- ksvm(y ~ ., data = analysis(object),  C = cost)
+  holdout_pred <- predict(mod, assessment(object)[-y_col])
+  rmse <- sqrt(mean((assessment(object)$y - holdout_pred) ^ 2, na.rm = TRUE))
+  rmse
+}
+
+# In some case, we want to parameterize the function over the tuning parameter:
+rmse_wrapper <- function(cost, object) svm_rmse(object, cost)
+```
+
+For the nested resampling, a model needs to be fit for each tuning parameter and each bootstrap split. To do this, a wrapper can be created: 
+```{r inner-tune-func}
+library(purrr)
+library(dplyr)
+
+# `object` will be an `rsplit` object for the bootstrap samples
+tune_over_cost <- function(object) {
+  results <- tibble(cost = 2 ^ seq(-2, 8, by = 1))
+  results$RMSE <- map_dbl(results$cost, 
+                          rmse_wrapper,
+                          object = object)
+  results
+}
+```
+
+Since this will be called across the set of outer cross-validation splits, another wrapper is required: 
+```{r inner-func}
+# `object` is an `rsplit` object in `results$inner_resamples` 
+summarize_tune_results <- function(object) {
+  # Return row-bound tibble that has the 25 bootstrap results
+  map_df(object$splits, tune_over_cost) %>%
+    # For each value of the tuning parameter, compute the 
+    # average RMSE which is the inner bootstrap estimate. 
+    group_by(cost) %>%
+    summarize(mean_RMSE = mean(RMSE, na.rm = TRUE),
+              n = length(RMSE))
+}
+```
+
+Now that those functions are defined, we can execute all the inner resampling loops:
+
+```{r inner-runs}
+tuning_results <- map(results$inner_resamples, summarize_tune_results) 
+```
+
+`tuning_results` is a list of data frames for each of the 50 outer resamples.
+
+Let's make a plot of the averaged results to see what the relationship is between the RMSE and the tuning parameters for each of the inner bootstrapping operations:
+
+```{r rmse-plot, fig.height=4}
+
+library(ggplot2)
+library(scales)
+
+pooled_inner <- tuning_results %>% bind_rows
+
+best_cost <- function(dat) dat[which.min(dat$mean_RMSE),]
+
+p <- ggplot(pooled_inner, aes(x=cost, y=mean_RMSE))+
+  scale_x_continuous(trans="log2")+
+  xlab("SVM Cost")+ylab("Inner RMSE")
+
+for (i in 1:length(tuning_results)){
+  p <- p + 
+  geom_line(data=tuning_results[[i]], alpha=.2)+
+  geom_point(data=best_cost(tuning_results[[i]]), pch = 16)
+}
+
+p <- p+geom_smooth(data=pooled_inner, se=FALSE)
+p
+```
+
+Each grey line is a separate bootstrap resampling curve created from a different 90% of the data. The blue line is a loess smooth of all the results pooled together. 
+
+To determine the best parameter estimate for each of the outer resampling iterations:
+
+```{r choose, fig.height=4}
+cost_vals <- tuning_results %>% 
+  map_df(best_cost) %>% 
+  select(cost)
+
+results <- bind_cols(results, cost_vals)
+results$cost <- factor(results$cost, levels=paste(2^seq(-2,8,by=1)))
+
+ggplot(results, aes(x=cost))+
+  geom_bar()+
+  xlab("SVM Cost")+
+  scale_x_discrete(drop=FALSE)
+```
+
+Most of the resampling produced and optimal cost values of 2.0 but the distribution is right-skewed due to the flat trend in the resampling profile once the cost value becomes 10 or larger.
+
+Now that we have these estimates, we can compute the outer resampling results for each of the `r nrow(results)` splits using the corresponding tuning parameter value:
+
+```{r run-outer}
+results$RMSE <- map2_dbl(results$splits, results$cost, svm_rmse)
+summary(results$RMSE)
+```
+
+What is the RMSE estimate for non-nested procedure when only the outer resampling method is used? For each cost value in the tuning grid, `r nrow(results)` SVM models are fit and their RMSE values are averaged. The table of cost values and mean RMSE estimates is used to determine the best cost value. The associated RMSE is the biased estimate.
+
+```{r not-nested, fig.height=4}
+
+not_nested <- map(results$splits, tune_over_cost) %>% 
+  bind_rows
+
+outer_summary <- not_nested %>% 
+  group_by(cost) %>% 
+  summarise(outer_RMSE = mean(RMSE),
+            n = length(RMSE))
+outer_summary
+
+ggplot(outer_summary, aes(x = cost, y = outer_RMSE))+
+  geom_point()+
+  geom_line()+
+  scale_x_continuous(trans="log2")+
+  xlab("SVM cost")+ylab("RMSE")
+```
+
+The non-nested procedure estimates the RMSE to be `r round(min(outer_summary$outer_RMSE), 2)`. Both estimates are fairly close. 
+
+```{r large-sample-estimate}
+
+finalModel <- kernlab::ksvm(y~., data=train_dat, C = 2)
+large_pred <- predict(finalModel, large_dat[, -ncol(large_dat)])
+sqrt(mean((large_dat$y - large_pred)^2, na.rm=TRUE))
+```
+
+The nested procedure produces a closer estimate to the approximate truth but the non-nested estimate is very similar.
+
+## Recipes with rsample
+
+```{r recipes-with-rsample-prerequisites}
+library(rsample)
+library(recipes)
+library(purrr)
+```
+
+The [`recipes`](https://topepo.github.io/recipes/)  package contains a data preprocessor that can be used to avoid the potentially expensive formula methods as well as providing a richer set of data manipulation tools than base R can provide. This document uses version `r packageDescription("recipes")$Version` of `recipes`.
+
+In many cases, the preprocessing steps might contain quantities that require statistical estimation of parameters, such as
+
+* signal extraction using principal component analysis
+* imputation of missing values
+* transformations of individual variables (e.g., Box-Cox transformations)
+
+It is critical that any complex preprocessing steps be contained _inside_ of resampling so that the model performance estimates take into account the variability of these steps. Before discussing how `rsample` can use recipes, let's look at an example recipe for the Ames housing data.
+
+### An example recipe
+For illustration, the Ames housing data will be used. There are sale prices of homes along with various other descriptions for the property:
+
+```{r ames-data, message=FALSE}
+library(AmesHousing)
+ames <- make_ames()
+names(ames)
+```
+
+Suppose that we will again fit a simple regression model with the formula:
+
+```{r form, eval=FALSE}
+log10(Sale_Price)~Neighborhood+House_Style+Year_Sold+Lot_Area 
+```
+
+The distribution of the lot size is right-skewed:
+```{r build}
+library(ggplot2)
+theme_set(theme_bw())
+ggplot(ames, aes(x=Lot_Area))+
+  geom_histogram(binwidth = 5000, col = "red", fill = "red", alpha = .5)
+```
+
+It might benefit the model if we estimate a transformation of the data using the Box-Cox procedure. Also, note that the frequencies of the neighborhoods can vary:
+
+```{r hood}
+ggplot(ames, aes(x = Neighborhood))+
+  geom_bar()+
+  coord_flip()+
+  xlab("")
+```
+
+When these are resampled, some neighborhood will not be included in the test set and this will result in a column of dummy variables with zero entires. The same is true for the `House_Style` variable. We might want to collapse rarely occuring values into other categories.
+
+To define the design matrix, an initial recipe is created:
+```{r rec-setup, message=FALSE, warning=FALSE}
+library(recipes)
+
+rec <- recipe(Sale_Price ~ Neighborhood + House_Style + Year_Sold + Lot_Area,
+              data = ames) %>% 
+  # log the outcome
+  step_log(Sale_Price, base = 10) %>% 
+  # Collapse rarely occuring jobs into "other"
+  step_other(Neighborhood, House_Style, threshold = 0.05) %>% 
+  # dummy variables on the qualitative predictors
+  step_dummy(all_nominal()) %>% 
+  # Unskew a predictor
+  step_BoxCox(Lot_Area) %>% 
+  # Normalize 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors())
+
+rec
+```
+
+This recreates the work that the fomula method traditionally uses with the additional steps. While the original data object `ames` is used in the call, it is only used to define the variables and their characteristics so a single recipe is valid across all resampled versions of the data. The recipe can be estimated on the analysis component of the resample.
+
+If we execute the recipe on the entire data set:
+```{r recipe-all}
+
+rec_training_set <- prep(rec, training=ames)
+rec_training_set
+```
+
+
+To get the values of the data, the `bake` function can be used:
+```{r baked}
+# By default, the selector `everything` is used to
+# return all the variables. Other selectors can be used too.
+rec_training_set %>% 
+  bake(new_data = ames[1:20,])
+```
+
+Note that there are fewer dummy variables for `Neighborhood` and `House_Style` than in the data. Also, the above code using `prep` benefits from the default argument of `retain=TRUE`, which keeps the processed version of the data set so that we don't have to reapply the steps to extract the processed values. For the data used to train the recipe, we would have used:
+
+```{r juiced}
+rec_training_set %>% 
+  juice() %>% 
+  head()
+```
+
+
+The next section will explore recipes and bootstrap resampling for modeling:
+```{r boot}
+
+library(rsample)
+set.seed(7712)
+bt_samples <- bootstraps(ames)
+bt_samples
+bt_samples$splits[[1]]
+```
+
+### Working with Rsamples
+We can add a recipe column to the tibble. `recipes` has a connivence function called `prepper` that can be used to call `prep` but has the split object as the first argument (for easier purring):
+
+```{r}
+library(purrr)
+
+bt_samples$recipes <- map(bt_samples$splits, prepper, recipe=rec)
+bt_samples
+bt_samples$recipes[[1]]
+```
+
+Now to fit the model, the fit function only needs the recipe as input. This is because the above code implicitly used the `retain=TRUE` option in `prep`. Otherwise, the split objects would also be needed to `bake` the recipe (as it will in the prediction function below).
+
+```{r}
+fit_lm <- function(rec_obj, ...){
+  lm(..., data = juice(rec_obj, everything()))
+}
+
+bt_samples$lm_mod <- 
+  map(bt_samples$recipes,
+      fit_lm,
+      Sale_Price ~.
+      )
+
+
+bt_samples
+bt_samples$lm_mod[[1]] %>% broom::tidy()
+```
+
+
+To get predictions, the function needs three arguments: the splits (to get the assessment data), the recipe (to process them), and the model. To iterate over these, the function `purrr: pmap` is used:
+
+```{r cols-pred}
+
+pred_lm <- function(split_obj, rec_obj, model_obj, ...){
+  mod_data <- bake(
+    rec_obj,
+    new_data = assessment(split_obj),
+    all_predictors(),
+    all_outcomes()
+  )
+  
+  out <- mod_data %>% select(Sale_Price)
+  out$predicted <- predict(model_obj, newdata = mod_data %>% select(-Sale_Price))
+  out
+}
+
+bt_samples$pred <- 
+  pmap(
+    list( #lst
+      split_obj = bt_samples$splits,
+      rec_obj = bt_samples$recipes,
+      model_obj = bt_samples$lm_mod
+    ),
+    pred_lm
+  )
+bt_samples
+```
+
+```{r}
+bt_samples$pred[[1]] %>% 
+  ggplot(aes(Sale_Price, predicted))+
+  geom_point()+
+  geom_abline(col="blue")
+```
+
+
+
+Calculating the RMSE:
+```{r cols-rmse}
+library(yardstick)
+
+results <- map_dfr(bt_samples$pred, rmse, Sale_Price, predicted)
+results 
+mean(results$.estimate)
+```
+
+
+## [Grid search tuning of Keras Models](https://github.com/tidymodels/rsample/blob/master/vignettes/Applications/Keras.Rmd).
+
+```{r Keras-rsample-set-up, include=FALSE}
+library(AmesHousing)
+library(rsample)
+library(dplyr)
+library(keras)
+library(yardstick)
+library(purrr)
+library(ggplot2)
+```
+
+Here we demonstrate a single grid search to optimize a tuning parameter of a [`keras`](https://keras.rstudio.com/index.html) neural network.
+
+The AmesHousing data is used to demonstrate, and there are a number of predictors for these data, but for simplicity, we will see how far we can get by just using the geocodes for the properties as predictors of price. The outcome will be modeled on the `log10` scale.
+
+```{r ames-import}
+library(AmesHousing)
+library(dplyr)
+ames <- make_ames() %>% 
+  select(Sale_Price, Longitude, Latitude)
+```
+
+To be consistent with other analysis of thes data, a training/test split is made. However, this article focuses on the training set.
+
+Normally, feature preprocessing should be estimated __within the resampling process__ to get generalizable estimates of performance. Here, the two predictors are simply centered and scaled beforehand to avoid complexity in this analysis. However, this is generally a bad idea and the article on [`recipe`](ttps://topepo.github.io/rsample/articles/Applications/Recipes_and_rsample.html) describes a proper methodology for preprocessing the data.
+
+```{r ames-split}
+library(rsample)
+library(dplyr)
+set.seed(4595)
+
+data_split <- initial_split(ames,strata = "Sale_Price")
+
+ames_train <- 
+  training(data_split) %>% 
+  mutate(
+    Sale_Price = log10(Sale_Price),
+    Longitude = scale(Longitude, center = TRUE),
+    Latitude = scale(Latitude, center = TRUE)
+  )
+```
+
+To resample the model, simple 10-fold cross-validation is done such that the splits use the outcome as a stratification variable. On average, there should be `rfloor(nrow(ames_train)*.1` properties in the assessment set and this should be enough to obtain good estimate of the model RMSE.
+
+```{r splits}
+set.seed(2453)
+cv_splits <- vfold_cv(ames_train, v = 10, strata = "Sale_Price")
+```
+
+A single layer feed-foward neural network with 10 hidden units will be used to model these data. There are a great many tuning parameters for these models including those for structural aspects (e.g., number of hidden unites, activation type, number of layers), the optimization (momentum dropout rate, etc.) and so on. For simplicity, this article will optimize the number of training epochs (i.e., iterations); basically this is testing for stopping.
+
+A function is needed to compute the model on the analysis set, predict the assessment set, and compute the holdout root mean squared error (in `log10` units). The function below constructs the model sequentially and takes the number of epochs as a parameter. The argument `split` will be used to pass a single elment of `cv_splits$splits`. This object will contain the two splits of the data for a single resample. The ellipses (`...`) will be used to pass arbitrary arguments to `keras::fit`. 
+
+In this function, the seed is set. A few of the model components, such as `initializer_glorot_uniform` and `layer_dropout`, use random numbers and their specific seeds are set from the session's seed. This helps with reproducibility.
+
+```{r model-func, eval=FALSE}
+library(keras)
+library(yardstick)
+library(purrr)
+
+mlp_rmse <- function(epoch, split, ...){
+  # set the seed to get reproducible starting values and dropouts
+  set.seed(4109)
+  
+  # cleaning the session after the computations have finished
+  # clears memory used by the last trial in preparation for the next iteration
+  on.exit(keras::backend()$clear_session())
+  # define a single layer MLP with dropout and ReLUs
+  model <- keras_model_sequential()
+  model %>% 
+    layer_dense(
+      units = 10,
+      activation = "relu",
+      input_shape = 2,
+      kernel_initializer = initializer_glorot_uniform()
+    ) %>% 
+    layer_dropout(rate = 0.4) %>% 
+    layer_dense(units = 1, activation = "linear")
+  
+  model %>% compile(
+    loss = "mean_squared_error",
+    optimizer = optimizer_rmsprop(),
+    metrics = "mean_squared_error"
+  )
+  
+  # the data used for modeling (aka the analysis set)
+  geocode <- 
+    analysis(split) %>% 
+    select(-Sale_Price) %>% 
+    as.matrix()
+  
+  model %>% fit(
+    x = geocode,
+    y = analysis(split)[["Sale_Price"]],
+    epochs = epoch,
+    ...
+  )
+  
+  # Now obtain the holdout set for prediction
+  holdout <- assessment(split)
+  pred_geocode <- 
+    holdout %>% 
+    select(-Sale_Price) %>% 
+    as.matrix()
+  
+  # get predicted values and compute RMSE
+  holdout %>% 
+    mutate(predicted = predict(model, pred_geocode)[,1]) %>% 
+    rmse(truth = Sale_Price, estimate = predicted) %>% 
+    pull(.estimate)
+}
+```
+
+Let&s execute the function on the first fold of the data using a batch size of 128 and disable the print/plotting of the optimization:
+
+```{r model-ex, message=FALSE, warning=FALSE, eval=FALSE}
+
+cv_splits$splits[[1]]
+
+mlp_rmse(
+  epoch = 100,
+  cv_splits$splits[[1]],
+  # options to keras::fit
+  batch_size = 128,
+  verbose = 0
+)
+
+```
+
+
+## [Time series](https://github.com/tidymodels/rsample/blob/master/vignettes/Applications/Time_Series.Rmd)
+
+```{r time-series-setup, include=FALSE, warning=FALSE}
+
+options(digits = 3)
+
+library(timetk)
+library(forecast)
+library(rsample)
+library(purrr)
+library(tidyr)
+library(sweep)
+library(dplyr)
+library(ggplot2)
+library(zoo)
+```
+
+
+"[Demo Week: Tidy Forecasting with `sweep`](http://www.business-science.io/code-tools/2017/10/25/demo_week_sweep.html)" is an excellent article that uses tidy methods with time series. This article uses their analysis with `rsample` to get performance estimates for future observations using [rolling forecast origin resampling](https://robjhyndman.com/hyndsight/crossvalidation/). 
+
+The data are sales of alcholic beverages originally from [the Federal Reserve Bank of St. Louis website](https://fred.stlouisfed.org/series/S4248SM144NCEN).
+
+```{r time-series-read-data}
+library(tidymodels)
+data("drinks")
+str(drinks, give.att=FALSE)
+```
+
+Each row is a month of sales (in millions of US dolloars). Suppose that predictions for one year ahead were needed and the model should use the most recent data from the last 20 years. To setup this resampling scheme:
+
+```{r rof}
+
+roll_rs <- rolling_origin(
+  drinks,
+  initial = 12*20,
+  assess = 12,
+  cumulative = FALSE
+)
+
+nrow(roll_rs)
+roll_rs
+```
+
+Each `split` element contains the information about the resample:
+```{r split}
+roll_rs$splits[[1]]
+```
+
+For plotting, let's index each split by the first day of the assessment set:
+```{r labels}
+
+get_date <- function(x)
+  min(assessment(x)$date)
+
+start_date <- map(roll_rs$splits, get_date)
+roll_rs$start_date <- do.call("c", start_date)
+head(roll_rs$start_date)
+```
+
+This resampling scheme has `r nrow(roll_rs)` splits of the data so that there will be `r nrow(roll_rs)` ARIMA models that are fit. To create the models, the `auto.arima` function from the `forecast` package is used. The function `analysis` and `assessment` return the data frame, so another step converts the data into a `ts` object called `mod_dat` using a function in the `timetk` package.
+
+```{r model-fun}
+
+library(forecast) # for `auto.arima`
+library(timetk) # for `tk_ts` 
+library(zoo) # for `as.yearmon`
+
+fit_model <- function(x, ...){
+  # suggested by Matt Dancho:
+  x %>% 
+    analysis() %>% 
+    # since the first day changes over resamples, adjust it
+    # based on the first date value in the data frame
+    tk_ts(start = .$date[[1]] %>% as.yearmon(),
+          freq = 12,
+          silent = TRUE) %>% 
+    auto.arima(...)
+}
+```
+
+Each model is saved in a new column:
+```{r model-fit, warning=FALSE, message=FALSE}
+
+roll_rs$arima <- map(roll_rs$splits, fit_model)
+
+# for example:
+roll_rs$arima[[1]] %>% broom::tidy()
+```
+
+(There are some warnings produced by these first regarding extra columns in the data that can be ignored)
+
+Using the model fits, performance will be measured in two ways:
+
+- _interpolation_ error will measure how well the model fits to the data that were used to create the model. This is most likely optimistic since no holdout method is used. 
+- _extrapolation_ or _forecast_ error evaluates the efficacy of the model on the data from the following year (that were not used in the model fit).
+ 
+In each case, the mean absolute percent error (MAPE) is the statistic used to characterize the model fits. The interpolation error can be computed from the `Arima` object. to make things easy, the `sweep` package's `sw_glance` function is used:
+
+```{r interp}
+library(sweep)
+
+roll_rs$interpolation <- map_dbl(
+  roll_rs$arima,
+  function(x)
+    sw_glance(x)[["MAPE"]]
+)
+summary(roll_rs$interpolation)
+```
+
+For the extrapolation error, the model and split objects are required. 
+Using these:
+
+```{r extrap}
+
+get_extrap <- function(split, mod){
+  n <- nrow(assessment(split))
+  # get asessment data
+  pred_dat <- assessment(split) %>% 
+    mutate(
+      pred = as.vector(forecast(mod, h = n)$mean),
+      pct_error = ( S4248SM144NCEN - pred ) / S4248SM144NCEN * 100
+    )
+  mean(abs(pred_dat$pct_error))
+}
+
+roll_rs$extrapolation <- 
+  map2_dbl(roll_rs$splits, roll_rs$arima, get_extrap)
+
+summary(roll_rs$extrapolation)
+```
+
+What do these error estimates look like over time?
+
+```{r plot}
+roll_rs %>%
+  select(interpolation, extrapolation, start_date) %>%
+  as.data.frame %>%
+  gather(error, MAPE, -start_date) %>%
+  ggplot(aes(x = start_date, y = MAPE, col = error)) + 
+  geom_point() + 
+  geom_line() + 
+  theme_bw() + 
+  theme(legend.position = "top")
+```
+
+It is likely that interpolration error is an underestimate to some degree. 
+
+It is also worth noting that `rolling_origin()` can be used over calendar periods, rather than just over a fixed window size. This is especially useful for irregular series where a fixed window size might not make sense because of missing data points, or because of calender features like different months having a different number of days.
+
+The example below demonstrates this idea by splitting `drinks` into a nested set
+of 26 years, and rolling over years rather than months. Note that the end result
+accomplishes a different task than the original example, in this case, each slice
+moves forward an entire year, rather than just one month.
+
+```{r rof-annual}
+
+# The idea is to nest by the period to roll over,
+# which in this case is the year.
+
+roll_rs_annual <- drinks %>%
+  mutate(year = as.POSIXlt(date)$year + 1900) %>%
+  nest(-year) %>%
+  rolling_origin(
+    initial = 20, 
+    assess = 1, 
+    cumulative = FALSE
+  )
+
+analysis(roll_rs_annual$splits[[1]])
+```
+
+The workflow to access these calender slices is to use `bind_rows()` to join each analysis set together. 
+
+```{r eval=FALSE}
+mutate(
+  roll_rs_annual,
+  extracted_slice = map(splits, ~ bind_rows(analysis(.x)$data))
+)
+```
+
+
+## Survival analysis
+```{r survival-analysis-prerequisites}
+
+options(digits = 3)
+library(survival)
+library(purrr)
+library(rsample)
+library(dplyr)
+library(tidyposterior)
+library(ggplot2)
+library(tidyr)
+```
+
+In this article, a parameteric analysis of censored daa is conducted and `rsample` is used to measure the importance of predictors in the model. The data will be used is the NCCTG lung cancer data contained in the `survival` package:
+
+```{r lung}
+
+library(survival)
+str(lung)
+skimr::skim(lung)
+```
+
+`status` is an indicator for which patients are censored (`status=1`) or an actual event (`status=2`). The help file `?survreg` has the following model fit:
+
+```{r example-model}
+lung_mod <- survreg(Surv(time,status)~ ph.ecog + age + strata(sex), data = lung)
+
+# 
+summary(lung_mod)
+
+# coefficient plot
+lung_mod %>% 
+  broom::tidy() %>% 
+  ggplot(aes(x=term, y=estimate))+geom_point()
+```
+
+Note that the stratification on gender only affects the scale parameter: the estimates above are from a log-linear model for the scale parameter even though they are listed with the regression variables for the other parameter. `coef` gives results that are more clear:
+
+```{r coef}
+coef(lung_mod) %>% broom::tidy()
+# coefplot::coefplot(lung_mod)
+```
+
+To resample these data, it would a good idea to try to maintain the same censoring rate across the splits. To do this, stratified resampling can be used where each analysis/assessment split is conducted within each value of the status indicator. To demonstrate, Monte CArol resampling is used where 75% of the data are in the analysis set. A total of 100 splits are created.
+
+```{r survivla-analysis-splits}
+
+library(rsample)
+set.seed(9666)
+mc_samp <- mc_cv(lung, strata="status", times=100)
+
+library(purrr)
+cens_rate <- function(x) mean(analysis(x)$status==1)
+
+map_dbl(mc_samp$splits, cens_rate) %>% 
+  summary()
+```
+
+To demonstrate the use of resampling with censored data, the parametric model shown above will be fit with different variable sets:
+
+```{r forms}
+three_fact <- as.formula(Surv(time, status) ~ ph.ecog + age + strata(sex))
+rm_ph.ecog <- as.formula(Surv(time, status) ~           age + strata(sex))
+rm_age     <- as.formula(Surv(time, status) ~ ph.ecog +       strata(sex))
+rm_sex     <- as.formula(Surv(time, status) ~ ph.ecog + age              )
+```
+
+The model fitting function will take the formula as an argument:
+
+```{r fit-func}
+mod_fit <- function(x, form, ...){
+  survreg(form, data = analysis(x), ...)
+}
+```
+
+To calculate the efficacy of the model, the concordance statistic is used (see `?survconcordance`):
+
+```{r concord}
+get_concord <- function(split, mod, ...){
+  pred_dat <- assessment(split)
+  pred_dat$pred <- predict(mod, newdata = pred_dat)
+  survConcordance(Surv(time, status) ~ pred, pred_dat, ...)$concordance
+}
+```
+
+With these functions, a series of models are created for each variable set.
+```{r models}
+mc_samp$mod_full <- purrr::map(mc_samp$splits, mod_fit, form = three_fact)
+mc_samp$mod_ph.ecog <- purrr::map(mc_samp$splits, mod_fit, form = rm_ph.ecog)
+mc_samp$mod_age <- purrr::map(mc_samp$splits, mod_fit, form = rm_age)
+mc_samp$mod_sex <- purrr::map(mc_samp$splits, mod_fit, form = rm_sex)
+```
+
+Simiarly, the concordance values are computed for each model:
+```{r}
+mc_samp$full <- map2_dbl(mc_samp$splits, mc_samp$mod_full, get_concord)
+mc_samp$ph.ecog <- map2_dbl(mc_samp$splits, mc_samp$mod_ph.ecog, get_concord)
+mc_samp$age <- map2_dbl(mc_samp$splits, mc_samp$mod_age, get_concord)
+mc_samp$sex <- map2_dbl(mc_samp$splits, mc_samp$mod_sex, get_concord)
+
+# lets extract a sample model results
+mc_samp$mod_full[[1]] %>% broom::tidy()
+```
+
+The distirubitions of the resampling estimates
+```{r concord-df}
+library(dplyr)
+# select variables
+concord_est <- mc_samp %>% 
+  select(-matches("^mod"))
+
+concord_est %>% colnames()
+concord_est %>% head()
+
+concord_est %>%
+  select(-splits) %>%
+  gather()
+
+library(tidyr)
+library(ggplot2)
+concord_est %>% 
+  select(-splits) %>% 
+  gather() %>% 
+  ggplot(aes(x = statistic, col = model))+
+  geom_line(stat = "density")+
+  theme_bw()+
+  theme(legend.position = "top")
+```
+
+It looks as though the model missing `ph.ecog` has large concordance values than the other models. as one might expect, the full model and the model absent `sex` are very similar: the difference in these models should only be the scale parameters estimates.
+
+To more formally test this, the `tidyposterior` package to create a Bayesian model for the concordance statsitics.
+
+```{r perf-mod}
+library(tidyposterior)
+concord_est <- perf_mod(concord_est, seed=6507, iter=5000)
+concord_est$stan
+```
+
+To summarize the posteriors for each model:
+```{r post}
+ggplot(broom::tidy(concord_est))+
+  theme_bw()
+```
+
+While this seems clear-cut, let's assume that a difference in the concordance statistic of 0.1 is a real effect. To compute the posteriors for the difference in models, the full model will be contrasted with the others:
+
+```{r diffs}
+comparisons <- contrast_models(
+  concord_est,
+  list_1 = rep("full",3),
+  list_2 = c("ph.ecog", "age", "sex"),
+  seed = 4654
+)
+```
+
+The posterior distributions show that, statistically, `ph.ecog` has real importance ot the model. However, since these distributions are mostly with +/- 0.05, they are unlikely to be real differences. 
+
+```{r diff-post}
+ggplot(comparisons, size = 0.05) + 
+  theme_bw()
+```
+
+The ROPE statistics quantify the practical effects:
+```{r diff-sum}
+summary(comparisons, size = 0.05) %>%
+  select(contrast, starts_with("pract"))
+```
+
+## Reference
+[Vignettes](https://github.com/tidymodels/rsample/tree/master/vignettes)
+
+# [`recipes`](https://github.com/tidymodels/recipes)
+## Introduction
+
+The `recipes` package is an alternative method for creating and preprocessing design matrics that can be used for modeling or visualization.
+
+> In statistics, a __desgin matrix__ (also known as regressor matrix or model matrix) is a matrix of values of explnatory variables of a set of objects, often denoted by X. Each row represents and individual object, with the successive columns corresponding to the variables and their specifc values for that object.
+
+While R already has long-standing methods for creating these matrices (e.g. [formulas](https://www.rstudio.com/rviews/2017/02/01/the-r-formula-method-the-good-parts) and `model.matrix`), there are some [limitations to what the existing infrastructure can do](https://rviews.rstudio.com/2017/03/01/the-r-formula-method-the-bad-parts/).
+
+The idea of the `recipes` package is to define a recipe or blue print that can be used to sequentially define the encodings and preprocessing of the data (i.e., "feature engineering"). For example to create a simple recipe containing only an outcome and predictors and have the predictors centered and scaled:
+
+```{r}
+library(recipes)
+library(mlbench)
+data(Sonar)
+
+Sonar %>% head()
+Sonar %>% dim()
+
+sonar_rec <- recipe(Class ~., data = Sonar) %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors)
+```
+
+To install it, use:
+```{r eval=FALSE}
+install.packages("recipes")
+
+## for development version:
+require("devtools")
+install_github("tidymodels/recipes")
+```
+
+## [Simple example](https://github.com/tidymodels/recipes/blob/master/vignettes/Simple_Example.Rmd)
+
+This demonstrates some basic uses of recipes 
+
+- __variables__ are the original (raw) data columns in a data frame or tibble. For example, in a traditional formula `Y ~ A + B + A:B`, the variables are `A`, `B`, and `Y`. 
+- __roles__ define how variables will be used in the model. Examples are: `predictor` (independent variables), `response`, and `case weight`. This is meant to be open-ended and extensible. 
+- __terms__ are columns in a design matrix such as `A`, `B`, and `A:B`. These can be other derived entities that are grouped such a a set of principal components or a set of columns that define a basis function for a variable. These are synonymous with features in machine learnin
+
+### An example
+The package contains a dataset that used to predict whether a person will pay back a bank loan. It has 13 predictor columns and a factor variable `Status` (the outcome). We will first separate the data into a training and test set:
+
+```{r recipes-simple-example-data}
+library(recipes)
+library(rsample)
+
+data("credit_data")
+
+set.seed(55)
+train_test_split <- initial_split(credit_data)
+
+credit_train <- rsample::training(train_test_split)
+credit_test <- testing(train_test_split)
+```
+
+
+Note that there are some missing values in these data:
+```{r missing}
+vapply(credit_train, function(x) mean(!is.na(x)), numeric(1))
+skimr::skim(credit_train)
+```
+
+Rather than revmoing these, their values will be imputed. The idea is that preprocessing operations will all be created using the training set and then these steps will be applied to both the training and test sets.
+
+### An initial recipe
+First, we will create a recipe object from the original data and then specify the processing steps. Recipes can be created manually by sequentially adding roles to variables in a data set. 
+
+If the analysis only required **outcomes** and **predictors**, the easiest way to create the initial recipe is to use the standard formula method:
+
+```{r first_rec}
+rec_obj <- recipe(Status~., data = credit_train)
+rec_obj
+```
+
+The data contained in the `data` argument need not be traininig set; this data is only used to catalog the names of the variables and their types (e.g., numeric, etc.).
+
+Note that the formula method here is used to declare the variables and their role nad nothing else. If you use inline functions (e.g., `log`) it will complain. These types of operations can be added later.
+
+### Preprocessing steps
+
+From here, preprocessing steps for some step X can be added sequentially in one of two ways:
+```{r eval=FALSE}
+rec_obj <- step_{X}(rec_obj, arguments) ## or
+rec_obj <- rec_obj %>% step_{X}(arguments)
+```
+
+`step_dummy` and the other functions will always return updated recipes.
+
+One other important facet of the code is the method for specifying which variables should be used in different steps. The manual page [?selection](https://tidymodels.github.io/recipes/reference/selections.html) has more details but `dplyr-`like selector functions can be used:
+
+- use basic variable names (e.g., `x1`, `x2`),
+- `dplyr` functions for selecting variables: `contains`, `ends_with`, `everything`, `matches`, `num_range`
+- functions that subset on the role of the variables that have been specfied so far: `all_outcomes`, `all_predictors`, `has_role`, or
+- similar functions for the type of data: `all_nominal`, `all_numeric`, and `has_type`.
+
+Note that the methods listed above are the only ones that can be used to select variables inside the steps. Also, minus signs can be used to deselect variables.
+
+For our data, we can add an operation to impute the predictors. There are many ways to do this and `recipes` includes a few steps for this purpose:
+
+```{r}
+grep("impute$", ls("package:recipes"), value=TRUE)
+```
+
+Here, K-nearest neghbor imputation will be used. This works for both numeric and non-numeric predictors and defaults `K` to five. To di this, it selects all predictors then removes that are numeric:
+
+```{r impute_example}
+imputed <- rec_obj %>% 
+  step_knnimpute(all_predictors())
+imputed
+```
+
+It is important to realize that the specifc variables have not been declared yet (as shown when the recipe is printed above). In some preprocessing steps, variables will be added or removed from the current list of possible variables.
+
+Since some predictors are categorical in nature (i.e., nominal), it would make sense to convert these factor predictors into numeric dummy variables (aka indicator variables) using `step_dummy`. To do this, the step selects all predictors then removes those that are numeric. 
+
+```{r}
+ind_vars <- imputed %>% 
+  step_dummy(all_predictors(), - all_numeric())
+ind_vars
+```
+
+At this point in the recipe, all of the predictor should be encoded as numeric, we can further add more steps to center and scale them:
+
+```{r}
+standardized <- ind_vars %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors())
+standardized
+```
+
+
+If there are the only preprocessing steps for the predictors, we can now estimate the means and standard deviations from the training set. The `prep` function is used with a recipe and a data set:
+
+```{r}
+trained_rec <- prep(standardized, training = credit_train)
+trained_rec 
+```
+
+Note that the real variables are listed (e.g., `Home` etc.) insted of the selectors (`all_predictors()`). Now that the statistics have been estimated, the preprocessing can be _applied_ to the training and test set:
+
+```{r}
+train_data <- bake(trained_rec, new_data = credit_train)
+test_data <- bake(trained_rec, new_data = credit_test)
+```
+
+`bake` returns a tible that, by default, includes all of the variables:
+
+```{r}
+class(test_data)
+test_data
+
+vapply(test_data, function(x) mean(!is.na(x)), numeric(1))
+```
+
+Selectors can also be used. For example, if only the predictors are needed, you can use `bake(object, new_data, all_predictors())`. There are number of other steps oncluded in the package.
+
+```{r}
+grep("^step", ls("package:recipes"), value=TRUE)
+```
+
+### Checks 
+Another type of operation that can be added to a recipes is a _check_. Checks conduct some sort of data validation, and if no issue is found, returns the data as-is; otherwise, an error is thrown.
+
+For example, `check_missing` will fail if any of the variables selected for validation have missing values. This check is done when the recipe is prepared as well as when any data are baked. Checks are added in the same way as steps:
+
+```{r}
+trained_rec <- trained_rec %>% 
+  check_missing(contains("Marital"))
+```
+
+Currently, `recipes` includes:
+```{r}
+grep("check_", ls("package:recipes"), value=TRUE)
+```
+
+
+## [Selecting variables](https://github.com/tidymodels/recipes/blob/master/vignettes/Selecting_Variables.Rmd)
+
+When recipe steps are used, there are different approches that can be used to select which variables or features should be used.
+
+The three main characteristics of variables that can be queried:
+
+- the name of the variable
+- the data type (e.g., numeric or nominal)
+- the role that was declated by the recipe
+
+The manual pages for [?selection](https://tidymodels.github.io/recipes/reference/selections.html) and [?has_role](https://tidymodels.github.io/recipes/reference/has_role.html) have details about the available selection methods.
+
+To illustrate this, the credit data will be used.
+
+```{r}
+library(recipes)
+data("credit_data")
+str(credit_data)
+
+rec <- recipe(Status ~ Seniority + Time + Age + Records, data = credit_data)
+rec
+```
+
+Before any steps are used the information on the original variables is
+
+```{r}
+summary(rec, original=TRUE)
+```
+
+We can add a step compute dummy variables on the non-numeric data after we impute any missing data:
+
+```{r}
+dummied <- rec %>% step_dummy(all_nominal())
+dummied
+```
+
+This will capture any variables that are either character strings or factors: `Status` and `Records`. However, since `Status` is our outcome, we might want to kepp it as a factor so we can _subtract_ that variable out either by name or by role:
+
+```{r warning=FALSE, eval=FALSE}
+dummied <- rec %>% step_dummy(Records) # or
+dummied <- rec %>% step_dummy(all_nominal(), -Status) #or
+dummied <- rec %>% step_dummy(all_nominal(), - all_outcomes())
+```
+
+Using the last deficition:
+
+```{r}
+dummied <- prep(dummied, training = credit_data)
+with_dummy <- bake(dummied, new_data = credit_data)
+with_dummy
+```
+
+`Status` is unaffected.
+
+One important aspect about selecting variables in steps is that the variable names and types may change as steps are being executed. In the above example, `Records` is a factor variable before the step is executed. Afterwards, `Records` is gone and the binary variable `Records_yes` is in its place. One reason to have general selection routines like `all_predictors` or `contains` is to be able to select variables that have not be created yet.
+
+## Custom steps
+
+## [Dummy steps](https://github.com/tidymodels/recipes/blob/master/vignettes/Custom_Steps.Rmd)
+
+The `recipes` package contains a number of different operations:
+
+```{r step_list}
+library(recipes)
+ls("package:recipes", pattern="^step_")
+```
+
+You might need to define your own operations, this page describes how to do that. I f you are looking for good examples of existing steps,  I would suggest looking at the code for [centering](https://github.com/tidymodels/recipes/blob/master/R/center.R) or [PCA](https://github.com/tidymodels/recipes/blob/master/R/pca.R) to start. 
+
+For checks, the process is very similar. notes on this are given at the end of this document.
+
+### A new step definition
+
+As an example, let's create a step that replaces the value of a viable with its percentile from the training set. The data that I will use is from the `recipes` package:
+
+```{r new_step_initial}
+data(biomass)
+str(biomass)
+
+biomass_tr <- biomass[biomass$dataset == "Training",]
+biomass_te <- biomass[biomass$dataset == "Testing",]
+```
+
+To illustrate the transformation with the `carbon` variable, the training set distribution of that variables is shown below with a vertical line for the first value of the test set.
+
+```{r carbon_dist, fig.width=6, fig.height=4.25, out.width="100%"}
+
+library(ggplot2)
+theme_set(theme_bw())
+
+ggplot(biomass_tr, aes(x=carbon))+
+  geom_histogram(binwidth = 5, col = "blue", fill = "blue", alpha = .5)+
+  geom_vline(xintercept = biomass_te$carbon[1], lty = 2)
+```
+
+ Based on the training set, `r round(mean(biomass_tr$carbon <= biomass_te$carbon[1])*100, 1)`% of the data are less than a value of `r biomass_te$carbon[1]`. There are some applications where it might be advantageous to represent the predictor values as pecentiles rather than their original values.
+ 
+Our new step will do this computation for any numeric variables of interest. We will call this `step_percentile`. The code below is designed for illustration and not speed or best practices. I have left out a lot of error trapping that we would want in a real implementation.
+ 
+### Create the initial function
+
+The user-exposed function `step_percentile` is just a single wrapper around an internal function called `add_step`. This function takes the same arguments as your function and simply adds it to a new recipe. The `...` signifies the variable selectors that can be used.
+
+```{r initial_def}
+
+step_percentile <- function(
+  recipe,...,
+  role = NA,
+  trained =FALSE,
+  ref_dist = NULL,
+  approx = FALSE,
+  options = list(probs = (0:100)/100, names = TRUE),
+  skip = FALSE,
+  id = rand_id("percentile")
+){
+  ## The variable selectors are not immediately evaluated by using
+  ## the `quos` function in `rlang`. `ellipse_check` captures the
+  ## values and also checks to make sure that they are not empty.
+  terms <- ellipse_check(...)
+  
+  add_step(
+    recipe,
+    step_percentile_new(
+      terms = terms,
+      trained = trained,
+      role = role,
+      ref_dist = ref_dist,
+      approx = approx,
+      options = options,
+      skip = skip,
+      id = id
+    )
+  )
+  
+}
+```
+
+You should always keep the first four arguments (`recipe` through `trained`) the same as listed above. Some notes:
+
+- the `role` argument is used when you either 1) create new variables and want their role to be pre-set or 2) replace the existing variables with new values. The latter is what we will be doing and using `role=NA` will leave the existing role intact.
+- `trained` is set by the package when the estimation step has been run. You should default your function definitions's argument to `FALSE`.
+- `skip` is logical. Whenever a recipe is preped, each step is trained and then baked. However, there are some steps that should not be applied to the variables with roles of "outocmmes", these data would not be available for new samples.
+- `id` is a character string that can be used to identify steps in package code.
+
+I've added extra arguments specific to this step. In order to calculate the percentile, the training data fro the relevant columns need to be saved. This data will be saved in the `ref_dist` object. However, this might be problematic if the data set is large. `approx` would be used when you want to save a grid of pre-computed percentiles from the training set and use these to estimate the percentile for a new data point. If approx = TRUE, the argument `ref_dist` will contain the grid for each variable.
+
+We will use the `stats::quantile` to compute the grid. However, we might also want to have control over the granularity of this grid, so the options argument will be used to define how that calculations is done. We could just use the ellipses (aka `...`) so that any options passed to `step_percentile` that are not one of its arguments will then be passed to `stats::quantile`. We recommend making a separate list object with the options and use these inside the function.
+
+### Initialization of new objects
+
+NExt, you can utilize the internal function `step` that sets the class of new objects. Using `subclass = "percentile` will set the class of new objects to `step_percentile`.
+
+```{r}
+step_percentile_new <- 
+  function(terms, role, trained, ref_dist, approx, options, skip, id) {
+    step(
+      subclass = "percentile", 
+      terms = terms,
+      role = role,
+      trained = trained,
+      ref_dist = ref_dist,
+      approx = approx,
+      options = options,
+      skip = skip,
+      id = id
+    )
+  }
+```
+
+This constructor function should have no default argument values.
+
+### Define the estimation procedure
+
+You will need to create a new `prep` method for your step's class. To do this, three arguments that the method should have:
+
+```{r eval=FALSE}
+function(x, training, info = NULL)
+```
+
+where
+- `x` will be the `step_percentile` object
+- `training` will be a _tibble_ that has the training set data
+- `info` will also be a tibble that has information on the current of data available. . This information is updated as each step is evaluated by its specific prep method so it may not have the variables from the original data. The columns in this tibble are variable (the variable name), `type` (currently either ÅgnumericÅh or ÅgnominalÅh), `role` (defining the variableÅfs role), and source (either ÅgoriginalÅh or ÅgderivedÅh depending on where it originated).
+
+You can define other options.
+
+The first thing that you might want do do in the `prep` function is to translate the specification listed in the `terms` argument to column names in the current data. There is an internal function called `terms_select` that can be used to obtain this.
+
+```{r}
+prep.step_percentile <- function(x, training, info = NULL, ...){
+  col_names <- terms_select(terms = .x$terms, info = info)
+}
+```
+
+Once we have this, we can either save the original data columns or estimate the approximation grid. For the grid, we will use a helper function that enables us to run `do.call` on a list of arguments that include the `options` list.
+
+```{r}
+get_pctl <- function(x, args){
+  args$x <- x
+  do.call("quantile", args)
+}
+
+prep.step_percentile <- function(x, training, info = NULL, ...) {
+  col_names <- terms_select(terms = x$terms, info = info) 
+  ## You can add error trapping for non-numeric data here and so on. See the
+  ## `check_type` function to do this for basic types. 
+  
+  ## We'll use the names later so
+  if (x$options$names == FALSE)
+    stop("`names` should be set to TRUE", call. = FALSE)
+  
+  if (!x$approx) {
+    ref_dist <- training[, col_names]
+  } else {
+    ref_dist <- purrr::map(training[, col_names],  get_pctl, args = x$options)
+  }
+
+  ## Use the constructor function to return the updated object. 
+  ## Note that `trained` is set to TRUE
+  
+  step_percentile_new(
+    terms = x$terms, 
+    trained = TRUE,
+    role = x$role, 
+    ref_dist = ref_dist,
+    approx = x$approx,
+    options = x$options,
+    skip = x$skip,
+    id = x$id
+  )
+}
+```
+
+### Create the bake method
+
+Remember that the `prep` function does not `apply` the step to the data; it only estimates any required values such as `ref_dist`. We will need to create a new method for our `step_percentile` class. The minimum arguments for this are
+
+```{r eval=FALSE}
+function(object, new_data, ...)
+```
+
+where `object` is the updated step function that has been through the corresponding prep code and `new_data` is a tibble of data to be processed.
+
+Here is the code to convert the new data to percentiles. Two initial helper functions handle the two cases (approximation or not). We always return a tibble as the output.
+
+```{r}
+## Two helper functions
+pctl_by_mean <- function(x, ref) mean(ref <= x)
+
+pctl_by_approx <- function(x, ref) {
+  ## go from 1 column tibble to vector
+  x <- getElement(x, names(x))
+  ## get the percentiles values from the names (e.g. "10%")
+  p_grid <- as.numeric(gsub("%$", "", names(ref))) 
+  approx(x = ref, y = p_grid, xout = x)$y/100
+}
+
+bake.step_percentile <- function(object, new_data, ...) {
+  require(tibble)
+  ## For illustration (and not speed), we will loop through the affected variables
+  ## and do the computations
+  vars <- names(object$ref_dist)
+  
+  for (i in vars) {
+    if (!object$approx) {
+      ## We can use `apply` since tibbles do not drop dimensions:
+      new_data[, i] <- apply(new_data[, i], 1, pctl_by_mean, 
+                            ref = object$ref_dist[, i])
+    } else 
+      new_data[, i] <- pctl_by_approx(new_data[, i], object$ref_dist[[i]])
+  }
+  ## Always convert to tibbles on the way out
+  as_tibble(new_data)
+}
+```
+
+### Running the example
+
+Let's use the example data to make sure that itworks:
+
+```{r}
+library(purrr)
+rec_obj <- 
+  recipe(HHV~., data = biomass_tr[,-(1:2)]) %>% 
+  step_percentile(all_predictors(), approx = TRUE) %>% 
+  prep(training = biomass_tr)
+
+percentiles <- bake(rec_obj, biomass_te)
+percentiles
+```
+
+The plot below shos how the original data line up with the percentiles for each split of the data for one of the predictors:
+
+```{r}
+percentiles %>% colnames()
+ggplot(data=percentiles, aes(x=carbon))+
+  stat_bin(aes(y=cumsum(..count..)),geom="step")
+```
+
+### Custom check operations
+
+The process here is exactly the same as steps; the internal functions have a similar naming convention:
+
+- `add_check` instead of `add_step`
+- `check` instead of `step` and so on.
+
+It is strongly recommended that:
+1. The operation start with `check_` (i.e., `check_range` and `check_range_new`)
+2. The check uses `stop(..., call.=FALSE)` when the conditions are not met
+3. The original data are returned (unaltered) by the check when the conditions are satisfied.
+
+## Subsampling for class imbalance
+
+Subsampling can be a helpful approach to dealing with classification data where one or more classes occur very infrequently. Often, most models will overfit to the majority class and produce very good statistics for the class containing the frequently occuring classes while the minority classes have poor performance.
+
+Consider two-class problem where the first class has a very low rate of occurence. The `caret` package has a function that can simulate such data:
+
+```{r simulate}
+library(caret)
+
+set.seed(244)
+imbal_data <- twoClassSim(1000, intercept = 10)
+table(imbal_data$Class)
+```
+
+If "Class 1" is the event of interest, it is very likely that classification model would be able to achieve very good specificty since almost all of the data are the second class. _Sensitivity_ will often be poor since the models will optimize accuracy (or other loss functions) by predicting everything to be the majority class.
+
+When there are two claases, the results is that the default probability cutoff of 50% is inappropriate: a different cutoff that is more extreme might be able to achieve good performance. 
+
+One way to alleviate this issue is to _subsample_ the data. There are a number of ways to do this but the most simple one is to _sample down_ the majority class data until it occurs with the same frequency as the minority class. While conterintutive, throwing out a large percentage of the data can be effective at producing a results. In some cases, this means that the overall performance of the model is better (e.g., improved area under the ROC curve). However, subsampling almost always produces models that are _better calibrated_. As a result, the default 50% cutoff is much model likely to produce better sensitivity and specificity values than they would otherwise.
+
+To demostrate this, `step_downsample` will be used in a recipe for the simulated data. In terms of workflow:
+
+- It is extremely important that subsampling occurs __inside of resampling_. Otherwise, the resampling process can produce [porr estimate of model performance](https://topepo.github.io/caret/subsampling-for-class-imbalances.html#resampling).
+- The subsampling process should only be applied to the analysis set. The assessment set should reflect the event rates seen in the wild and, for this reason, the `skip` argument to `step_downsample` is defaulted to `TRUE`.
+
+Here is a simple recipe:
+
+```{r rec}
+library(recipes)
+imbal_rec <- 
+  recipe(Class ~., data = imbal_data) %>% 
+  step_downsample(Class)
+```
+
+Basic cross-validation is used to resample the model:
+
+```{r cv}
+library(rsample)
+set.seed(5732)
+cv_folds <- vfold_cv(imbal_data, strata="Class", repeats=5)
+```
+
+An additional column is added to the data that contains the trained recipes for each resample:
+
+```{r prep}
+library(purrr)
+cv_folds <- 
+  cv_folds %>% 
+  mutate(recipes = map(splits, prepper, recipe = imbal_rec, retain=TRUE))
+
+cv_folds$recipes[[1]]
+```
+
+The model that will be used to demonstrate subsampling is [quadratic discriminant analysis](https://en.wikipedia.org/wiki/Quadratic_classifier#Quadratic_discriminant_analysis) via the `MASS` package. A function will be used to train the model and to produce class probabilities as well as hard class predictions using the default 50% cutoff. When a recipe is passed to the function, down-sampling will be applied. If no recipe is give, the data are used to fit the model as-is:
+
+```{r func}
+library(MASS)
+
+assess_res <- function(split, rec=NULL,...){
+  if (!is.null(rec))
+    mod_data <- juice(rec)
+  else
+    mod_data <- analysis(split)
+  
+  mod_fit <- qda(Class~., data = mod_data)
+  
+  if(!is.null(rec))
+    eval_data <- bake(rec, assessment(split))
+  else 
+    eval_data <- assessment(split)
+  
+  eval_data <- eval_data 
+  predictions <- predict(mod_fit, eval_data)
+  eval_data %>%
+    mutate(
+      pred = predictions$class,
+      prob = predictions$posterior[,1]
+    ) %>%
+    dplyr::select(Class, pred, prob)
+}
+```
+
+For example:
+
+```{r ex, warning=FALSE}
+# No subsampling
+assess_res(cv_folds$splits[[1]]) %>% head
+
+# With Subsampling
+assess_res(cv_folds$splits[[1]], cv_folds$recipes[[1]]) %>% head
+```
+
+To measure model effectiveness, two metrics are used:
+
+- The area under the [ROC curve](https://en.wikipedia.org/wiki/Receiver_operating_characteristic) is an overall assessment of performance across _all_ cutoffs. Values near one indicate very good results while values near 0.05 would imply that the model is very poor.
+- The _J_ index (a.k.a. [Youden's _J_](https://en.wikipedia.org/wiki/Youden%27s_J_statistic) statistic) is `sensitivity + specificity - 1`. Values near one are once again best.
+
+If a model is poorly calibrated, the ROC curve value might not show diminished performance. However, the _J_ index would be lower for models with pathological distributions for the class probabilities. The `yardstick` package will be used to compute these metrics.
+
+Now, we train the models and generate the predictions. These are stored in list columns where each list element is a data frame of the predictions on the assessment data:
+
+```{r fits}
+cv_folds <- 
+  cv_folds %>% 
+  mutate(
+    sampled_pred = map2(splits, recipes, assess_res),
+    normal_pred = map(splits, assess_res)
+  )
+```
+
+
+Now the performance metrics are computed:
+
+```{r perf}
+
+library(yardstick)
+cv_folds <- 
+  cv_folds %>% 
+  mutate(
+    sampled_roc = map_dfr(sampled_pred, roc_auc, Class, prob) %>% 
+      pull(".estimate"),
+    normal_roc = map_dfr(normal_pred, roc_auc, Class, prob) %>% 
+      pull(".estimate"),
+    sampled_J = map_dfr(sampled_pred, j_index, Class, pred) %>% 
+      pull(".estimate"),
+    normal_J = map_dfr(normal_pred, j_index, Class, pred) %>% 
+      pull(".estimate")
+  )
+
+```
+
+What do the ROC values look like? A [Black-Altman plot](https://en.wikipedia.org/wiki/Bland%E2%80%93Altman_plot) can be used to show the differences in the results over the range of results:
+
+```{r bland-altman-roc}
+
+ggplot(cv_folds,
+        aes(x = (sampled_roc + normal_roc)/2,
+            y = sampled_roc - normal_roc)) +
+  geom_point()+
+  geom_hline(yintercept = 0, col = "green")
+```
+
+There doesn't appear that subsampling had much of an effect on this metric. The average difference is `r signif(mean(cv_folds$sampled_roc - cv_folds$normal_roc),3)`, which is fairly small.
+
+For the _J_ statistic, the results show a different story:
+
+```{r bland-altman-j}
+ggplot(cv_folds,
+       aes(x = (sampled_J + normal_J)/2,
+           y = sampled_J - normal_J))+
+  geom_point()+
+  geom_hline(yintercept = 0, col = "green")
+
+```
+
+Almost all of the differences area greater than zero. We can use `tidyposterior` to do a more formal analyis:
+
+```{r tpost, warning=FALSE, message=FALSE}
+
+library(tidyposterior)
+
+# Remove all columns except the resample info and the J indices,
+# then fit the Bayesian model
+
+cv_folds %>% 
+  dplyr::select(-recipes, -matches("pred$"), -matches("roc$"))
+
+j_mod <- 
+  cv_folds %>% 
+  dplyr::select(-recipes, -matches("pred$"), -matches("roc$")) %>% 
+  perf_mod(seed = 62378, iter = 5000)
+```
+
+A simple plot of the posterior distributions of the _J_ indices for each model shows that there is a real difference; subsampling the data prior to modeling produced better calibrated models:
+
+```{r post-plot}
+j_mod %>%
+  tidyposterior:::tidy.perf_mod(seed = 234) %>%
+  ggplot()
+```
+
+## Multivariate analysis using Partial Least Squares
+
+Multivariate analysis usually refers to the situation where multple _outcomes_ are being modeled, analyzed, and/or predicted. There are multivariate versions of many common statistical tools. For example,suppose there was a data set with columns `y1` and `y2` containing two outcomes to be predicted. The `lm` function would look something like:
+
+```{r lm, eval=FALSE}
+lm(cbind(y1, y2)~ data =dat)
+```
+
+The `cbind` is pretty awkward and is a consequence of how the traditional formula infrastructure works. `recipes` is a lot easter to work with and this document shows an example to illustrate how to use multiple outcomes.
+
+The data that we will use has three outcomes. From `?tecator`:
+
+> "These data are recorded on a Tecator Infratec Food and Feed Analyzer working in the wavelength range 850 - 1050 nm by the Near Infrared Transmission (NIT) principle. Each sample contains finely chopped pure meat with different moisture, fat and protein contents.
+
+> "For each meat sample the data consists of a 100 channel spectrum of absorbances and the contents of moisture (water), fat and protein. The absorbance is `-log10` of the transmittance measured by the spectrometer. The three contents, measured in percent, are determined by analytic chemistry."
+
+The goal would be to be able to predict the proportion of the three substances using the chemistry test. For the predictors, there is usually a very high degree of between-variable correlations in the data and that is certainly the case here. 
+
+To start, let's take the two data matrices (called `endpoints` and `absorp`) and bind them together in a data frame:
+
+```{r data}
+library(caret)
+data(tecator)
+
+dim(endpoints)
+dim(absorp)
+
+colnames(endpoints) <- c("water", "fat", "protein")
+colnames(absorp) <- names0(ncol(absorp))
+
+tecator <- cbind(endpoints, absorp) %>%
+  as.data.frame()
+
+tecator %>% 
+  dplyr::select(water, fat, protein) %>% 
+  cor()
+```
+
+The three outcomes have fairly high correlations also. If the outcomes can be predicted using a linear model, __partial least squares (PLS)__ is an idea method. 
+
+PLS, unlike PCA, also incorporate the outcome data when creating the PLS components, Like PCA, it tries to maximize the variance of the predictors that are explained by the components but also tries to simulataneously maximize the correlation between those components and the outcomes. In this way, PLS _chases_ variation of the predictors and outcomes.
+
+Since we are working with variances and covariances, it makes sense to standardize the data. The recipe will cener and scale all of the variables.
+
+Many base R functions that deal with multivariate outcomes using the formula require the use of `cbind` on the left-hand side of the formula to work with the traditional formula methods. `recipes` do not; the outcome can be symbolically "added" together on the left-hand side:
+
+```{r recipe}
+library(recipes)
+norm_rec <- recipe(
+  water + fat + protein ~., data = tecator) %>% 
+  step_center(everything()) %>% 
+  step_scale(everything())
+```
+
+Before we can finalize the PLS model, the number of PLS components to retain must be determined. This can be done using performance metrics such as root mean squared error (RMSE). However, we can also calculate the proprotion of variance explained by components for the _predictors and each of the outcomes_. This allows an informed choice to be made based on the level of evidence that the situation requires.
+
+Since the data set isn't large, resampling will be used to measure these proportions. Ten repeats of 10-fold cross-validation will be used to build the PLS model on 90% of the data. For each of the 100 models, the proportions will be extracted and saved. 
+
+The folds can be created using the [`rsample` package](https://tidymodels.github.io/rsample/) and the recipe can be estimated for each resample using the [`prepper` function](https://tidymodels.github.io/rsample/reference/prepper.html): 
+
+```{r cv}
+library(rsample)
+set.seed(57343)
+
+folds <- vfold_cv(tecator, repeats = 10)
+folds <- folds %>% 
+  mutate(recipes = map(splits, prepper, recipe=norm_rec, retain=TRUE))
+folds
+```
+
+The complicated part here is:
+
+1. Formatting the predictors and outcomes into the format that `pls` package requires, and
+2. Estimating the proportions 
+
+For the first part, the standardized outcomes and predictors will need to be formatted into two separate matrices.Since we used `retain=TRUE` when prepping the recipes, the `juice` function can be used. To save the data as a matrix, the option `composition="matrix"` will avoild saving the data as tibbles and use the required format.
+
+The `pls` wants to use a simple formula to specify the model but each side of the formula should _represent matrix_. In other words, we need a data from with two columns and each column is a matrix. The secret to doing this is to protect the two matrices using `I()` when adding them to the data frame.
+
+The calculation for the proportion of variance explained is simple for the predictors: the function `pls:explvar` will compute that. For the outcomes, the process is more complicated. I didn't see a ready-made function to compute these but there is some code inside of the summary function to do the computation (see below).
+
+The function `get_var_explained` will do these computations and return a data frame with columns `components`, `source` (for the predictors, water, etc.) and the `proportion` of variance that is explained by components.
+
+```{r var-explained}
+library(pls)
+library(tidyverse)
+get_var_explained <- function(recipe, ...) {
+  
+  # Extract the predictors and outcomes into their own matrices
+  y_mat <- juice(recipe, composition = "matrix", all_outcomes())
+  x_mat <- juice(recipe, composition = "matrix", all_predictors())
+  
+  # The pls package prefers the data in a data frame where the outcome
+  # and predictors are in _matrices_. To make sure this is formatted
+  # properly, use the `I` function to inhibit `data.frame` from making
+  # all the individual columns. `pls_format` should have two columns.
+  pls_format <- data.frame(
+    endpoints = I(y_mat),
+    measurements = I(x_mat)
+  )
+  # Fit the model
+  mod <- plsr(endpoints ~ measurements, data = pls_format)
+  
+  # Get the proportion of the predictor variance that is explained
+  # by the model for different number of components. 
+  xve <- explvar(mod)/100 
+  
+  # To do the same for the outcome, it is more complex. This code 
+  # was extracted from pls:::summary.mvr. 
+  explained <- drop(pls::R2(mod, estimate = "train", intercept = FALSE)$val) %>% 
+    # transpose so that components are in rows
+    t() %>% 
+    as.data.frame() %>%
+    # Add the predictor proportions
+    mutate(predictors = cumsum(xve) %>% as.vector(),
+           components = seq_along(xve)) %>%
+    # Put into a tidy format that is tall
+    gather(source, proportion, -components)
+}
+```
+
+We compute this data frame for each resample and save the results in different columns.
+
+```{r get-estimates}
+library(recipes)
+folds <- folds %>% 
+  mutate(var = map(recipes, get_var_explained))
+```
+
+To extract and aggregate these data, simple row binding can be used to stack the data vertically. Most of the action happens in the first 15 components so the data are filtered and the _average_ proportion is computed.
+
+```{r collapse-and-average}
+variance_data <- bind_rows(folds[["var"]]) %>% 
+  filter(components <=15) %>% 
+  group_by(components, source) %>% 
+  summarise(proportion = mean(proportion))
+```
+
+The plot below shows that if the protein measurement is important, you might require 10 or so components to achieve a good representation of that outcome. Note that the predictor variance is captured extremely well using a single component. This is due to the high degree of correlation in those data. 
+
+```{r plot, fig.width=6, fig.height=4.25,  out.width = '100%'}
+ggplot(variance_data, aes(x = components, y = proportion, col = source)) + 
+  geom_line() + 
+  geom_point() + 
+  theme_bw() + 
+  theme(legend.position = "top")
+```
+
+# [Parsnip](https://tidymodels.github.io/parsnip/)
+## introduction
+
+One issue with different functions available in R that _do the same thing_ is that they can have different interfaces and arguments. For example, to fit a random forest classification model, we might have:
+
+```{r eval=FALSE}
+# From random forest
+rf_1 <- randomForest::randomForest(x,y,mtry=12, ntrees=2000, importance=TRUE)
+
+# From ranger
+library(ranger)
+rf_2 <- ranger(
+  y~., 
+  data = dat, 
+  mtry = !2,
+  num.trees = 2000,
+  importance = "impurity"
+)
+
+# From sparklyr
+rf_3 <- ml_random_forest(
+  dat,
+  intercept = FALSE,
+  response = "y",
+  features = names(dat)[names(dat) 1= "y"],
+  col.sample.rate =12,
+  num.trees = 2000
+)
+```
+
+Note that the model syntax is very different and that the argument names (and formals) are also different. This is pain if you go between implementations.
+
+In this example:
+- the __type__ of model is "random forest"
+- the __mode__ of the model is "classification" (as opposed to regression, etc)
+- the computational __engine__ is the name of the R package
+
+The idea of `parsnip` is to:
+- separate the definition of a model from its evaluation.
+- Decouple the model specification from the implementation (whether the implementation is in R, `spark` or something else). For example, the user would call `rand_forest` instead of `ranger::ranger` or other specific packages.
+- Harmonize the argument names (e.g., `n.trees`, `ntrees`, `trees`) so that users can remember a single name. This will help across model types too so that `trees` will be the same argument across random forest as well as boosting or bagging.
+
+Using the example above, the parsnip approach would be:
+```{r eval=FALSE}
+library(parsnip)
+parsnip::rand_forest(
+  mtry = 12,
+  trees = 2000
+) %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  fit (y ~., data=dat)
+```
+
+The engine can be easily changed and the mode can be determined when `fit` is called. to use Spark, the change is simple:
+
+```{r eval=FALSE}
+rand_forest(
+  mtry = 12,
+  trees = 2000
+) %>% 
+  set_engine("spark") %>% 
+  fit(y ~ ., data = dat)
+
+```
+
+### Model list
+
+parsnip contains wrappers for a number of models. For example, the `parsnip` function `rand_forest()` can be used to create a random forest model. The __mode__ of a model is realted to its goal. Examples would be regression and classification.
+
+[Ths list of models](https://tidymodels.github.io/parsnip/articles/articles/Models.html) accessible via `parsnip` is :
+
+- classification: `boost_tree()`, `decision_tree()`, `logistic_reg()`, `mars()`, `mlp()`, `multinomial_reg()`, `nearest_neighbor()`, `rand_forest()`, `svm_poly()`, `svm_rbf()`
+- regression: `boost_tree()`, `decision_tree()`, `linear_reg()`, `mars()`, `mlp()`, `nerarest_neighbor()`, `rand_forest()`, `surv_reg()`, `svm_reg()`, `svm_poly()`, `svm_rbf()`.
+
+How the model is created is related to the _engine_. In many cases, this is an R modeling package. In others,  it may be a connection to an externam system (such as `Spark`or`Tensorflow`). 
+
+## [Regression example](https://github.com/tidymodels/parsnip/blob/master/vignettes/articles/Regression.Rmd)
+
+```{r parsnip-setup, include=FALSE}
+knitr::opts_chunk$set(
+  digits = 3,
+  collapse = TRUE,
+  comment = "#>"
+  )
+options(digits = 3)
+library(parsnip)
+library(AmesHousing)
+library(ranger)
+library(randomForest)
+library(ggplot2)
+
+preds <- c("Longitude", "Latitude", "Lot_Area", "Neighborhood", "Year_Sold")
+pred_names <- paste0("`", preds, "`")
+
+theme_set(theme_bw())
+```
+
+The Ames housing data will be used to demonstrate how regression models can e made using `parsnip`. We will create the data set and create asimple training/test set split:
+
+```{r parsnip-dataset}
+library(AmesHousing)
+ames <- make_ames()
+
+set.seed(4595)
+data_split <- initial_split(ames, strata = "Sale_Price", p = .75)
+ames_train <- training(data_split)
+ames_test <- testing(data_split)
+
+ames_test %>% dim()
+ames_train %>% dim()
+
+ggplot()+
+  geom_freqpoly(aes(Sale_Price), data=ames_test, col="light blue")+
+  geom_freqpoly(aes(Sale_Price), data = ames_train, col="red")
+```
+
+### Random Forests
+
+We'll start by fitting a random forest model to a small set of parameters. Let's say that the model would include predictors: `Longitude`, `Latitude`, `Lot_Area`, `Neighborhood` and `Year_Sold`. A simple random forest model can be specified via:
+
+```{r}
+library(parsnip)
+
+rf_defaults <- parsnip::rand_forest(mode = "regression")
+rf_defaults
+```
+
+The model will be fit with the `ranger` package. Since we didn't add any extra arguments to `fit`, _many_ of the arguments will be set to their defaults from the specific function that is used by `ranger::ranger`. The helper page for the model function describes the changes to the default parameters that are made and the `translate` function can also be used.
+
+`parsnip` gives two different interfaces to the models: the formula and non-formula interfaces. Let's start with the non-formula interface:
+
+```{r}
+preds <- c("Longitude", "Latitude", "Lot_Area", "Neighborhood", "Year_Sold")
+
+pred_map <- function(dataset, outcome, pred){
+  outcome <- enquo(outcome)
+  pred <- enquo(pred)
+  ggplot(data = dataset, aes(x = !!pred, y = !!outcome))+
+    geom_point()+
+    stat_smooth(method = "loess")}
+
+pred_map(ames_train, Sale_Price, Longitude)
+
+rf_xy_fit <- 
+  rf_defaults %>% 
+  set_engine("ranger") %>% 
+  fit_xy(
+    x = ames_train[,preds],
+    y = log10(ames_train$Sale_Price)
+  )
+
+rf_xy_fit
+```
+
+The non-fomula interface doesn't do anything to the predictors before giving it to the underlying model function. This particular does not require indicator variables to be create prior to the model (note that the output shows "Number of independent variables: 5").
+
+For regression models, the basic `predict` method can be used and returns a tibble with a column named `.pred`:
+
+```{r eval=FALSE}
+test_results <- ames_test %>% 
+  select(Sale_Price) %>% 
+  mutate(Sale_Price = log10(Sale_Price)) %>% 
+  bind_cols(
+    predict(rf_xy_fit, new_data = ames_test[,preds])
+  )
+
+test_results
+```
+
+```{r eval=FALSE}
+test_results %>% 
+  ggplot(aes(Sale_Price, .pred))+
+  geom_point()
+
+
+# summarize performance
+test_results %>% metrics(truth = Sale_Price,
+                         estimate = .pred)
+```
+
+Note that:
+
+- if the model required indicator variables, we would have to create them manually prior to using `fit` (perhaps using the `recipes` package).
+- we had to manually log the outcome prior to modeling.
+
+Now, for illustration, let's use the formula method using some new parameter values:
+
+```{r eval=FALSE}
+
+rand_forest(mode = "regression", mtry = 3, trees = 1000) %>%
+  set_engine("ranger") %>%
+  fit(
+    log10(Sale_Price) ~ Longitude + Latitude + Lot_Area + Neighborhood + Year_Sold,
+    data = ames_train
+  )
+
+#> parsnip model object
+#> 
+#> Ranger result
+#> 
+#> Call:
+#>  ranger::ranger(formula = formula, data = data, mtry = ~3, num.trees = ~1000,      num.threads = 1, verbose = FALSE, seed = sample.int(10^5,          1)) 
+#> 
+#> Type:                             Regression 
+#> Number of trees:                  1000 
+#> Sample size:                      2199 
+#> Number of independent variables:  5 
+#> Mtry:                             3 
+#> Target node size:                 5 
+#> Variable importance mode:         none 
+#> Splitrule:                        variance 
+#> OOB prediction error (MSE):       0.00858 
+#> R squared (OOB):                  0.73
+```
+
+Suppose that there was some feature in the `randomForest` package that we would like to evaluate. To do so, the only part of the syntax that needs to change is the `set_engine` argument:
+
+```{r eval=FALSE}
+rand_forest(mode = "regression", mtry = 3, trees = 1000) %>%
+  set_engine("randomForest") %>%
+  fit(
+    log10(Sale_Price) ~ Longitude + Latitude + Lot_Area + Neighborhood + Year_Sold,
+    data = ames_train
+  )
+
+#> parsnip model object
+#> 
+#> 
+#> Call:
+#>  randomForest(x = as.data.frame(x), y = y, ntree = ~1000, mtry = ~3) 
+#>                Type of random forest: regression
+#>                      Number of trees: 1000
+#> No. of variables tried at each split: 3
+#> 
+#>           Mean of squared residuals: 0.0128
+#>                     % Var explained: 59.8
+```
+
+Look at the formula code that was printed out, one function uses the argument name `ntree` and the other uses  `num.trees`, `parsnip` doesn't require you to know the specific names of the main arguments.
+
+Now suppose we want to modify the value of `mtry` based on the number of predictors in the data. Usually, the default value would be `floor(sqrt(num_predictors))`. To use a pure bagging model would require `mtry` value equal to the total number of parameters. Thre many be cases where you may not know how many predictors are going to be present (perhaps due to he generation of indicator variables or a variable filter) so that might be difficult to know exactly.
+
+When the model is being fit by `pasrnip`, [data descriptors](https://topepo.github.io/parsnip/reference/descriptors.html) are made availabe. These attempt to let you know what you will have available when the model is fit. When a model object is created (say using `rand_forest`),, the values of the arguments that you give it ar _immediately evaluated_.. unless you delay them. To delay the evalulation of any argument, you can used `rlang::expr` to make an expression.
+
+Two relevant descriptors for what we are about to do are:
+
+- `.preds()`: the number of predictor _variables_ in the dataset that are associated with the predictors __prior to dummy variable creation__
+- `.cols()`: the number of predictor _columns_ after dummy variables (or other encodings) are created.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
