@@ -15,9 +15,11 @@ From 2018 to 2019 January
 https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/   
 https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
+## UC Business analyrics by R
+University of Cincinatti - http://uc-r.github.io  
 
-## Modeling packages
-### Caret
+# Modeling packages
+## Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
 A package for ML modeling with pre-processing techniques 
 ```{R}
@@ -27,7 +29,7 @@ install.packages("caret")
 From Sep 2018 - Oct 2018  
 http://topepo.github.io/caret/  
 
-### Tidymodels  
+## Tidymodels  
 Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
 ```{R}
 # Avaiable from CRAN
@@ -40,13 +42,13 @@ install.packages("tidymodels")
 - parsnip:  
 
 
-## FE packages  
-### Feature Engineering and Selection (FES)  
+# FE packages  
+## Feature Engineering and Selection (FES)  
 A Bookdown page prepared by Max Kuhn  
 http://www.feat.engineering/  
 Reference: https://github.com/kojimizu/FES  
 
-### Feature Engineering Book
+## Feature Engineering Book
 by Alice Zheng  
 
 
