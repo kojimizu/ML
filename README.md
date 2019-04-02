@@ -36,10 +36,10 @@ Tidymodels is a multi-package containing modern tidyverse-based packages. I unde
 install.packages("tidymodels")
 ```
 
-- broom:  
-- rsample:  
-- recipes:  
-- parsnip:  
+- broom:  tidy, augment, glance for model interpretation support
+- rsample:  data resampling 
+- recipes:  pre-processing functions (similar to caret)
+- parsnip:  modeling functions 
 
 
 ## FE packages  
