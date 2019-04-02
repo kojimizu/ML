@@ -1985,7 +1985,7 @@ library(broom)
 (default <- as_tibble(ISLR::Default))
 ```
 
-### Why Logistic regression {#why-logit}
+#### Why Logistic regression {#why-logit}
 
 Linear regression is not approproate in the case of qualitative response. Why not? Suppose that we are trying to predict the medical condition of a patient in the emergency room on the basis of her symptoms. In this simplified example, there are three possible diagnoses: _stroke_, _drug overdose_, and _epileptic seizure_. We could consider encoding these values as a quantitative response variable, `Y` , as follows:
 
@@ -2037,14 +2037,1163 @@ test <- default[!sample, ]
 We will fit a logistic regression model in order to predict the probability of a customer defaulting based on the average balance carried by the customer. The `glm` function fits generalized linear models, a class of models that includes logistic regression. The syntax of the `glm` function is similar to that of `lm`, except that we must pass the argument `family = binomial` in order to tell R to run a logistic regression rather than some other type of generalized linear model.
 
 ```{r}
-model <- glm(default ~ balance, family = "binomial",
+model1 <- glm(default ~ balance, family = "binomial",
              data = train)
 ```
 
-In the background the `glm`, uses _maximum likelihood_ to fit the model. The basic intuition behind using maximum likelihood to fit a logistic regression model is as follows: we seek estimates for $\beta_0$ and $\beta_1$ such that the predicted probability $p(x_i)$ of default for each individual, using Eq.1, corresponds as closely as possible to the individual's observed default status. In other words, we try to find $\beta_0$ and $\beta_1$
+In the background the `glm`, uses _maximum likelihood_ to fit the model. The basic intuition behind using maximum likelihood to fit a logistic regression model is as follows: we seek estimates for $\beta_0$ and $\beta_1$ such that the predicted probability $p(x_i)$ of default for each individual, using Eq.1, corresponds as closely as possible to the individual's observed default status. In other words, we try to find $\beta_0$ and $\beta_1$ 1
+  such that plugging these estimates into the model for $p(X)$, given in Eq. 1, yields a number close to one for all individuals who defaulted, and a number close to zero for all individuals who did not. This intuition can be formalized using a mathematical equation called a likelihood function:
+
+$$
+l(\beta_0, \beta_1) = \Pi_{i:y_i-1} p(x_i) \Pi_{i':y_i'=0}(1-p(x_i'))
+$$
+
+The estimates $\beta_0 and \beta_1$ are chosen to _maximize_ this likelihood function. Maximum likelihood is very general approach that is used to fit many of the non-linear models that we will examine in future totorial. What resuls is an S-shaped probability curve illustrated below (note that to plot the logistic regression fit line, we need to convert our response variable to a $[0,1]$ binary coded variable)
+
+```{r}
+default %>%
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>%
+  ggplot(aes(balance, prob)) +
+  geom_point(alpha = .15) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) +
+  ggtitle("Logistic regression model fit") +
+  xlab("Balance") +
+  ylab("Probability of Default")
+```
+
+Similar to linear regression we can assess the model using `summary` or `glance`. Note that the coefficient output format is similar to what we saw in linear regression; however, the goodness-of-fit details at the bottom of `summary` differ. We’ll get into this more later but just note that you see the word deviance. Deviance is analogous to the sum of squares calculations in linear regression and is a measure of the lack of fit to the data in a logistic regression model. The null deviance represents the difference between a model with only the intercept (which means “no predictors”) and a saturated model (a model with a theoretically perfect fit). The goal is for the model deviance (noted as _Residual deviance_) to be lower; smaller values indicate better fit. In this respect, the null model provides a baseline upon which to compare predictor models.
+
+```{r}
+summary(model1)
+## 
+## Call:
+## glm(formula = default ~ balance, family = "binomial", data = train)
+## 
+## Deviance Residuals: 
+##     Min       1Q   Median       3Q      Max  
+## -2.2905  -0.1395  -0.0528  -0.0189   3.3346  
+## 
+## Coefficients:
+##               Estimate Std. Error z value Pr(>|z|)    
+## (Intercept) -1.101e+01  4.887e-01  -22.52   <2e-16 ***
+## balance      5.669e-03  2.949e-04   19.22   <2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## (Dispersion parameter for binomial family taken to be 1)
+## 
+##     Null deviance: 1723.03  on 6046  degrees of freedom
+## Residual deviance:  908.69  on 6045  degrees of freedom
+## AIC: 912.69
+## 
+## Number of Fisher Scoring iterations: 8
+```
+
+##### Asessing coefficients
+
+The below table shows the coefficient estimates and related information that result from fitting a logistic regression model in order to predict the probability of default = Yes using balance. Bear in mind that the coefficient estimates from logistic regression characterize the relationship between the predictor and response variable on a _log-odds_ scale (see Ch. 3 of ISLR1 for more details). Thus, we see that $\hatβ_1=0.0057$ ; this indicates that an increase in balance is associated with an increase in the probability of default. To be precise, a one-unit increase in balance is associated with an increase in the log odds of default by 0.0057 units.
+
+```{r}
+broom::tidy(model1)
+##          term      estimate   std.error statistic       p.value
+## 1 (Intercept) -11.006277528 0.488739437 -22.51972 2.660162e-112
+## 2     balance   0.005668817 0.000294946  19.21985  2.525157e-82
+```
+
+We can further interpret the _balance_ coefficient as - for every one dollar increase in monthly balance carried, the odds of the customer defaulting increases by a factor of 1.0057.
+
+```{r}
+exp(coef(model1))
+```
+
+Many aspects of the coefficient output are similar to those discussed in the linear regression output. For example, we measure the confidence intervals and accuracy of the coefficient estimates by computing their standard errors. For instance, $\hatβ_1$ has a p-value < $2e-16$ and the probability of defaulting. We can also use the standard errors to get confidence intervals as we did in the linear regression tutorial:
+
+```{r}
+confint(model1)
+```
+
+##### Making predictions
+
+Once the coefficients have benn estimated, it is a simple matter to comupte the probability of default for any given credit card balance.  Mathematically, using the coefficient estimates from our model we predict that the default probability for an individual with a balance of $1,000 is less than 0.5%
+
+$$
+\hat p(x) = \frac{e^{\hat \beta_0 + \hat \beta_1 X}}{1 +e ^{\hat \beta_0 + \hat \beta_1 X}} = 0.004785
+
+, where \beta_o = -11.0063, 0.0057
+$$
+
+We can predict the probability of defaulting in R using the `predict` function (be sure to include `type = "response"`). Here we compare the probability of defaulting based on balances of `$1000 and $2000`. As you can see as the balance moves from `$1000 to $2000` the probability of defaulting increases signficantly, from 0.5% to 58%!
+
+```{r}
+predict(model1, 
+        data.frame(balance = c(1000, 2000)), 
+        type = "response")
+##           1           2 
+## 0.004785057 0.582089269
+```
+
+One can also use qualitative predictors with the logistic regression model. As an example, we can fit a model that uses the `student` variable.
+
+```{r}
+model2 <- glm(default ~ student, family = "binomial", data = train)
+
+tidy(model2)
+##          term   estimate  std.error statistic     p.value
+## 1 (Intercept) -3.5534091 0.09336545 -38.05914 0.000000000
+## 2  studentYes  0.4413379 0.14927208   2.95660 0.003110511
+```
+
+The coefficient associated with `student = Yes` is positive, and the associated p-value is statistically significant. This indicates that students tend to have higher default probabilities than non-students. In fact, this model suggests that a student has nearly twice the odds of defaulting than non-students. However, in the next section we’ll see why.
+
+$$
+p(default = Yes|student = Yes) = 
+\frac{e^{-3.55+0.44*1}}{1+e^{-3.55+0.44*1}}=0.0426 \\
+
+p(default = Yes|student = No) = 
+\frac{e^{-3.55+0.44*0}}{1+e^{-3.55+0.44*0}}=0.0426
+
+$$
+
+
+```{r}
+predict(model2, data.frame(student = factor(c("Yes", "No"))), type = "response")
+##          1          2 
+## 0.04261206 0.02783019
+```
+
+#### Multiple logistic regression
+
+We can also extend our model as seen in Eq. 1 so that we can predict a binary response using multiple predictors where $X = (X_1,..., X_p$) are p predictors:
+
+$$
+p(X) = \frac{e^{\beta_0+\beta_1X_1+...+\beta_pX_p}}{1+e^{\beta_0+\beta_1X_1+...+\beta_pX_p}}
+$$
+
+Let’s go ahead and fit a model that predicts the probability of _default_ based on the balance, income (in thousands of dollars), and student status variables. There is a surprising result here. The p-values associated with `balance` and `student=Yes` status are very small, indicating that each of these variables is associated with the probability of defaulting. However, the coefficient for the student variable is negative, indicating that students are less likely to default than non-students. In contrast, the coefficient for the student variable in model 2, where we predicted the probability of default based only on student status, indicated that students have a greater probability of defaulting. What gives?
+
+```{r}
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+tidy(model3)
+```
+
+The right-hand panel of the figure below provides an explanation for this discrepancy. The variables student and balance are correlated. Students tend to hold higher levels of debt, which is in turn associated with higher probability of default. In other words, students are more likely to have large credit card balances, which, as we know from the left-hand panel of the below figure, tend to be associated with high default rates. Thus, even though an individual student with a given credit card balance will tend to have a lower probability of default than a non-student with the same credit card balance, the fact that students on the whole tend to have higher credit card balances means that overall, students tend to default at a higher rate than non-students. This is an important distinction for a credit card company that is trying to determine to whom they should offer credit. A student is riskier than a non-student if no information about the student’s credit card balance is available. However, that student is less risky than a non-student with the same credit card balance!
+
+```{r include=FALSE}
+model3$model
+
+predict(model3, 
+        data.frame(balance = c(1000, 2000),
+                   student = c("Yes", "No"),
+                   income=1000), 
+        type = "response")
+
+pred <- predict(model3, test,
+        type = "response")
+
+pred_results <- test %>% 
+  bind_cols(pred = pred)
+
+pred_results %>% 
+  ggplot(aes(balance, pred, col=student, group=student))+
+  geom_point(size=0.5)+
+  geom_line()
+```
+
+This simple example illustrates the dangers and subtleties associated with performing regressions involving only a single predictor when other predictors may also be relevant. The results obtained using one predictor may be quite different from those obtained using multiple predictors, especially when there is correlation among the predictors. This phenomenon is known as _confounding_.
+
+In the case of multiple predictor variables sometimes we want to understand which variable is the most influential in predicting the response (`Y`) variable. We can do this with `varImp` from the `caret` package. Here, we see that _balance_ is the most important by a large margin whereas student status is less important followed by income (which was found to be insignificanbt anyways (p = .64)).
+
+```{r}
+caret::varImp(model3)
+```
+
+As before, we can easily make predictions with this model. For example, a student with a credit card balance of $1,500$ and an income of $40,000$ has an estimated probability of default of
+
+$$
+p(X) = p(X) = \frac{e^{-10.907+0.0591*1,500-0.00001*50-0.809*1}}{1+e^{-10.907+0.0591*1,500-0.00001*50-0.809*1}} = 0.054
+
+$$
+
+A non-student with the same balance and income has an estimated probability of default of 
+
+
+$$
+p(X) = p(X) = \frac{e^{-10.907+0.0591*1,500-0.00001*50-0.809*0}}{1+e^{-10.907+0.0591*1,500-0.00001*50-0.809*}} = 0.114
+$$
+
+```{r}
+new.df <- tibble(balance = 1500, income = 40, student = c("Yes", "No"))
+predict(model3, new.df, type = "response")
+##          1          2 
+## 0.05437124 0.11440288
+```
+
+Thus, we see that for the given balance and income (although income is insignificant) a student has about half the probability of defaulting than a non-student.
+
+#### Mode evaluation & diagnostics
+
+So far three logistic regression models have been built and the coefficients have been examined. However, some critical questions remain. Are the models any good? How well does the model fit the data? And how accurate are the predictions on an out-of-sample data set?
+
+##### Goodness of fit
+
+In the linear regression tutorial we saw how the F-statistic, $R^2$ and adjusted $R^2$ and residual diagnostics inform us of how good the model fits the data. Here, we will look at a few ways to assess the goodness of fit ofr our logit models.
+
+##### Likelihood ratio test
+
+First, we can use a _Likelihood Ratio Test_ to assess if our models are improving the fit. Adding predictor variables to a model will almost always improve the model fit (i.e. increase the log likelihood and reduce the model deviance compared to the null deviance), but it is necessary to test whether the observed difference in model fit is statistically significant. We can use _anova_ to perform this test. The results indicate that, compared to `model1`, `model3` reduces the residual deviance by over 13 (remember, a goal of logistic regression is to find a model that minimizes deviance residuals). More imporantly, this improvement is statisticallly significant at p = 0.001. This suggests that `model3` does provide an improved model fit.
+
+```{r}
+anova(model1, model3, test="Chisq")
+```
+
+##### pseudo $R^2$
+
+Unlike linear regression with ordinary least squares estimation, there is no $R^2$ statistic which explains the proportion of variance in the dependent variable that is explained by the predictors. However, there are a number of pseudo $R^2$ metrics that could be of value. Most notable is [McFadden's $R^2$](http://stats.stackexchange.com/questions/82105/mcfaddens-pseudo-r2-interpretation), which is defined as 
+
+$$
+1 - \frac{ln(LM_1)}{ln(LM_0)}
+$$
+
+where $ln(LM_1)$ is the log likelihood value for the fitted model and ln(LM_0) is the log likelohood for the null model with only an intercept as a predictor. The measure ranges from 0 to just under 1, with values closer to zero indicating that the model has no predictive power. However, unlike $R^2$ in linear regression, models rarely achieve a high McFadden $R^2$. In fact, in McFadden’s own words models with a McFadden pseudo $R^2 ~ 0.40$ represents a very good fit. We can assess McFadden's pseudo $R^2$ values for our models with:
+
+```{r}
+list(
+  model1 = pscl::pR2(model1)["McFadden"],  
+  model2 = pscl::pR2(model2)["McFadden"],  
+  model3 = pscl::pR2(model3)["McFadden"])
+```
+
+##### Residual assessment
+Keep in mind that logistic regression does not assume the residuals are normally distributed nor that the variance is constant. However, the deviance residual is useful for determining if individual points are not well fit by the model. Here we can fit the standardized deviance residuals to see how many exceed 3 standard deviations. First we extract several useful bits of model results with `augment` and then proceed to plot.
+
+```{r}
+model1_data <- augment(model1) %>% 
+  mutate(index = 1:n())
+
+ggplot(model1_data, aes(index, .std.resid, col=default))+
+  geom_point(alpha = .5)+
+  geom_ref_line(h = 3)
+```
+
+Those standardized residuals that exceed 3 represent possible outliers and may deserve closer attention. We can filter for these residuals to get a closer look. We see that all these observations represent customers who defaulted with budgets that are much lower than the normal defaulters.
+
+```{r}
+model1_data %>% 
+  filter(abs(.std.resid) > 3)
+```
+
+Similar to linear regression we can also identify influential observations with Cook’s distance values. Here we identify the top 5 largest values.
+
+```{r}
+plot(model1, which = 4, id.n = 5)
+```
+
+
+And we can investigate these further as well. Here we see that the top five influential points include:
+
+- hose customers who defaulted with very low balances and
+- two customers who did not default, yet had balances over $2,000
+
+This means if we were to remove these observations (not recommended), the shape, location, and confidence interval of our logistic regression S-curve would likely shift.
+
+```{r}
+model1_data %>% 
+  top_n(5, .cooksd)
+```
+
+#### Validation of predicted values
+
+##### Classification rate
+
+When developing models for prediction, the most critical metric is regarding how well the model does in predicting the target variable on out-of-sample observations. First, we need to use the estimated models to predict values on our training data set(`train`). When using `predict` be sure to include `type=response` so that the prediction returns the probability of default.
+
+```{r}
+test.predicted.m1 <- predict(model1, newdata = test, type = "response")
+test.predicted.m2 <- predict(model2, newdata = test, type = "response")
+test.predicted.m3 <- predict(model3, newdata = test, type = "response")
+```
+
+Now we can compare the predicted target variable versus the observed values for each model and see which performs the best. We can start by using the confusion matrix, which is a table that describes the classification performance for each model on the test data. Each quadrant of the table has an important meaning. In this case the “No” and “Yes” in the rows represent whether customers defaulted or not. The “FALSE” and “TRUE” in the columns represent whether we predicted customers to default or not.
+
+- __true positives__ (Bottom-right quadrant): these are cases in which we predicted the customer would default and they did.
+- __true negatives__ (Top-left quadrant): We predicted no default, and the customer did not default.
+- __false positives__ (Top-right quadrant): We predicted yes, but they didn’t actually default. (Also known as a “Type I error.”)
+- __false negatives__ (Bottom-left): We predicted no, but they did default. (Also known as a “Type II error.”)
+
+The results show that `model1` and `model3` are very similar. 96% of the predicted observations are true negatives and about 1% are true positives. Both models have a type II error of less than 3% in which the model predicts the customer will not default but they actually did. And both models have a type I error of less than 1% in which the models predicts the customer will default but they never did. `model2` results are notably different; this model accurately predicts the non-defaulters (a result of 97% of the data being non-defaulters) but never actually predicts those customers that default!
+
+```{r}
+list(
+  model1 = table(test$default, test.predicted.m1 > 0.5) %>% prop.table() %>% round(3),
+  model2 = table(test$default, test.predicted.m2 > 0.5) %>% prop.table() %>% round(3),
+  model3 = table(test$default, test.predicted.m3 > 0.5) %>% prop.table() %>% round(3))
+```
+
+We also want to understand the misclassification (aka _error_) rates (or we could flip this for the accuracy rates). . We don’t see much improvement between models 1 and 3 and although model 2 has a low error rate don’t forget that it never accurately predicts customers that actually default.
+
+```{r}
+test %>%
+  mutate(m1.pred = ifelse(test.predicted.m1 > 0.5, "Yes", "No"),
+         m2.pred = ifelse(test.predicted.m2 > 0.5, "Yes", "No"),
+         m3.pred = ifelse(test.predicted.m3 > 0.5, "Yes", "No")) %>%
+  summarise(m1.error = mean(default != m1.pred),
+            m2.error = mean(default != m2.pred),
+            m3.error = mean(default != m3.pred))
+## # A tibble: 1 × 3
+##     m1.error   m2.error   m3.error
+##        <dbl>      <dbl>      <dbl>
+## 1 0.02782697 0.03491019 0.02807994
+```
+
+
+
+We can gain some additional insights by looking at the raw values (not percentages) in our confusion matrix. Lets look at model 1 to illustrate. We see that there are a total of 
+$98+40=138$ customers that defaulted. Of the total defaults, $98/138=71%$ were not predicted. Alternatively, we could say that only $40/138=29$ of default occurrences were predicted - this is known as the the precision (also known as sensitivity) of our model. So while the overall error rate is low, the precision rate is also low, which is not good!
+
+```{r}
+table(test$default, test.predicted.m1>0.5)
+```
+
+With classification models you will also here the terms _sensitivity_ and _specificity_ when characterizing the performance of the model. As mentioned above sensitivity is synonymous to precision. However, the specificity is the percentage of non-defaulters that are correctly identified, here $1 -12/(3803+12) = 99.6%$ (the accuracy here is largely driven by the fact that 97% of the observations in our data are non-defaulters). The importance between _sensitivityy_ and _specificity_ is dependent on context. In this case, a credit card company is likely to be more concerned with sensititivy since they want to reduce their risk. Therefore, they may be more concerned with tuning a model so that their _sensititivy_/_precision_ is improved. 
+
+The receiving operating characteristic (ROC) is a visual measure of classifier performance. Using the proportion of positive data points that are correctly considered as positive and the proportion of negative data points that are mistakenly considered as positive, we generate a graphic that shows the trade off between the rate at which you can correctly predict something with the rate of incorrectly predicting something. Ultimately, we’re concerned about the area under the ROC curve, or AUC. That metric ranges from 0.50 to 1.00, and values above 0.80 indicate that the model does a good job in discriminating between the two categories which comprise our target variable. We can compare the ROC and AUC for model’s 1 and 2, which show a strong difference in performance. We definitely want our ROC plots to look more like model 1’s (left) rather than model 2’s (right)!
+
+```{r}
+library(ROCR)
+
+par(mfrow=c(1, 2))
+
+prediction(test.predicted.m1, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot()
+
+prediction(test.predicted.m2, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot()
+```
+
+And to compute the AUC numerically we can use the following. Remember, AUC will range from .50 - 1.00. Thus, model 2 is a very poor classifying model while model 1 is a very good classying model.
+
+```{r}
+# model1 AUC
+prediction(test.predicted.m1, test$default) %>% 
+  performance(measure = "auc") %>% 
+  .@y.values
+## [[1]]
+## [1] 0.939932
+
+# model 2 AUC
+prediction(test.predicted.m2, test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+## [[1]]
+## [1] 0.5386955
+```
+
+We can continue to “tune” our models to improve these classification rates. If you can improve your AUC and ROC curves (which means you are improving the classification accuracy rates) you are creating _“lift”_, meaning you are lifting the classification accuracy.
+
+#### Additional resources
+
+This will get you up and running with logistic regression. Keep in mind that there is a lot more you can dig into so the following resources will help you learn more:
+
+An Introduction to Statistical Learning
+Applied Predictive Modeling
+Elements of Statistical Learning
 
 ### Regularized regression
-### Multivariate Adaptive regression splines (MARS)
+
+As discussed, linear regression is a simple and fundamental approach for supervised learning. Moreover, when the assumption required by OLS are met, the coefficients produced by OLS are unbiased and, of all unbiased linear techniques, have the lowest variance. However, in today’s world, data sets being analyzed typically have a large amount of features. As the number of features grow, our OLS assumptions typically break down and our models often overfit (aka have high variance) to the training sample, causing our out of sample error to increase. Regularization methods provide a means to control our regression coefficients, which can reduce the variance and decrease our of sample error.
+
+#### tl;dr
+This tutorial serves as an introduction to regularized and covers:
+
+1. [Replication requirements](#RR_RR): What you’ll need to reproduce the analysis in this tutorial.
+2. [Why regularize](#RR_Reg): A closer look at why regularization can improve upon ordinary least squares regression.
+3. [Ridge regression](#RR_Ridge): Regularizing coefficients but keeping all features.
+4. [Lasso regression](#RR_LASSO): Regularizing coefficients to perform feature selection.
+5. [Elastic nets](#RR_EN): Combining Ridge and Lasso regularization. Predicting: Once you’ve found your optimal model, predict on a new data set.
+6. [Other package implementations](#RR_pck_imp): Implementing regularization with other popular packages.
+7. [Learning more](#RR_Learn): Where to go from here.
+
+#### Replication Requirements: {#RR_RR}
+
+This tutorial leverages the following packags. Most of these packages are playing a supporting role while the main emphasis will be on the `glmnet` package.
+
+```{r}
+library(rsample)  # data splitting 
+library(glmnet)   # implementing regularized regression approaches
+library(dplyr)    # basic data manipulation procedures
+library(ggplot2)  # plotting
+```
+
+To illustrate various regularization concepts, we will use the `Ames` Housing data that has been included in the `AmesHousing` package.
+
+```{r}
+# Create training (70%) and test (30%) sets for the AmesHousing::make_ames() data.
+# Use set.seed for reproducibility
+
+set.seed(123)
+
+ames_split <- initial_split(AmesHousing::make_ames(), prop = .7, strata = "Sale_Price")
+ames_train <- training(ames_split)
+ames_test  <- testing(ames_split)
+```
+
+
+#### Why regularize {#RR_Reg}
+
+The objective of ordinary least squares regression is to find the plane that minimizes the sum of squared errors (SSE) between the observed and predicted response. In Figure 1, this means identifying the plane that minimizes the grey lines, which measure the distance between the observed (red dots) and predicted response (blue plane).
+
+More formally, this objective function is written as:
+$$
+minimize [{SSE = \Sigma_{i=1}^n (y_i-\hat{}y_i)^2}]
+$$
+
+The OLS objective function performs quite well when our data align to the key assumptions of OLS regression:
+
+- Linear relationship
+- Multivariate normality
+- No autocorrelation
+- Homoscedastic (constant variance in residuals)
+- There are more observations (n) than features 
+
+However, for many real-life data sets we have very _wide_ data, meaning we have a large number of features (_p_) that we believe are informative in predicting some outcome. As _p_ increases, we can quickly violate some of the OLS assumptions and we require alternative approaches to provide predictive analytic solutions. Specifically, as _p_ increases there are three main issues we most commonly run into:
+
+__1. Multicollinearty__
+
+As _p_ increases we are more likely to capture multiple features that have some multicollinearity. When multicollinearity exists, we often see high variability in our coefficient terms. For example, in our Ames data, `Gr_Liv_Area` and `TotRms_AbvGrd` are two variables that have a correlation of 0.801 and both variables are strongly correlated to our response variable (`Sale_Price`). When we fit a model with both these variables we get a positive coefficient for `Gr_Liv_Area` but a negative coefficient for `TotRms_AbvGrd`, suggesting one has a positive impact to `Sale_Price` and the other a negative impact.
+
+```{r}
+# fit with two strongly correlated variables
+lm(Sale_Price ~ Gr_Liv_Area + TotRms_AbvGrd, data = ames_train)
+## 
+## Call:
+## lm(formula = Sale_Price ~ Gr_Liv_Area + TotRms_AbvGrd, data = ames_train)
+## 
+## Coefficients:
+##   (Intercept)    Gr_Liv_Area  TotRms_AbvGrd  
+##       49953.6          137.3       -11788.2
+```
+
+However, if we refit the model with each variable independently, they both show a positive impact. However, the `Gr_Liv_Area` effect is now smaller and the `TotRms_AbvGrd` is positive with a much larger magnitude.
+
+```{r}
+# fit with just Gr_Liv_Area
+lm(Sale_Price ~ Gr_Liv_Area, data = ames_train)
+## 
+## Call:
+## lm(formula = Sale_Price ~ Gr_Liv_Area, data = ames_train)
+## 
+## Coefficients:
+## (Intercept)  Gr_Liv_Area  
+##       17797          108
+
+# fit with just TotRms_Area
+lm(Sale_Price ~ TotRms_AbvGrd, data = ames_train)
+## 
+## Call:
+## lm(formula = Sale_Price ~ TotRms_AbvGrd, data = ames_train)
+## 
+## Coefficients:
+##   (Intercept)  TotRms_AbvGrd  
+##         26820          23731
+```
+
+This is a common result when collinearity exists. Coefficients for correlated features become over-inflated and can fluctuate significantly. One consequence of these large fluctuations in the coefficient terms is overfitting, which means we have high variance in the bias-variance tradeoff space. Although an analyst can use tools such as variance inflaction factors (Myers, 1994) to identify and remove those strongly correlated variables, it is not always clear which variable(s) to remove. Nor do we always wish to remove variables as this may be removing signal in our data.
+
+__2. Insufficient solution__
+
+When the number of features exceed the number of observations ($p>n$), the OLS solution matrix is _not_ invertible. This causes significant issues because it means: (1) The least-squares estimates are not unique. In fact, there are an infinite set of solutions available and most of these solutions overfit the data. (2) In many instances the result will be computationally infeasible.
+
+Consequently, to resolve this issue an analyst can remove variables until $p < n$ and then fit an OLS regression model. Although an analyst can use pre-processing tools to guide this manual approach (Kuhn & Johnson, 2013, pp. 43-47), it can be cumbersome and prone to errors.
+
+__3. Interpretability__
+
+With a large number of features, we often would like to identify a smaller subset of these features that exhibit the strongest effects. In essence, we sometimes prefer techniques that provide feature selection. One approach to this is called _hard threshholding_ feature selection, which can be performed with linear model selection approaches. However, model selection approaches can be computationally inefficient, do not scale well, and they simply assume a feature as in or out. We may wish to use a _soft threshholding_ approach that slowly pushes a feature’s effect towards zero. As will be demonstrated, this can provide additional understanding regarding predictive signals.
+
+__Regulaized regression__
+
+When we experience these concerns, one alternative to OLS regression is to use regularized regression (also commonly referred to as _penalized_ models or _shrinkage_ methods) to control the parameter estimates. Regularized regression puts contraints on the magnitude of the coefficients and will progressively shrink them towards zero. This constraint helps to reduce the magnitude and fluctuations of the coefficients and will reduce the variance of our model.
+
+The objective function of regulaized regression model is very similar to OLS regression; however, we add a penalty paramter (`P`)
+
+$$
+minimize(SSE + P)
+$$
+
+There are two main penalty parameters, which we will see shortly, but they both have a similarr effect. They constrain the size of the coefficients such that the only way the coefficients can increase is if we experience a comparable decrease in the sum of squared errors (SSE). Next, we’ll explore the most common approaches to incorporate regularization.
+
+#### Ridge {#RR_Ridge}
+
+Ridge regression [(Hoerl, 1970](https://www.tandfonline.com/doi/abs/10.1080/00401706.1970.10488634)) controls the coefficients by adding $\lambda \Sigma_{j=1}^p \beta_j^2$ to the objective function. This penalty parameter is also referred to as “$L_2$" as it signifies a second-order penlty being used on the coefficients.
+
+$$ minimize (SSE + \lambda \Sigma_{j=1}^p \beta_j^2)
+$$ 
+
+
+This penalty parameter can take on a wide range of values, which is controlled by the tuning parameter $\lambda$. When $lambda>0$ there is no effect and our objective function equals the normal PLS regression objective function of simply minimizing SSE. 
+
+However, as $\lambda -> \infit$, the penalty becomes large and forces our coefficients to zero. This is illustrated in Figure 2 where exemplar coefficients have been regularized with $\lambda ranging from 0 to over 8,000 (log(8103)=9).
+
+Aothough these coefficients were scaled and centered prior to the analysis, you will notice that some are extremely large when $\lambda=0$. Furthermore, you will notice the large shrinks to zero. his is indicitive of multicollinearity and likely illustrates that constraining our coefficients with $log(\lambda)~2$ whre its then continuously shrinks to zero. This is indicative of multicollinearity and likely illustrates that constraining our coefficients with $log(\lambda)>2$ may reduce the variance, and therefore the error in our model. However, the question remains - how do we find the amount that minimizes our error? We will answer this shortly.
+
+##### Implementation
+
+To implement Ridge regression, we will focus on the `glmnet` package (implementation in other packages are illustrated [below](http://uc-r.github.io/regularized_regression#other)). `glmnet` does not use the formula method (`y ~ x`) so prior to modeling we need to create our feature and target set. Furthermore, we use the `model.matrix` function on our feature set, which will automatically dummy encode qualitative variables (see `Matrix::sparse.model.matrix` for increased efficiency on large dimension data). We also log transform our response variable due to its skeweness.
+
+
+```{r}
+# Create training and testing feature model matrices and response vectors.
+# we use model.matrix(...)[, -1] to discard the intercept
+ames_train_x <- model.matrix(Sale_Price ~ ., ames_train)[, -1]
+ames_train_y <- log(ames_train$Sale_Price)
+
+ames_test_x <- model.matrix(Sale_Price ~ ., ames_test)[, -1]
+ames_test_y <- log(ames_test$Sale_Price)
+
+# What is the dimension of of your feature matrix?
+dim(ames_train_x)
+## [1] 2054  307
+```
+
+To apply a ridge model we can use the glmnet::glmnet function. The alpha parameter tells glmnet to perform a ridge (`alpha = 0`), lasso (`alpha = 1`), or elastic net ($0 < alpha < 1$) model. Behind the scenes, `glmnet` is doing two things that you should be awre of:
+
+1. It is essential that predictor variables are standardized when performing regularized regression. `glmnet` performs this for you.  If you standardize your predictors prior to `glmnet` you can turn this argument off with `standardize = FALSE`.
+
+2. `glmnet` will perform ridge models across a wide range of $\lambda$ parameters, which are illustrated in the figure below.
+
+```{r}
+# apply ridge regression to ames data
+library(glmnet)
+ames_ridge <- glmnet(
+  x = ames_train_x,
+  y = ames_train_y,
+  alpha = 0
+)
+
+plot(ames_ridge, xvar="lambda")
+```
+
+In fact, we can see the exact $\lambda$ values applied with `ames_ridge$lambda`. Although you can specify your own $\lambda$ values, by default `glmnet` applies 100 $\lambda$ values that are derived. Majority of the time  you will have little need to adjust the default $\lambda$ values.
+
+We can also directly access the coefficients for a model using `coef. glmnet` stores all the coefficients for each model in order of largest to smallest $\lambda$. Due to the number of features, here I just peak at thebcoefficients for the `Gr_Liv_Area` and `TotRms_abvGrd` features for the largest $\lambda$ (279.1035) and smallest $\lambda$ (0.02791035). You can see how the largest $\lambda$ value has pushed these coefficients to nearly 0.
+
+```{r}
+# lambdas applied to penalty parameter
+ames_ridge$lambda %>% head()
+## [1] 279.1035 254.3087 231.7166 211.1316 192.3752 175.2851
+
+# coefficients for the largest and smallest lambda parameters
+coef(ames_ridge)[c("Gr_Liv_Area", "TotRms_AbvGrd"), 100]
+##   Gr_Liv_Area TotRms_AbvGrd 
+##  0.0001004011  0.0096383231
+coef(ames_ridge)[c("Gr_Liv_Area", "TotRms_AbvGrd"), 1] 
+##   Gr_Liv_Area TotRms_AbvGrd 
+##  5.551202e-40  1.236184e-37
+```
+
+However, at this point, we do not understand how much improvement we are experiencing in our model.
+
+__Tuning__ 
+
+Recall tht $\lambda$ is a tuning parameter that helps to control our model frok overfitting to the training data. However, to identify the optimal $\lambda$ value we need to perform [cross validation](http://uc-r.github.io/resampling_methods) (CV). `cv.glmnet` provides a built-in option to perform k-fold CV, and by default, performs 10-fold CV.
+
+```{r}
+# Apply CV Ridge regression to ames data
+ames_ridge <- cv.glmnet(
+  x = ames_train_x,
+  y = ames_train_y,
+  alpha = 0
+)
+
+# plot results
+plot(ames_ridge)
+```
+
+
+Our plot outputs above illustrates the 10-fold CV mean squared error(MSE) across the $\lambda$ values. It illustrates that we do not see substantial improvement; however, as we constrain our coefficients with $log(\lambda)>0$ penalty, the MSE rises considerably. 
+
+The numbers at the top of the plot (299) just refer to the number of variables in the model. Ridge regression does not force any variable exactly zero so all features will remain in the model (we will see this change with `lasso` and `elastic nets`).
+
+```{r}
+ames_ridge$cvm %>% min() #minimum MSE
+ames_ridge$lambda.min # lambda for this min MSE
+
+ames_ridge$cvm[ames_ridge$lambda == ames_ridge$lambda.1se] # 1st st.error
+ames_ridge$lambda.1se  # lambda for this MSE
+```
+
+The advantage of identifying the $\lambda$ with an MSE within one standard error becomes more obvious with the lasso and elastic net models.  However, for now we can assess this visually. Here we plot the coefficients across the $\lambda$ values and the dashed red line represents the largest $\lambda$ that falls within oe standard error of the minimum MSE. This shows you how much we can constrain the coefficients while still maximizing predictive accuracy.
+
+```{r}
+ames_ridge_min <- glmnet(
+  x = ames_train_x,
+  y = ames_train_y,
+  alpha = 0
+)
+
+plot(ames_ridge_min, xvar = "lambda")
+abline(v = log(ames_ridge$lambda.1se), col = "red", lty = "dashed")
+
+```
+
+__Advantage & Disdvantage__
+
+In essence, the ridge regression model has pushed many of the correlated features towards each other rather than allowing for one to be wildly positive and the other wildly negative. Furthermore, many of the non-important features have been pushed closer to zero. This means we have reduced the noise in our data, which provides us more clarity in identifying the true signals in our model.
+
+```{r}
+coef(ames_ridge, s = "lambda.1se") %>% 
+  broom::tidy() %>% 
+  filter(row != "(Intercept)") %>% 
+  top_n(25, wt = abs(value)) %>% 
+  ggplot(aes(value, reorder(row, value)))+
+  geom_point()+
+  ggtitle("Top 25 influential variables")+
+  xlab("coefficient")+
+  ylab(NULL)
+```
+
+However, __a ridge model will retain all variables__. Therefore, a ridge model is good if you believe there is a need to retain all features in your model yet reduce the noise that less influential variables may create and minimize multicollinearity. However, a ridge model does not perform feature selection. If greater interpretation is necessary where you need to reduce the signal in your data to a smaller subset then a lasso model may be preferable.
+
+#### LASSO {#RR_LASSO}
+
+The _least absolute shrinkage and selection operator (lasso)_ model ([Tibshirani, 1996](http://www.jstor.org/stable/2346178?seq=1#page_scan_tab_contents)) is an alternative to ridge regression that has a small modification to the penalty in the objective function. Rather than the $L_2$ penalty we use the following $L_1$ penalty $\lambda \Sigma_{j=1}^p|\beta_j|$ in the objective function
+
+$$
+minimize (SSE + \lambda \Sigma_{j=1}^p|\beta_j|)
+$$
+
+Whereas the ridge regression approach pushes variables to _approximately but not equal to zero_, the lasso penalty will actually push coefficients to zero as illustrated with Fig. 3. Thus the lasso model not only improves the model with regularization but it also conducts automated feature selection.
+
+In Fig.3we see that when $log(\lambda)=1$ only 3 variables are retained. Consequently, when a data set has many features lasso can be used to identify and extract those features with the largest (and most consistent) signal.
+
+__Implementation__
+
+Implementing lasso follows the same logic as implementing the ridge model, we just need to switch `alpha=1` within `glmnet`.
+
+```{r}
+## apply lasso regression to ames data
+
+ames_lasso <- glmnet(
+  x = ames_train_x,
+  y = ames_train_y,
+  alpha = 1
+)
+
+plot(ames_lasso, xvar = "lambda")
+```
+
+Our output illustrates a quick drop in the number of features retained in the lasso model as $log(\lambda)$-> -6. In fact, we see several features that had very large coefficients for the OLS model (when $log(\lambda)=-10 -> \lambda=0$.  As before, these features are likely highly correlated with other features in the data, causing their coefficients to be excessively large. As we constrain our model, these noisy features are pushed to zero.
+
+However, similar to the Ridge regression section, we need to perform CV to determine when the right value is for $\lambda$.
+
+__Tuning__
+
+To perform CV we use the same approach as we did in the ridge regression tuning section, but change our `alpha = 1`. We see that we can minimize our MSE by applying approximately $-6 < log(\lambda) < -4$ Not only does this minimize our MSE but it also reduces the number of features to $156 > p > 58$
+
+```{r}
+# Apply CV Ridge regression to ames data
+ames_lasso <- cv.glmnet(
+  x = ames_train_x,
+  y = ames_train_y,
+  alpha = 1
+)
+# plot results
+plot(ames_lasso)
+```
+
+As before, we can extract our minimum and one standard error MSE and $\λ$ values.
+
+```{r}
+min(ames_lasso$cvm)       # minimum MSE
+## [1] 0.02275227
+ames_lasso$lambda.min     # lambda for this min MSE
+## [1] 0.003521887
+
+ames_lasso$cvm[ames_lasso$lambda == ames_lasso$lambda.1se]  # 1 st.error of min MSE
+## [1] 0.02562055
+ames_lasso$lambda.1se  # lambda for this MSE
+## [1] 0.01180396
+```
+
+Now the advantage of identifying the $\lambda$ with an MSE within one standard error becomes more obvious. If we use the $\lambda$ that derives the minimum MSE we can reduce our feature set from 307 down to less than 160. However, there will be some variability with this MSE and we can reasonably assume that we can achieve a similar MSE with a slightly more constrained model that uses only 63 features. If describing and interpreting the predictors is an important outcome of your analysis, this may significantly aid your endeavor.
+
+```{r}
+ames_lasso_min <-  glmnet(
+  x = ames_train_x,
+  y = ames_train_y,
+  alpha = 1
+)
+
+plot(ames_lasso_min, xvar = "lambda")
+abline(v = log(ames_lasso$lambda.min), col = "red", lty = "dashed")
+abline(v = log(ames_lasso$lambda.1se), col = "red", lty = "dashed")
+```
+
+__Advantage & Disadvantage__
+
+Similar to ridge, the lasso pushes many of the collinear features towards each other rather than allowing for one to be wildly positive and the other wildly negative. However, unlike ridge, the lasso will actually push coefficients to zero and perform feature selection. This simplifies and automates the process of identifying those feature most influential to predictive accuracy.
+
+```{r}
+coef(ames_lasso, s = "lambda.1se") %>% 
+  broom::tidy() %>% 
+  filter(row != "(Intercept)") %>% 
+  ggplot(aes(value, reorder(row, value), color = value >0))+
+  geom_point(show.legend = FALSE)+
+  ggtitle("Influential variables")+
+  xlab("Coefficient")+
+  ylab(NULL)
+```
+
+However, often when we remove features we sacrifice accuracy. Consequently, to gain the refined clarity and simplicity that lasso provides, we sometimes reduce the level of accuracy. Typically we do not see large differences in the minimum errors between the two. So practically, this may not be significant but if you are purely competing on minimizing error (i.e. Kaggle competitions) this may make all the difference!
+
+```{r}
+# minimum Ridge MSE
+min(ames_ridge$cvm)
+## [1] 0.02147691
+
+# minimum Lasso MSE
+min(ames_lasso$cvm)
+## [1] 0.02275227
+```
+
+
+#### Elastic Nets {#RR_EN}
+
+A generalization of the ridge and lasso models is the elastic net (Zou and Hastie, 2005), which combines the two penalties.
+
+$$
+minimize(SSE + \lambda_1\Sigma_{j=1}^p \beta_j^2 + \lambda_2\Sigma_{j=1}^p |\beta_j|)
+$$
+
+Although lasso models perform feature selection, a result of their penalty parameter is that typically when two strongly correlated features are pushed towards zero, one may be pushed fully to zero while the other remains in the model. Furthermore, the process of one being in and one being out is not very systematic. In contrast, the ridge regression penalty is a little more effective in systematically reducing correlated features together. Consequently, the advantage of the elastic net model is that it enables effective regularization via the ridge penalty with the feature selection characteristics of the lasso penalty.
+
+__Implementation__
+
+We implement an elastic net the same way as the ridge and lasso models, which are controlled by the alpha parameter. Any alpha value between 0-1 will perform an elastic net. When alpha = 0.5 we perform an equal combination of penalties whereas `alpha` $→0$  will have a heavier ridge penalty applied and `alpha` $→1$ will have a heavier lasso penalty.
+
+```{r}
+library(glmnet)
+lasso    <- glmnet(ames_train_x, ames_train_y, alpha = 1.0) 
+elastic1 <- glmnet(ames_train_x, ames_train_y, alpha = 0.25) 
+elastic2 <- glmnet(ames_train_x, ames_train_y, alpha = 0.75) 
+ridge    <- glmnet(ames_train_x, ames_train_y, alpha = 0.0)
+
+par(mfrow = c(2, 2), mar = c(6, 4, 6, 2) + 0.1)
+plot(lasso, xvar = "lambda", main = "Lasso (Alpha = 1)\n\n\n")
+plot(elastic1, xvar = "lambda", main = "Elastic Net (Alpha = .25)\n\n\n")
+plot(elastic2, xvar = "lambda", main = "Elastic Net (Alpha = .75)\n\n\n")
+plot(ridge, xvar = "lambda", main = "Ridge (Alpha = 0)\n\n\n")
+```
+
+__Tuning__
+
+In ridge and lasso models $\lambda$ is our primary tuning parameter. However, with elastic nets, we want to tune the $\lambda$ and the `alpha` parameters. To set up our tuning, we create a common `fold_id`, which just allows us to apply the same CV folds to each model.
+
+We then create a tuning grid that searches across a range of `alpha`s from 0-1, and empty columns where we will dump our model results into.
+
+```{r}
+# maintain the same folds across all models
+fold_id <- sample(1:10, size = length(ames_train_y), replace=TRUE)
+
+# search across a range of alphas
+tuning_grid <- tibble::tibble(
+  alpha      = seq(0, 1, by = .1),
+  mse_min    = NA,
+  mse_1se    = NA,
+  lambda_min = NA,
+  lambda_1se = NA
+)
+```
+
+Now we can iterate over each alpha value, apply a CV elastic net, and extract the minimum and one standard error MSE values and their respective $\lambda$ values.
+
+```{r}
+for(i in seq_along(tuning_grid$alpha)) {
+  
+  # fit CV model for each alpha value
+  fit <- cv.glmnet(ames_train_x, ames_train_y, alpha = tuning_grid$alpha[i], foldid = fold_id)
+  
+  # extract MSE and lambda values
+  tuning_grid$mse_min[i]    <- fit$cvm[fit$lambda == fit$lambda.min]
+  tuning_grid$mse_1se[i]    <- fit$cvm[fit$lambda == fit$lambda.1se]
+  tuning_grid$lambda_min[i] <- fit$lambda.min
+  tuning_grid$lambda_1se[i] <- fit$lambda.1se
+}
+
+tuning_grid
+## # A tibble: 11 x 5
+##    alpha mse_min mse_1se lambda_min lambda_1se
+##    <dbl>   <dbl>   <dbl>      <dbl>      <dbl>
+##  1 0      0.0217  0.0241    0.136       0.548 
+##  2 0.100  0.0215  0.0239    0.0352      0.0980
+##  3 0.200  0.0217  0.0243    0.0193      0.0538
+##  4 0.300  0.0218  0.0243    0.0129      0.0359
+##  5 0.400  0.0219  0.0244    0.0106      0.0269
+##  6 0.500  0.0220  0.0250    0.00848     0.0236
+##  7 0.600  0.0220  0.0250    0.00707     0.0197
+##  8 0.700  0.0221  0.0250    0.00606     0.0169
+##  9 0.800  0.0221  0.0251    0.00530     0.0148
+## 10 0.900  0.0221  0.0251    0.00471     0.0131
+## 11 1.00   0.0223  0.0254    0.00424     0.0118
+```
+
+If we plot the MSE +- one standard erro for the optimal $\lambda$ value for each `alpha` setting, we see that they all fall within the same level of accuracy. Consequently, we could select a full lasso model with $lambda=0.02062776$, gain the benefits of its feature selection capability and reasonably assume no loss in accuracy.
+
+```{r}
+tuning_grid %>% 
+  mutate(se = mse_1se - mse_min) %>% 
+  ggplot(aes(alpha, mse_min))+
+  geom_line(size = 2)+
+  geom_ribbon(aes(ymax = mse_min + se, ymin = mse_min - se), alpha= .25)+
+  ggtitle("MSE +- one standard error")
+```
+
+__Advantage & Disadvantage__
+
+As previously stated, the advantage of the elastic net model is that it enables effective regularization via the ridge penalty with the feature selection characteristics of the lasso penalty. Effectively, elastic nets allow us to control multicollinearity concerns, perform regression when 
+$p>n$, and reduce excessive noise in our data so that we can isolate the most influential variables while balancing prediction accuracy.
+
+However, elastic nets, and regularization models in general, still assume linear relationships between the features and the target variable. And although we can incorporate non-additive models with interactions, doing this when the number of features is large is extremely tedious and difficult. When non-linear relationships exist, its beneficial to start exploring non-linear regression 
+
+#### Predicting
+
+Once you have identified your preferred model, you can simply use `predict` to predict the same model on a new data set. The only caveat is you need to supply `predict` an `s` parameter with the preferred models $\lambda$ value. For example, here we create a lasso model, which provides me a minimum MSE of 0.022. I use the minimum $\lambda$ value to predict on the unseen test set and obtain a slightly lower MSE of 0.015.
+
+```{r}
+# some best model
+cv_lasso   <- cv.glmnet(ames_train_x, ames_train_y, alpha = 1.0)
+min(cv_lasso$cvm)
+## [1] 0.02279668
+
+# predict
+pred <- predict(cv_lasso, s = cv_lasso$lambda.min, ames_test_x)
+mean((ames_test_y - pred)^2)
+## [1] 0.01488605
+```
+
+#### Other package implementation {##RR_pck_imp}
+
+glmnet is not the only package that can perform regularized regression. The following also shows how to implement with the popular `caret` and `h2o` packages. For brevity, I show the code but not the output.
+
+```{r}
+## caret package
+library(caret)
+
+train_control <- trainControl(method = "cv", number = 10)
+
+caret_mod <- train(
+  x = ames_train_x,
+  y = ames_train_y,
+  method = "glmnet",
+  preProc = c("center", "scale", "zv", "nzv"),
+  trControl = train_control,
+  tuneLength = 10
+)
+
+caret_mod
+```
+
+```{r}
+## h2o package
+library(h2o)
+h2o.init()
+
+# convert data to h2o object
+ames_h2o <- ames_train %>%
+  mutate(Sale_Price_log = log(Sale_Price)) %>%
+  as.h2o()
+
+# set the response column to Sale_Price_log
+response <- "Sale_Price_log"
+
+# set the predictor names
+predictors <- setdiff(colnames(ames_train), "Sale_Price")
+
+
+# try using the `alpha` parameter:
+# train your model, where you specify alpha
+ames_glm <- h2o.glm(
+  x = predictors, 
+  y = response, 
+  training_frame = ames_h2o,
+  nfolds = 10,
+  keep_cross_validation_predictions = TRUE,
+  alpha = .25
+  )
+
+# print the mse for the validation data
+print(h2o.mse(ames_glm, xval = TRUE))
+
+# grid over `alpha`
+# select the values for `alpha` to grid over
+hyper_params <- list(
+  alpha = seq(0, 1, by = .1),
+  lambda = seq(0.0001, 10, length.out = 10)
+  )
+
+# this example uses cartesian grid search because the search space is small
+# and we want to see the performance of all models. For a larger search space use
+# random grid search instead: {'strategy': "RandomDiscrete"}
+
+# build grid search with previously selected hyperparameters
+grid <- h2o.grid(
+  x = predictors, 
+  y = response, 
+  training_frame = ames_h2o, 
+  nfolds = 10,
+  keep_cross_validation_predictions = TRUE,
+  algorithm = "glm",
+  grid_id = "ames_grid", 
+  hyper_params = hyper_params,
+  search_criteria = list(strategy = "Cartesian")
+  )
+
+# Sort the grid models by mse
+sorted_grid <- h2o.getGrid("ames_grid", sort_by = "mse", decreasing = FALSE)
+sorted_grid
+
+# grab top model id
+best_h2o_model <- sorted_grid@model_ids[[1]]
+best_model <- h2o.getModel(best_h2o_model)
+
+```
+
+
+#### Learning More {#RR_Learn}
+
+This serves as an introduction to regularized regression; however, it just scrapes the surface. Regularized regression approaches have been extended to other parametric generalized linear models (i.e. logistic regression, multinomial, poisson, support vector machines). Moreover, alternative approaches to regularization exist such as `Least Angle Regression` and The `Bayesian Lasso`. The following are great resources to learn more (listed in order of complexity):
+
+- Applied Predictive Modeling
+- Introduction to Statistical Learning
+- The Elements of Statistical Learning
+- Statistical Learning with Sparsity
+
+### Multivariate Adaptive regression splines (MARS) {#MARS}
+
+Several previous tutorials (i.e., ) discussed algorithms that are intrinsically linear. Many of these models can be adapted to nonlinear patterns in the data by manually adding model terms (i.e. squared terms, interaction effects); however, to do so you must know the specific nature of the nonlinearity a priori. Alternatively, there are numerous algorithms that are inherently nonlinear. When using these models, the exact form of the nonlinearity does not need to be known explicitly or specified prior to model training. Rather, these algorithms will search for, and discover, nonlinearities in the data that help maximize predictive accuracy.
+
+This tutorial discusses multivariate adaptive regression splines (MARS), an algorithm that essentially creates a piecewise linear model which provides an intuitive stepping block into nonlinearity after grasping the concept of linear regression and other intrinsically linear models.
+
+- [Prerequisites](#MARS_PR)
+- [Multivariage regression splines](#MARS)
+- [Fitting a basic MARS model](#MARS_Fit)
+
+#### Prerequisites {#MARS_PR}
+
+For this tutorial we will use the following packages:
+```{r}
+library(rsample)   # data splitting 
+library(ggplot2)   # plotting
+library(earth)     # fit MARS models
+library(caret)     # automating the tuning process
+library(vip)       # variable importance
+library(pdp)       # variable relationships
+```
+
+To illustrate various MARS modeling concepts we will use `Ames Housing` data, which is available via the `AmesHousing` package.
+
+```{r}
+# Create training (70%) and test (30%) sets for the AmesHousing::make_ames() data.
+# Use set.seed for reproducibility
+
+set.seed(123)
+ames_split <- initial_split(AmesHousing::make_ames(), prop = .7, strata = "Sale_Price")
+ames_train <- training(ames_split)
+ames_test  <- testing(ames_split)
+```
+
+#### The basic idea
+
+Some previous tutorials have focused on linear models. In those tutorials we illustrated some of the advantages of linear models such as their ease and speed of computation and also the intuitive nature of interpreting their coefficients. However, linear models make a strong assumption about linearity, and this assumption is often a poor one, which can affect predictive accuracy.
+
+We can extend linear models to capture non-linear relationships. Typically, this is done by explicitly including polynomial parameters or step functions. Polynomial regression is a form of regression in which the relationship between the independent variable $x$ and the dependent variable y is modeled as an $n^{th}$ degree polynomial of $x$. For example, Equation 1 represents a polynomial regression function where y is modeled as a function of $x$ with $d$ degrees. Generally speaking, it is unusual to use d greater than 3 or 4 as the larger d becomes, the easier the function fit becomes overly flexible and oddly shapened…especially near the boundaries of the range of x values
+
+$$
+y_i = \beta_0 + \beta_1x_i + \beta_2x_i^2+...+\beta_dx_i^d+\epsilon_i
+$$
+
+An alternative to polynomial regression. is step function regression. Whereas polynomial functions impose a global non-linear relationship, step functions break the range of $x$ into bins, and fit a different constant for each bin. This amounts to converting a continuous variable into an ordered categorical variable such that our linear regression function is converted to Equation 2
+
+$$
+y_i = \beta_0 + \beta_1 C_1(x_i) + \beta_2 C_2(x_i) + ... + \beta_d C_d(x_i) + \epsilon_i
+$$
+
+where $C_1(x)$ represents $x$ value ranging from $c_1 < x < c_2$, $C_2(x)$ represents $x$ value ranging from $c_2<x<c_3$, ..., $C_d(x)$ represents $x$ values ranging from $c_{d-1}<x<c_d$. Figure 1 illustrate polynomial and step function fits for `Sale_Price` asa a function of `Year_Build` in our `ames` data.
+
+```{r fig.cap="Figure 1: Blue line represents predicted Sale_Price values as a function of Year_Built for alternative approaches to modeling explicit nonlinear regression patterns. (A) Traditional nonlinear regression approach does not capture any nonlinearity unless the predictor or response is transformed (i.e. log transformation). (B) Degree-2 polynomial, (C) Degree-3 polynomial, (D) Step function fitting cutting Year_Built into three categorical levels."}
+# polynomial degree of 1
+p1 <- ames_train %>% 
+  ggplot(aes(Year_Built, Sale_Price))+
+  geom_point()+
+  geom_smooth(method = "gam", formula = y ~ x)
+
+# polynomial degree of 2
+p2 <- ames_train %>% 
+  ggplot(aes(Year_Built, Sale_Price))+
+  geom_point()+
+  geom_smooth(method = "gam", formula = y ~ poly(x,2))
+
+# polynomial degree of 3
+p3 <- ames_train %>% 
+  ggplot(aes(Year_Built, Sale_Price))+
+  geom_point()+
+  geom_smooth(method = "gam", formula = y ~ poly(x,3))
+
+# step function
+
+gridExtra::grid.arrange(p1, p2, p3, ncol=3)
+```
+
+Although useful, the typical implementation of polynomial regression and step functions require the user to explicitly identify and incorporate which variables should have what specific degree of interaction or at points of a variable $x$ should cut points to be made for the step functions. Considering many data sets today can easily contain 50, 100, or more features, this would require an enormous and unncessary time commitment from an analyst to determine these explicit non-linear settings.
+
+#### Multivariage regression splines {#MARS}
+
+Multivariate adaptive regression splines (MARS) provide a convenient approach to capture the nonlinearity aspect of polynomial regression by assessing cutpoints ( _knots_) similar to step functions. The procedure assesses each data point for each predictor as a knot and creates a linear regression model with the candidate feature(s). For example, consider our simple model of `Sale_Price` ~ `Year_Built`. The MARS procedure will first look for the single point across the range of Year_Built values where two different linear relationships between `Sale_Price` and `Year_Built` achieve the smallest error. 
+
+What results is known as hinge function ($h(x-a)$ where $a$ is the cutpoint value). For a single knot, our hinge function is $h(Year_Built - 1968$ such that our two linear models for `Sale_Price` are
+
+$$
+Sale\_Price = 136091.022 (for \ Year\_Built < 1968)
+136091.022 + 3094.208 (Year\_Built-1968) (for Year\_Built > 1968)
+$$
+
+Once the first knot has benn found, the search continues for a second knot which is found at 2006 (Figure 2 (B)). This results in three linear models for `Sale_Price`:
+
+```{r eval=FALSE}
+mars0 <- ames_train %>% 
+  earth::earth(Sale_Price ~ Year_Built, data=.) 
+
+mars0 %>% print()
+```
+
+This procedure can continue until many knots are found, producing a highly non-linear pattern. Although including many knots may allow us to fit a really good relationship with our training data, it may not generalize very well to new, unseen data. For example, Figure 3 includes nine knots but this likley will not generalize very well to our test data.
+
+Consequently, once the full set of knots have been created, we can sequentially remove knots that do not contribute significantly to predictive accuracy. This process is known as “pruning” and we can use cross-validation, as we have with the previous models, to find the optimal number of knot
+
+#### Fitting a basic MARS model {#MARS_Fit}
+
+We can fit a MARS model with the __earth__ package. By default, `earth::earth()` will assess all potential knots across all supplied features and then will prune to the optimal number of knots on an expected change in $R^2$ (for the training data) of less than 0.001. This calculation is performed by the Generalized cross-validation procedure (GCV statistic), which is a computational shortcut for linear models that produces an error value that approximates leave-one-out cross-validation (see [here](http://w3.atomki.hu/~efo/hornyak/Tikhonov_references/Technometrics_Golub_Heath_Wahba) for technical details).
+
+The following applies a basic MARS model to our ames data and performs a search for required knots across all features. The results show us the final models GCV statistic, generalized $R^2$ (GRSq) and more.
+
+```{r}
+# Fit a basic MARS model
+mars1 <- earth::earth(
+  Sale_Price ~.,
+  data = ames_train
+)
+
+# Print model summary
+print(mars1)
+## Selected 37 of 45 terms, and 26 of 307 predictors
+## Termination condition: RSq changed by less than 0.001 at 45 terms
+## Importance: Gr_Liv_Area, Year_Built, Total_Bsmt_SF, ...
+## Number of terms at each degree of interaction: 1 36 (additive model)
+## GCV 521186626    RSS 995776275391    GRSq 0.9165386    RSq 0.92229
+```
+
+It also shows us that 38 of 41 terms were used from 27 of the 307 original predictors. But what does this mean? If we were to look at all the coefficients, we would see that there are 38 terms in our model (including the intercept). These terms include hinge functions produced from the original 307 predictors (307 predictors because the model automatically dummy encodes our categorical variables). Looking at the first 10 terms in our model, we see that `Gr_Liv_Area` is included with a knot at 2945 (the coefficients for $h(2945 - Gr_Liv_Area$ is $49.85$), `Year_Built` is included with a knot at 2003, etc.
+
+```{r}
+
+mars1 %>% .$coefficients %>% head()
+
+##                              Sale_Price
+## (Intercept)                301399.98345
+## h(2945-Gr_Liv_Area)           -49.84518
+## h(Year_Built-2003)           2698.39864
+## h(2003-Year_Built)           -357.11319
+## h(Total_Bsmt_SF-2171)        -265.30709
+## h(2171-Total_Bsmt_SF)         -29.77024
+## Overall_QualExcellent       88345.90068
+## Overall_QualVery_Excellent 116330.48509
+## Overall_QualVery_Good       36646.55568
+## h(Bsmt_Unf_SF-278)            -21.15661
+```
+
+The plot method for MARS model objects provide convenient performance and residual plots.Figure 4 illustrates the model selection plot that graphs the GCV $R^2$  (left-hand y-axis and solid black line) based on the number of terms retained in the model (x-axis) which are constructed from a certain number of original predictors (right-hand y-axis). The vertical dashed lined at 37 tells us the optimal number of non-intercept terms retained where marginal increases in GCV 
+
+```{r eval=FALSE, fig.cap="Figure 4: Model summary capturing GCV $R^2$ (left-hand y-axis and solid black line) based on the number of terms retained (x-axis) which is based on the number of predictors used to make those terms (right-hand side y-axis). For this model, 37 non-intercept terms were retained which are based on 26 predictors. Any additional terms retained in the model, over and above these 37, results in less than 0.001 improvement in the GCV $R^2$."}
+plot(mars1, which =1)
+```
+
+In addition to pruning the number of knots, `earth::earth()` allows us to also assess potential interactions between different hinge functions. The following illustrates by including a `degree = 2` argument. You can see that now our model includes interaction terms between multiple hinge functions (i.e. `h(Year_Built-2003)*h(Gr_Liv_Area-2274)`) is an interaction effect for those houses built prior to 2003 and have less than 2,274 square feet of living space above ground).
+
+```{r}
+# Fit a basic MARS model
+library(earth)
+mars2 <- earth(
+  Sale_Price ~ .,  
+  data = ames_train,
+  degree = 2
+)
+
+# check out the first 10 coefficient terms
+summary(mars2) %>% .$coefficients %>% head(10)
+##                                             Sale_Price
+## (Intercept)                               242611.63686
+## h(Gr_Liv_Area-2945)                          144.39175
+## h(2945-Gr_Liv_Area)                          -57.71864
+## h(Year_Built-2003)                         10909.70322
+## h(2003-Year_Built)                          -780.24246
+## h(Year_Built-2003)*h(Gr_Liv_Area-2274)        18.54860
+## h(Year_Built-2003)*h(2274-Gr_Liv_Area)       -10.30826
+## h(Total_Bsmt_SF-1035)                         62.11901
+## h(1035-Total_Bsmt_SF)                        -33.03537
+## h(Total_Bsmt_SF-1035)*Kitchen_QualTypical    -32.75942
+```
+
+#### Tuning
+
+Since there are two tuning parameters associated with our MARS model: the degree of interactions and the number of retained terms, we need to perform a grid search to identify the optimal combination of these hyperparameters that minimize prediction error (the above pruning process was based only on an approximation of cross-validated performance on the training data rather than an actual k-fold cross validation process). As in previous tutorials, we will perform a cross-validated grid search to identify the optimal mix. Here, we set up a search grid that assesses 30 different combinations of interaction effects (`degree`) and the number of terms to retain (`nprune`).
+
+```{r}
+# create a tuning grid
+hyper_grid <- expand.grid(
+  degree = 1:3,
+  nprune = seq(2, 100, length.out = 10) %>% floor()
+)
+```
+
+We can use __caret__ to perform a grid search using 10-fold cross-validation. The model that provides the optimal combination includes second degree interactions and retain 34 terms. The cross-validated RMSE for these models are illustrated in Figure 5 and the optimal model's cross validated RMSE is $24,021.68$
+
+```{r Fig.cap="Figure 5: Cross-validated RMSE for the 30 different hyperparameter combinations in our grid search. The optimal model retains 34 terms and includes up to 2nd degree interactions."}
+# for reproducibility
+set.seed(123)
+
+# cross validation model
+library(caret)
+tuned_mars <- train(
+  x = subset(ames_train, select= -Sale_Price),
+  y = ames_train$Sale_Price,
+  method = "earth",
+  metric = "RMSE",
+  trControl = trainControl(method = "cv", number = 10),
+  tuneGrid = hyper_grid
+)
+
+# best model
+tuned_mars$bestTune
+#    nprune degree
+# 14     34      2
+
+# plot residuals
+ggplot(tuned_mars)
+
+```
+
+The above grid search helps to focus where we can further refine our model tuning. As a next step, we could perform a grid search that focuses in on a refined grid space for `nprune` (i.e. comparing 25-40 terms retained). However, for brevity we will leave this as an exercise for the reader.
+
+```{r}
+# let's try this out
+
+hyper_grid2 <- expand
+```
+
+
+So how does this compare to some other linear models for the Ames housing data? The following table compares the cross-validated RMSE for our tuned MARS model to a regular multiple regression model along with tuned principal component regression (PCR), partial least squares (PLS), and regularized regression (elastic net) models. By incorporating non-linear relationships and interaction effects, the MARS model provides a substantial improvement over the previous linear models that we have explored.
+
 ### Regression trees & bagging
 ### Random forests 
 ### Gradient boosting machines (GBM)
