@@ -4,8 +4,8 @@ Bookdown.org has an archive storing published books based on the bookdown packag
 The below is an simple introduction of useful books for statistical modeling and proeprocessing/feature engineering.
 
 ## ML Overview
-### Applied Machine Learning
-Applied ML workshop by Max Kuhn  
+### 1. Applied Machine Learning
+Applied ML workshop by Max Kuhn from useR2018 Conference
 Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The material is stored in [this repository](https://github.com/kojimizu/rstudio-conf-2018). The latest repository is [here](https://github.com/topepo/rstudio-conf-2019).  
 
 ### Hands on Machine Learning with R
@@ -16,7 +16,11 @@ https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/
 https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
 ### UC Business analyrics by R
-University of Cincinatti - http://uc-r.github.io  
+This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
+Link: University of Cincinatti - http://uc-r.github.io  
+
+- Predictive analyitics: 
+    - ML(Linear, Naive Bayes, Regularized Regression, MARS, Regression Tree, Random Forests, GBM, Discriminant Analysis, SVM)
 
 ## Modeling packages
 ### Caret
