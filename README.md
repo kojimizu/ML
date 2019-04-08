@@ -55,7 +55,22 @@ Reference: https://github.com/kojimizu/FES
 ### Feature Engineering Book
 by Alice Zheng  
 
-
+```{R}
+spread_at <- function(data,key,value, fill = NA, convert = FALSE,
+                           drop = TRUE)
+{
+  key_enq = enquo(key)
+  value_enq = enquo(value)
+  if (length(value_enq)==1) {
+    data=data %>% spread_(key,value, fill, convert, drop)
+  } else {
+    data=data %>% gather(gatKey,gatVal,!!value_enq) %>%
+      unite(uniteKey,c(!!key_enq,gatKey),sep="_") %>%
+      spread(uniteKey,gatVal, fill, convert, drop)
+  }
+  data
+}
+```
 
 
 
