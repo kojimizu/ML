@@ -23,7 +23,7 @@ Link: University of Cincinatti - http://uc-r.github.io
     - ML(Linear, Naive Bayes, Regularized Regression, MARS, Regression Tree, Random Forests, GBM, Discriminant Analysis, SVM)
 
 ## Modeling Resources
-### Caret
+### 1. Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
 A package for ML modeling with pre-processing techniques 
 ```{R}
@@ -33,7 +33,7 @@ install.packages("caret")
 From Sep 2018 - Oct 2018  
 http://topepo.github.io/caret/  
 
-### Tidymodels  
+### 2. Tidymodels  
 Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
 
 ```{R}
@@ -47,12 +47,12 @@ install.packages("tidymodels")
 
 
 ## Feature Engineering Resouces 
-### Feature Engineering and Selection (FES)  
+### 1. Feature Engineering and Selection (FES)  
 A Bookdown page prepared by Max Kuhn  
 http://www.feat.engineering/  
 Reference: https://github.com/kojimizu/FES  
 
-### Feature Engineering Book
+### 2. Feature Engineering Book
 by Alice Zheng  
 
 ```{R}
