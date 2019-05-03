@@ -56,6 +56,16 @@ This tutotrial serves as an introduction to the GBMs. This tutorial will cover t
 This tutorial leverages the following packages. Some of these packages play a supporting role; however, we demonstrate how to implement GBMs with several different packages and discuss the pros and cons to each.
 
 ```{r}
+
+install.packages("rsample")
+install.packages("gbm")
+
+install.packages("xgboost")
+install.packages("caret")
+install.packages("lime")
+install.packages("h2o")
+install.packages("pdp")
+
 library(rsample)      # data splitting 
 library(gbm)          # basic implementation
 library(xgboost)      # a faster implementation of gbm
@@ -627,6 +637,70 @@ ggplot(xgb.fit1$evaluation_log) +
   geom_line(aes(iter, train_rmse_mean), color = "red") +
   geom_line(aes(iter, test_rmse_mean), color = "blue")
 
+```
+
+A nice feature provided by xgb.cv is early stopping. This allows us to tell the function to stop running if the cross validated error does not improve for n continuous trees. For example, the above model could be re-run with the following where we tell it stop if we see no improvement for 10 consecutive trees. This feature will help us speed up the tuning process in the next section.
+
+```{r}
+# reproducibility
+set.seed(123)
+
+xgb.fit2 <- xgb.cv(
+  data = features_train,
+  label = response_train,
+  nrounds = 1000,
+  nfold = 5,
+  objective = "reg:linear", # for regression models
+  verbose = 0, # silent,
+  early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
+)
+
+# plot error vs number trees 
+ggplot(xgb.fit2$evaluation_log)+
+  geom_line(aes(iter, train_rmse_mean), color = "red")+
+  geom_line(aes(iter, test_rmse_mean), color = "blue")
+```
+
+__Tuning__
+To tune the XGBoost model we pass parameters as a list object to the `params` argument.
+The common parameters include:
+
+- `eta`: controls the learning rate
+- `max_depth`: tree depth
+- `min_child_weight`: minimum number of observations required in each terminal node
+- `subsample`: percent of training data to sample for each tree
+- `colsample_bytrees`: percent of columns to sample from for each tree
+
+For example, if we wanted to specify specific values for these parameters we would extend the above model with the following parameters.
+
+```{r}
+# create parameter list
+
+# reproducibility
+set.seed(123)
+
+# train model
+xgb.fit3 <- xgb.cv(
+  params = params,
+  data = features_train,
+  label = response_train,
+  nrounds = 1000,
+  nfold = 5,
+  objective = "reg:linear", # for regression models
+  verbose = 0, # silent,
+  early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
+)
+
+# assess results
+xgb.fit3$evaluation_log %>%
+  dplyr::summarise(
+    ntrees.train = which(train_rmse_mean == min(train_rmse_mean))[1],
+    rmse.train   = min(train_rmse_mean),
+    ntrees.test  = which(test_rmse_mean == min(test_rmse_mean))[1],
+    rmse.test   = min(test_rmse_mean)
+  )
+##   ntrees.train rmse.train ntrees.test rmse.test
+## 1          180   5891.703         170  24650.17
 ```
 
 
