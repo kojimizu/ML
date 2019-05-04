@@ -703,6 +703,105 @@ xgb.fit3$evaluation_log %>%
 ## 1          180   5891.703         170  24650.17
 ```
 
+To perform a large search grip, we can follow the same procedure we did with `gbm`. We create our hyperparameter search grid along with columns to dump our results in. Here, I create a pretty large search grid consisting of 576 different hyperparmeter combinations to model.
+
+```{r}
+# create hyperparameter grid
+
+hyper_grid <- expand.grid(
+  eta = c(.01, .05, .1, .3),
+  max_depth = c(1, 3, 5, 7),
+  min_child_weight = c(1, 3, 5, 7),
+  subsample = c(.65, .8, 1),
+  colsample_bytree = c(.8, .9, 1),
+  optional_trees = 0, # a place to dump results
+  min_RMSE = 0 # a place to dump results
+)
+
+nrow(hyper_grid)
+# [1] 576
+```
+
+Now I apply the same for loop procedure to loop through and apply a XGBoost model for each hyperparameter combination and dump the results in the `hyper_grid` data frame combination and dump the results in the `hyper_grid` data frame. __Important note__: if you plan to run this code, be prepared to run it before going out to eat or going to bed as it is the full seach grid taking 6 hours to run.
+
+```{r eval=FALSE}
+
+# grid search
+for (i in 1:nrow(hyper_grid)){
+  # create parameter list
+  params <- list(
+    eta = hyper_grid$eta[i],
+    max_depth = hyper_grid$max_depth[i],
+    min_child_weight = hyper_grid$min_child_weight[i],
+    subsample = hyper_grid$subsample[i],
+    colsample_bytree = hyper_grid$colsample_bytree[i]
+  )
+  
+  # reproducibility
+  set.seed(123)
+  
+  # train omdel
+  xgb.tune <- xgb.cv(
+    params = params,
+    data = feature_train, 
+    label = response_train,
+    nrounds = 5000,
+    nfold = 5,
+    objective = "reg:linear" # for regression model
+    verbose = 0, # silent
+    early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
+  )
+  
+  # add min training error and trees to grid
+  hyper_grid$optimal_trees[i] <- which.min(xgb.tune$evaluation_log$test_rmse_mean)
+  hyper_grid$min_RMSE[i] <- min(xgb.tune$evaluation_log$test_rmse_mean)
+}
+
+hyper_grid %>% 
+  dplyr::arrange(min_RMSE) %>% 
+  head(10)
+##     eta max_depth min_child_weight subsample colsample_bytree optimal_trees min_RMSE
+## 1  0.01         5                5      0.65                1          1576 23548.84
+## 2  0.01         5                3      0.80                1          1626 23587.16
+## 3  0.01         5                3      0.65                1          1451 23602.96
+## 4  0.01         5                1      0.65                1          1480 23608.65
+## 5  0.05         5                3      0.65                1           305 23743.54
+## 6  0.01         5                1      0.80                1          1851 23772.90
+## 7  0.05         3                3      0.65                1           552 23783.55
+## 8  0.01         7                5      0.65                1          1248 23792.65
+## 9  0.01         3                3      0.80                1          1923 23794.78
+## 10 0.01         7                1      0.65                1          1070 23800.80
+```
+
+After assessing the results you would like to perform a few more grid searches to hone in on the parameters that appear to influence the model the most. In fact, [here is a link](https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/) to a greate blo post that discusses a strategic approach to tuning with `xgboost`. However, for brevity, we will just assume the top model in the above search is the global optimal model. Once you have found the optimal model, we can fit our final model with `xgb.train`.
+
+```{r}
+#  parameter list
+params <- list(
+  eta = 0.01,
+  max_depth = 5,
+  min_child_weight = 5,
+  subsample = 0.65,
+  colsample_bytree = 1
+)
+
+# train final model
+xgb.fit.final <- xgboost(
+  params = params,
+  data = features_train,
+  label = response_train,
+  nrounds = 1576,
+  objective = "reg:linear",
+  verbose = 0
+)
+```
+
+__Visualizing__
+__variable importance__
+
+`xgboost` provides built-in variable importance plotting. First, you need to create the importance matrix with `xgb.importance` and then feed this matrix into `xgb.plot.importance`. There are 3 variable importance measures:
+
+
 
 
 #### h2o {#GBM_h2o_pkg}
