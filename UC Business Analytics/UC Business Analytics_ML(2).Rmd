@@ -801,10 +801,100 @@ __variable importance__
 
 `xgboost` provides built-in variable importance plotting. First, you need to create the importance matrix with `xgb.importance` and then feed this matrix into `xgb.plot.importance`. There are 3 variable importance measures:
 
+- Gain: the relative contribution of the corresponding feature to the model calculated by taking each feature’s contribution for each tree in the model. This is synonymous with `gbm`’s `relative.influence`.
+- Cover:  the relative number of observations related to this feature. For example, if you have 100 observations, 4 features and 3 trees, and suppose feature1 is used to decide the leaf node for 10, 5, and 2 observations in tree1, tree2 and tree3 respectively; then the metric will count cover for this feature as 10+5+2 = 17 observations. This will be calculated for all the 4 features and the cover will be 17 expressed as a percentage for all features’ cover metrics.
+- Frequency: the percentage representing the relative number of times a particular feature occurs in the trees of the model. In the above example, if feature1 occurred in 2 splits, 1 split and 3 splits in each of tree1, tree2 and tree3; then the weightage for feature1 will be 2+1+3 = 6. The frequency for feature1 is calculated as its percentage weight over weights of all features.
 
+```{r}
+# create importance matrix
+importance_matrix <- xgb.importance(
+  model = xgb.fit.final)
 
+# variable importance plot
+xgb.plot.importance(importance_matrix, top_n=10, measure = "Gain")
+```
+
+__Partial dependence plots__
+
+PDP and ICE plots work similarly to how we implemented them with `gbm`. The only difference is you need to incorporate data within the `partial` function.
+
+```{r}
+pdp <- xgb.fit.final %>% 
+  partial(pred.var = "Gr_Liv_Area_clean", 
+          n.trees = 1576, 
+          grid.resolution = 100, 
+          train = features_train) %>% 
+  autoplot(rug = TRUE, train = features_train) %>% 
+  scale_y_continuous(labels = scales::dollar)+
+  ggtitle("PDP")
+
+ice <- xgb.fit.final %>% 
+  partial(pred.var = "Gr_Liv_Area_clean",
+          n.trees = 1576, 
+          grid.resolution = 100,
+          train = features_train,
+          ice = TRUE) %>% 
+  autoplot(rug = TRUE, 
+           train = features_train,
+           alpha = .1,
+           center = TRUE)+
+  scale_y_continuous(labels = scales::dollar)+
+  ggtitle("ICE")
+
+gridExtra::grid.arrange(pdp, ice, nrow = 1)
+```
+
+__LIME__
+
+LIME provides built-in functionality for `xgboost` objects (see `?model_type`). However, just keep in mind that the local observations being analyzed need to ne one-hot encoded in the same manner, as we prepared the raining and test data. Also, when you feed the training data into the `lime::lime` function be sure that you coerce it from a matrix to a data frame.
+
+```{r}
+# one-hot encode the local observations to be assessed.
+local_obs_onehot <- vtreat::prepare(treatplan, local_obs, vaRestriction = new_vars)
+# install.packages("vtreat")
+
+# apply LIME
+explainer <- lime(data.frame(features_train), xgb.fit.final)
+explanation <- explain(local_obs_onehot,  explainer, n_features = 5)
+plot_features(explanation)
+
+```
+
+__Predicting__
+
+Lastly, we use `predict` to predict on new observations. owever, unlike `gbm` we do not need to provide the number of trees. Our test set RMSE is only about $600 different than that produced by our `gbm` model.
+
+```{r}
+# predict values for test data
+pred <- predict(xgb.fit.final, features_test)
+
+# results
+caret::RMSE(pred, response_test)
+```
 
 #### h2o {#GBM_h2o_pkg}
+
+The `h2o` package is a powerful and efficient java-based interface that allows for local and cluster-based deployment. It comes with fairly comprehensive [online resource](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/index.html) that includes methodology and code documentation along with tutorial.
+
+Features include:
+
+- Distributed and parallelized computation on either a single node or a multi-node cluster.
+- Automatic early stopping based on convergence of user-specified metrics to user-specified relative tolerance.
+- Stochastic GBM with column and row sampling (per split and per tree) for better generalization.
+- Support for exponential families (Poisson, Gamma, Tweedie) and loss functions in addition to binomial (Bernoulli), Gaussian and multinomial distributions, such as Quantile regression (including Laplace).
+- Grid search for hyperparameter optimization and model selection.
+- Data-distributed, which means the entire dataset does not need to fit into memory on a single node, hence scales to any size training set.
+- Uses histogram approximations of continuous variables for speedup.
+- Uses dynamic binning - bin limits are reset at each tree level based on the split bins’ min and max values discovered during the last pass.
+- Uses squared error to determine optimal splits.
+- Distributed implementation details outlined in a blog post by Cliff Click.
+- Unlimited factor levels.
+- Multiclass trees (one for each class) built in parallel with each other.
+- Apache 2.0 Licensed.
+- Model export in plain Java code for deployment in production environments.
+
+__Basic implementation__
+
 #### Learning more {#GBM_Learn}
 
 ## Resampling methods
