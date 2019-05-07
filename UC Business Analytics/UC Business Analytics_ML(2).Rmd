@@ -56,16 +56,6 @@ This tutotrial serves as an introduction to the GBMs. This tutorial will cover t
 This tutorial leverages the following packages. Some of these packages play a supporting role; however, we demonstrate how to implement GBMs with several different packages and discuss the pros and cons to each.
 
 ```{r}
-
-install.packages("rsample")
-install.packages("gbm")
-
-install.packages("xgboost")
-install.packages("caret")
-install.packages("lime")
-install.packages("h2o")
-install.packages("pdp")
-
 library(rsample)      # data splitting 
 library(gbm)          # basic implementation
 library(xgboost)      # a faster implementation of gbm
@@ -460,7 +450,7 @@ vip::vip(gbm.fit.final)
 
 _Partial dependence plots_
 
-After the most relevant variables have been identified the next step is to attemp to understand how the response variable changes based on these variables. For this, we can use partial dependence plots (PDPs) and individual conditional expectation (ICE) curves.
+After the most relevant variables have been identified the next step is to attemp to understand how the response variable changes based on these variables. For this, we can use __partial dependence plots (PDPs)__ and __individual conditional expectation (ICE) curves__.
 
 PDPs plot the change in the average predicted values as specified feature(s) vary over their marginal distribution. for example, consider the `Gr_Liv_Area` variable. The PDP plot below displays the average change in predicted sales price as we vary Gr_Liv_Area while holding all other variables constant. This is done by holding all variables constant for each observation in our training data set but then apply the unique values of Gr_Liv_Area for each observation. We then average the sale price across all the observations. This PDP illustrates how the predicted sales price increases as the square footage of the ground floor in a house increases.
 
@@ -615,7 +605,6 @@ xgb.fit1 <- xgb.cv(
   objective = "reg:linear",  # for regression models
   verbose = 0               # silent,
 )
-
 ```
 
 The xgb.fit1 object contains lots of good information. In particular we can assess the `xgb.fit1$evaluation_log` to identify the minimum RMSE and the optimal number of trees for both the training data and the cross-validated error. We can see that the training error continues to decrease to 965 trees where the RMSE nearly reaches zero; however, the cross validated error reaches a minimum RMSE of $27,572 with only 60 trees.
@@ -639,28 +628,6 @@ ggplot(xgb.fit1$evaluation_log) +
 
 ```
 
-A nice feature provided by xgb.cv is early stopping. This allows us to tell the function to stop running if the cross validated error does not improve for n continuous trees. For example, the above model could be re-run with the following where we tell it stop if we see no improvement for 10 consecutive trees. This feature will help us speed up the tuning process in the next section.
-
-```{r}
-# reproducibility
-set.seed(123)
-
-xgb.fit2 <- xgb.cv(
-  data = features_train,
-  label = response_train,
-  nrounds = 1000,
-  nfold = 5,
-  objective = "reg:linear", # for regression models
-  verbose = 0, # silent,
-  early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
-)
-
-# plot error vs number trees 
-ggplot(xgb.fit2$evaluation_log)+
-  geom_line(aes(iter, train_rmse_mean), color = "red")+
-  geom_line(aes(iter, test_rmse_mean), color = "blue")
-```
-
 __Tuning__
 To tune the XGBoost model we pass parameters as a list object to the `params` argument.
 The common parameters include:
@@ -675,10 +642,17 @@ For example, if we wanted to specify specific values for these parameters we wou
 
 ```{r}
 # create parameter list
+  params <- list(
+    eta = .1,
+    max_depth = 5,
+    min_child_weight = 2,
+    subsample = .8,
+    colsample_bytree = .9
+  )
+
 
 # reproducibility
 set.seed(123)
-
 # train model
 xgb.fit3 <- xgb.cv(
   params = params,
@@ -690,7 +664,6 @@ xgb.fit3 <- xgb.cv(
   verbose = 0, # silent,
   early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
 )
-
 # assess results
 xgb.fit3$evaluation_log %>%
   dplyr::summarise(
@@ -707,7 +680,6 @@ To perform a large search grip, we can follow the same procedure we did with `gb
 
 ```{r}
 # create hyperparameter grid
-
 hyper_grid <- expand.grid(
   eta = c(.01, .05, .1, .3),
   max_depth = c(1, 3, 5, 7),
@@ -717,7 +689,6 @@ hyper_grid <- expand.grid(
   optional_trees = 0, # a place to dump results
   min_RMSE = 0 # a place to dump results
 )
-
 nrow(hyper_grid)
 # [1] 576
 ```
@@ -725,7 +696,6 @@ nrow(hyper_grid)
 Now I apply the same for loop procedure to loop through and apply a XGBoost model for each hyperparameter combination and dump the results in the `hyper_grid` data frame combination and dump the results in the `hyper_grid` data frame. __Important note__: if you plan to run this code, be prepared to run it before going out to eat or going to bed as it is the full seach grid taking 6 hours to run.
 
 ```{r eval=FALSE}
-
 # grid search
 for (i in 1:nrow(hyper_grid)){
   # create parameter list
@@ -743,11 +713,11 @@ for (i in 1:nrow(hyper_grid)){
   # train omdel
   xgb.tune <- xgb.cv(
     params = params,
-    data = feature_train, 
+    data = features_train, 
     label = response_train,
     nrounds = 5000,
     nfold = 5,
-    objective = "reg:linear" # for regression model
+    objective = "reg:linear", # for regression model
     verbose = 0, # silent
     early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
   )
@@ -756,7 +726,6 @@ for (i in 1:nrow(hyper_grid)){
   hyper_grid$optimal_trees[i] <- which.min(xgb.tune$evaluation_log$test_rmse_mean)
   hyper_grid$min_RMSE[i] <- min(xgb.tune$evaluation_log$test_rmse_mean)
 }
-
 hyper_grid %>% 
   dplyr::arrange(min_RMSE) %>% 
   head(10)
@@ -784,7 +753,6 @@ params <- list(
   subsample = 0.65,
   colsample_bytree = 1
 )
-
 # train final model
 xgb.fit.final <- xgboost(
   params = params,
@@ -809,7 +777,6 @@ __variable importance__
 # create importance matrix
 importance_matrix <- xgb.importance(
   model = xgb.fit.final)
-
 # variable importance plot
 xgb.plot.importance(importance_matrix, top_n=10, measure = "Gain")
 ```
@@ -827,7 +794,6 @@ pdp <- xgb.fit.final %>%
   autoplot(rug = TRUE, train = features_train) %>% 
   scale_y_continuous(labels = scales::dollar)+
   ggtitle("PDP")
-
 ice <- xgb.fit.final %>% 
   partial(pred.var = "Gr_Liv_Area_clean",
           n.trees = 1576, 
@@ -840,7 +806,6 @@ ice <- xgb.fit.final %>%
            center = TRUE)+
   scale_y_continuous(labels = scales::dollar)+
   ggtitle("ICE")
-
 gridExtra::grid.arrange(pdp, ice, nrow = 1)
 ```
 
@@ -852,12 +817,10 @@ LIME provides built-in functionality for `xgboost` objects (see `?model_type`). 
 # one-hot encode the local observations to be assessed.
 local_obs_onehot <- vtreat::prepare(treatplan, local_obs, vaRestriction = new_vars)
 # install.packages("vtreat")
-
 # apply LIME
 explainer <- lime(data.frame(features_train), xgb.fit.final)
 explanation <- explain(local_obs_onehot,  explainer, n_features = 5)
 plot_features(explanation)
-
 ```
 
 __Predicting__
@@ -867,7 +830,6 @@ Lastly, we use `predict` to predict on new observations. owever, unlike `gbm` we
 ```{r}
 # predict values for test data
 pred <- predict(xgb.fit.final, features_test)
-
 # results
 caret::RMSE(pred, response_test)
 ```
@@ -894,6 +856,86 @@ Features include:
 - Model export in plain Java code for deployment in production environments.
 
 __Basic implementation__
+
+Lets go ahead and start up h2o:
+
+```{r}
+h2o.no_progress()
+h2o.init(max_mem_size = "5g")
+```
+
+`h2o.gbm` allows us to perform a GBM with H20. However, prior to running our initial model, we need to convert our training datato an h2o object. By default, `h2o.gbm` applies a GBM model with the following parameters:
+
+- number of trees (`ntrees`): 50
+- learning rate (`learn_rate`): 0.1
+- tree depth(`max_depth`): 5
+- minimum observations in a terminal node(`min_rows`):10
+- no sampling of observations or columns
+
+```{r}
+# create feature names
+y <- "Sale_Price"
+x <- setdiff(names(ames_train), y)
+
+# turn training set into h2o object
+train.h2o <- as.h2o(ames_train)
+
+# training basic GBM model with defaults
+h2o.fit1 <- h2o.gbm(
+  x = x,
+  y = y,
+  training_frame = train.h2o,
+  nfolds = 5
+)
+
+# assess the model results
+h2o.fit1
+```
+
+Similar to XGBoost, we can incorporate automated stopping so that we can crank up the number of trees but terminate training once model improvement decreases or stops. There is also an option to terminate training after so much time has passed (see `max_runtime_secs`). In this example, I train a default model with 5,000 trees but stop training after 10 consecutive trees have no improvement on the cross-validated error. In this case, training stops after 3828 trees and has a cross validated RMSE of 24,684.
+
+```{r}
+# training basic GBM model with defaults
+h2o.fit2 <- h2o.gbm(
+  x = x,
+  y = y,
+  training_frame = train.h2o,
+  nfolds = 5,
+  ntrees = 5000,
+  stopping_rounds = 10,
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+# model stopped after xx trees
+h2o.fit2@parameters$ntrees
+## [1] 3828
+
+# cross validated RMSE
+h2o.rmse(h2o.fit2, xval = TRUE)
+## [1] 24684.09
+```
+
+__Tuning__
+H2o provides many parameters that can be adjusted. It is well worth your time to check out the available documentation at [H2O.ai](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science/gbm.html#gbm-tuning-guide). For this tutorial, we will focus on the more common hyperparametes that I typically apply. This includes:
+
+- tree complexity:
+  - `ntrees`: number of trees to train
+  - `max_depth`: depth of each tree
+  - `min_rows`: Fewest observations allowed in a terminal node
+  
+- Learning rate:
+  - `learn_rate` rate to descend the loss function gradient
+  - `learn_rate_annealing`: allow you to have a high initial `learn_rate`, then gradually reduce as trees are added (speeds up training)
+  
+- Adding stochastic nature:
+  - `sample rate`: row sample rate per tree
+  - `col_sample_rate`: columns sample rate per tree (synonymous with `xgboost`'s `colsample_bytree`).
+  
+
+
+
+
 
 #### Learning more {#GBM_Learn}
 
