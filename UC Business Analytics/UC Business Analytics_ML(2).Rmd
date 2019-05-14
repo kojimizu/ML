@@ -33,13 +33,13 @@ knitr::opts_chunk$set(
 This is a practice of [UC business analytics R programming guide](http://uc-r.github.io/).
 
 # Predictive Analysis
-### Gradient boosting machines (GBM)
+## Gradient boosting machines (GBM)
 
 Gradient boosted machines (GBMs) are an extremely popular machine learning algorithm that have proven successful across many domains and is one of the learning methods for winning Kaggle competitions. Whereas [random forest](http://uc-r.github.io/random_forests) build anc ensemble of deepe independent trees, GBMs build an ensemple of shallow and weak successive trees with each tree leading and improving on the previous. 
 
 When combined, these many weak successive trees produce a powerful “committee” that are often hard to beat with other algorithms. This tutorial will cover the fundamentals of GBMs for regression problems.
 
-#### tl;dr
+### tl;dr
 
 This tutotrial serves as an introduction to the GBMs. This tutorial will cover the following material:
 
@@ -51,7 +51,7 @@ This tutotrial serves as an introduction to the GBMs. This tutorial will cover t
 - [h2o](#GBM_h2o_pkg): Training and tuning with the h2o package
 - [Learning more](#GBM_Learn): Where you can learn more.
 
-#### Replication requirements {#GBM_RR}
+### Replication requirements {#GBM_RR}
 
 This tutorial leverages the following packages. Some of these packages play a supporting role; however, we demonstrate how to implement GBMs with several different packages and discuss the pros and cons to each.
 
@@ -80,7 +80,7 @@ ames_test  <- testing(ames_split)
 
 __Important notice__: tree-based methods tend to perform well on unprocessed data (i.e., without normalizing, centering, scaling features). In this tutorial, I focus on how to implement GBMs with various packages. Although I do not pre-process the data, realize that you __can__ improve model performance by spending time processing variable attributes.
 
-#### Advantages & Disadvantages {#GBM_feature}
+### Advantages & Disadvantages {#GBM_feature}
 
 __Advantages__ 
 - Often provides predictive accuracy that cannot be beat.
@@ -94,7 +94,7 @@ __Disadvantages__
 - The high flexibility results in many parameters that interact and influence heavily the behavior of the approach (number of iterations, tree depth, regularization parameters, etc.). This requires a large grid search during tuning.
 - Less interpretable although this is easily addressed with various tools (variable importance, partial dependence plots, LIME, etc.).
 
-#### The idea {#GBM_idea}
+### The idea {#GBM_idea}
 
 Several supervised machine learning models are founded on a single predictive model (i.e., liner regression, penalized models, naive Bayes, support vector machines). Alternatively, other approaches such as bagging and random forests are built on the idea of building an ensemble of models where each individal model predicts the outcome and then the ensemble simply averages the predictive values. The family of boosting methods is based on a different, constructive strategy of ensemble formation.
 
@@ -149,7 +149,7 @@ This makes the algorithms faster but the stochastic nature of random sampling al
 
 As we’ll see in the next section, there are several hyperparameter tuning options that allow us to address how we approach the gradient descent of our loss function.
 
-__Tuning__
+#### Tuning
 
 Part of the beauty and challenges of GBM is that they offer several tuning parameters. The beauty in this is GBMs are highly flexible. The challenge is that they can be time consuming to tune and find the optimal combination of hyperparamters. The most common hyperparameters that you will find in most GBM implementations include:
 
@@ -163,7 +163,7 @@ Part of the beauty and challenges of GBM is that they offer several tuning param
 
 Throughout this tutorial you’ll be exposed to additional hyperparameters that are specific to certain packages and can improve performance and/or the efficiency of training and tuning models.
 
-__Package implementation__
+#### Package implementation
 
 There are many packages that implement GBMs and GBM variants. You can find a fairly comprehensive list [here](https://koalaverse.github.io/machine-learning-in-R/gradient-boosting-machines.html#gbm-software-in-r) and at the [CRAN Machine Learning Task View](https://cran.r-project.org/web/views/MachineLearning.html). However, the most popular implementations which we will cover in this plot include:
 
@@ -188,7 +188,7 @@ Features include:
 - Currently undergoing a major refactoring & rewrite (and has been for some time).
 - GPL-2/3 License.
 
-__Basic implementation__
+#### Basic implementation
 
 `gbm` has two primary training functions - `gbm::gbm` and `gbm::gbm.fit`. The primary difference is that `gbm::gbm` uses the formula interface to specify your model whereas `gbm::gbm.fit` requires the separated x and y matrices. When working with many variables it is more efficient to use the matrix rather than formula interface.
 
@@ -235,7 +235,7 @@ gbm.perf(gbm.fit, method = "cv")
 
 In this case, the small learning rate is resulting in very small incremental improvements which means many trees are required. In fact, for the default learning rate and tree depth settings it takes 39,906 trees for the CV error to minimize (~ 5 minutes of run time)!
 
-__Tuning__
+#### Tuning
 
 However, rarely do the degfault settings suffice. We could tune parameters one at a time to see how the results change. for example, here, I increase the learning rate to take large steps down the gradient descent, reduce the number of trees (since we are reducing the learning rate), and increase the depth of each tree from using a single split to 3 splits. This model takes about 90 seconds to run and achieves a significantly lower RMSE than our initial model with only 1,260 trees.
 
@@ -420,7 +420,7 @@ gbm.fit.final <- gbm(
 ```
 
 
-__Visualing__
+#### Visualizing
 
 _variable importance_
 
@@ -519,7 +519,7 @@ explanation <- explain(local_obs, explainer, n_features = 5)
 plot_features(explanation)
 ```
 
-__Predicting__
+#### Predicting
 
 Once you have decided on a final model you will likely want to use the model to predict on new observations. Like most models, we simply use the `predict` function; however, we also need to supply the number of trees to use (see`?predict.gbm` for details). we see that our RMSE for our test set is very close to the RMSE we obtained to our best `gbm` model.
 
@@ -533,7 +533,7 @@ caret::RMSE(pred, ames_test$Sale_Price)
 ```
 
 
-#### xgboost {#GBM_xgboost_pkg}
+### xgboost {#GBM_xgboost_pkg}
 
 The `xgboost` R package proviedes an R API to "Extreme Gradient Boosting", which is an efficient implementation of gradient boosting framework (approxmately faster than `gbm`). The [xgboost/demo](https://github.com/dmlc/xgboost/tree/master/demo) repository provides a wealth of information. You can also find a fairly comprehensive parameter tuning guide [here](https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/). The xgboost package has been quite popular and successful on Kaggle for data mining competitions.
 
@@ -547,7 +547,7 @@ Features include:
 - The package is made to be extensible, so that users are also allowed to define their own objectives easily.
 - Apache 2.0 License.
 
-__Basic implementation__
+#### Basic implementation
 
 XGBoost only works with matrices that contain all numeric variables; consequentl, we need to one hot encode our data. There are different ways to do this in R (i.e., `Matrix::sparse.model.matrix`, `caret::dummyVars`). but here we will use the `vtreat` package. vtreat is a robust package for data prep and helps to eliminate problems caused by missing values, novel categorical levels that appear in future data sets that were not in the training data, etc. However, `vtreat` is not very intuitive. I will not explain the functionalities but you can find more information :
 
@@ -628,7 +628,8 @@ ggplot(xgb.fit1$evaluation_log) +
 
 ```
 
-__Tuning__
+#### Tuning
+
 To tune the XGBoost model we pass parameters as a list object to the `params` argument.
 The common parameters include:
 
@@ -764,7 +765,7 @@ xgb.fit.final <- xgboost(
 )
 ```
 
-__Visualizing__
+#### Visualizing
 __variable importance__
 
 `xgboost` provides built-in variable importance plotting. First, you need to create the importance matrix with `xgb.importance` and then feed this matrix into `xgb.plot.importance`. There are 3 variable importance measures:
@@ -787,15 +788,16 @@ PDP and ICE plots work similarly to how we implemented them with `gbm`. The only
 
 ```{r}
 pdp <- xgb.fit.final %>% 
-  partial(pred.var = "Gr_Liv_Area_clean", 
+  partial(pred.var = "Gr_Liv_Area", 
           n.trees = 1576, 
           grid.resolution = 100, 
           train = features_train) %>% 
-  autoplot(rug = TRUE, train = features_train) %>% 
+  autoplot(rug = TRUE, train = features_train)+
   scale_y_continuous(labels = scales::dollar)+
   ggtitle("PDP")
+
 ice <- xgb.fit.final %>% 
-  partial(pred.var = "Gr_Liv_Area_clean",
+  partial(pred.var = "Gr_Liv_Area",
           n.trees = 1576, 
           grid.resolution = 100,
           train = features_train,
@@ -806,6 +808,7 @@ ice <- xgb.fit.final %>%
            center = TRUE)+
   scale_y_continuous(labels = scales::dollar)+
   ggtitle("ICE")
+
 gridExtra::grid.arrange(pdp, ice, nrow = 1)
 ```
 
@@ -815,7 +818,8 @@ LIME provides built-in functionality for `xgboost` objects (see `?model_type`). 
 
 ```{r}
 # one-hot encode the local observations to be assessed.
-local_obs_onehot <- vtreat::prepare(treatplan, local_obs, vaRestriction = new_vars)
+local_obs_onehot <- vtreat::prepare(treatplan, local_obs, 
+                                    varRestriction = new_vars)
 # install.packages("vtreat")
 # apply LIME
 explainer <- lime(data.frame(features_train), xgb.fit.final)
@@ -834,7 +838,7 @@ pred <- predict(xgb.fit.final, features_test)
 caret::RMSE(pred, response_test)
 ```
 
-#### h2o {#GBM_h2o_pkg}
+### h2o {#GBM_h2o_pkg}
 
 The `h2o` package is a powerful and efficient java-based interface that allows for local and cluster-based deployment. It comes with fairly comprehensive [online resource](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/index.html) that includes methodology and code documentation along with tutorial.
 
@@ -855,7 +859,7 @@ Features include:
 - Apache 2.0 Licensed.
 - Model export in plain Java code for deployment in production environments.
 
-__Basic implementation__
+#### Basic implementation
 
 Lets go ahead and start up h2o:
 
@@ -916,7 +920,8 @@ h2o.rmse(h2o.fit2, xval = TRUE)
 ## [1] 24684.09
 ```
 
-__Tuning__
+#### Tuning
+
 H2o provides many parameters that can be adjusted. It is well worth your time to check out the available documentation at [H2O.ai](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science/gbm.html#gbm-tuning-guide). For this tutorial, we will focus on the more common hyperparametes that I typically apply. This includes:
 
 - tree complexity:
@@ -932,12 +937,554 @@ H2o provides many parameters that can be adjusted. It is well worth your time to
   - `sample rate`: row sample rate per tree
   - `col_sample_rate`: columns sample rate per tree (synonymous with `xgboost`'s `colsample_bytree`).
   
+Note that there are parameters that control how categorical and continuous variables are encoded, binned and split. The defaults tend to perform quite well, but I have been able to gain small improvements in certain circmustances by adjusting these. I will not cover them but the are work reviewing.
+
+To perform grid search tuning with H2O we have two options: perform a _full_ or _random discrete grid search_.
+
+__Full grid search__
+
+A __full cartesian grid search__ examines every combination of hyperparameter settings that we specify in a tuning grid. This has been the type of tuning we have been performing with our manual for loops with gbm and xgboost. However, to speed up training with H2O I’ll use a validation set rather than perform k-fold cross validation. The following creates a hyperparameter grid consisting of 486 hyperparameter combinations. We apply h2o.grid to perform a grid search while also incorporating stopping parameters to reduce training time. Total grid search time was about 90 minutes.
+
+A few characteristics pop out when we assess the results - models with trees deeper than one split with a low learning rate, no annealing, and stochastic observation sampling tend to perform best. 
+
+```{r eval=FALSE}
+# create training & validation sets
+split <- h2o.splitFrame(train.h2o, 
+                         ratios = 0.75)
+train <- split[[1]]
+valid <- split[[2]]
+
+# create hyperparameter grid
+hyper_grid <- list(
+  max_depth = c(1, 3, 5),
+  min_rows = c(1, 5, 10),
+  learn_rate = c(0.01, 0.05, 0.1),
+  learn_rate_annealing = c(.99, 1),
+  sample_rate = c(.5, .75, 1),
+  col_sample_rate = c(.8, .9, 1)
+)
+
+# perform grid search
+grid <- h2o.grid(
+  algorithm = "gbm",
+  grid_id = "gbm_grid1",
+  x = x,
+  y = y,
+  training_frame = train,
+  validation_frame = valid,
+  hyper_params = hyper_grid,
+  ntrees = 5000,
+  stopping_rounds = 10,
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+# collect the results and sort by our model performance metric of choice
+
+grid_perf <- h2o.getGrid(
+  grid_id = "gbm_grid1",
+  sort_by = "mse",
+  decreasing = FALSE
+)
+
+grid_perf
+## H2O Grid Details
+## ================
+## 
+## Grid ID: gbm_grid1 
+## Used hyper parameters: 
+##   -  col_sample_rate 
+##   -  learn_rate 
+##   -  learn_rate_annealing 
+##   -  max_depth 
+##   -  min_rows 
+##   -  sample_rate 
+## Number of models: 486 
+## Number of failed models: 0 
+## 
+## Hyper-Parameter Search Summary: ordered by increasing mse
+##   col_sample_rate learn_rate learn_rate_annealing max_depth min_rows sample_rate           model_ids                  mse
+## 1             1.0       0.01                  1.0         3     10.0        0.75 gbm_grid1_model_299 3.6209830674536294E8
+## 2             0.8       0.01                  1.0         3     10.0        0.75 gbm_grid1_model_297 3.6380633209494674E8
+## 3             0.8       0.01                  1.0         3      1.0         0.5  gbm_grid1_model_27 3.6672773986842275E8
+## 4             0.8       0.01                  1.0         5      1.0         0.5  gbm_grid1_model_45  3.683498830618852E8
+## 5             0.9       0.01                  1.0         3     10.0        0.75 gbm_grid1_model_298  3.686060225554216E8
+## 
+## ---
+##     col_sample_rate learn_rate learn_rate_annealing max_depth min_rows sample_rate           model_ids                  mse
+## 481             0.9       0.01                 0.99         1     10.0         1.0 gbm_grid1_model_433  2.824716768094968E9
+## 482             0.9       0.01                 0.99         1      1.0         1.0 gbm_grid1_model_325  2.824716768094968E9
+## 483             0.9       0.01                 0.99         1      5.0         1.0 gbm_grid1_model_379  2.824716768094968E9
+## 484             1.0       0.01                 0.99         1      5.0         1.0 gbm_grid1_model_380 2.8252384874380198E9
+## 485             1.0       0.01                 0.99         1      1.0         1.0 gbm_grid1_model_326 2.8252384874380198E9
+## 486             1.0       0.01                 0.99         1     10.0         1.0 gbm_grid1_model_434 2.8252384874380198E9
+```
+
+We can check out more details of the best performing model. The top model achieves a validation RMSE of 19,029.
+
+```{r eval=FALSE}
+# Grab the model_id for the top model, chosen by validation error
+best_model_id <- grid_perf@model_ids[[1]]
+best_model <- h2o.getModel(best_model_id)
+
+# Now let’s get performance metrics on the best model
+h2o.performance(model = best_model, valid = TRUE)
+## H2ORegressionMetrics: gbm
+## ** Reported on validation data. **
+## 
+## MSE:  362098307
+## RMSE:  19028.88
+## MAE:  12427.99
+## RMSLE:  0.1403692
+## Mean Residual Deviance :  362098307
+```
+
+#### Random discrete grid search
+
+Because of the combinatiorial explosion, each additional hyperparameter that gets added to our grid search has a hue effect on the time to complete. Consequently, `h2o` provides an additional grid search path called "RandomDiscrete", which will jump from one random combination to another and stop once a certain level of improvement has been made, certain amo
+unt of time has been exceeded, or certain amount of models have been ran (or a combination of these have been met). Although using a random discrete search path will likely not find the optimal model, it typically does a good job of finding a very good model.
+
+The following performs a random discrete using the same hyperparameter grid we used above. However, in this example we add a search criteria (which is preferred when using a random search) that stops the grid search if none of the last 10 models have managed to have a 0.5% improvement in MSE compared to the best model before that. If we continue to find improvements then I cut the grid search off after 3600 seconds (60 minutes). In this example, our search went for the entire 60 minutes and evaluated 291 of the 486 potential models.
+
+```{r eval=FALSE}
+# random grid search criteria
+search_criteria <- list(
+  strategy = "RandomDiscrete",
+  stopping_metric = "mse",
+  stopping_tolerance = 0.005,
+  stopping_rounds = 10,
+  max_runtimes_secs = 60*60
+)
+
+# perform grid search
+grid <- h2o.grid(
+  algorithm = "gbm",
+  grid_id = "gbm_grid2",
+  x = x,
+  y = y,
+  training_frame = train,
+  validation_frame = valid,
+  hyper_params = hyper_grid,
+  search_criteria = search_criteria, # add this
+  ntrees = 5000,
+  stopping_rounds = 10,
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+# collect the result and sort by our model performance metric of choice
+
+grid_perf <- h2o.getGrid(
+  grid_id = "gbm_grid2",
+  sort_by = "mse",
+  decreasing = FALSE
+)
+
+grid_perf
+## H2O Grid Details
+## ================
+## 
+## Grid ID: gbm_grid2 
+## Used hyper parameters: 
+##   -  col_sample_rate 
+##   -  learn_rate 
+##   -  learn_rate_annealing 
+##   -  max_depth 
+##   -  min_rows 
+##   -  sample_rate 
+## Number of models: 291 
+## Number of failed models: 0 
+## 
+## Hyper-Parameter Search Summary: ordered by increasing mse
+##   col_sample_rate learn_rate learn_rate_annealing max_depth min_rows sample_rate           model_ids                  mse
+## 1             0.8       0.05                  1.0         3     10.0         1.0  gbm_grid2_model_74  5.150720254988258E8
+## 2             0.9       0.01                  1.0         3      5.0         0.5 gbm_grid2_model_146 5.1889115659740096E8
+## 3             0.9       0.05                  1.0         3      5.0         0.5 gbm_grid2_model_114 5.2062049083883923E8
+## 4             0.8       0.05                  1.0         3      5.0        0.75  gbm_grid2_model_37 5.2124226584496534E8
+## 5             0.9       0.05                  1.0         3     10.0         1.0 gbm_grid2_model_157  5.212796449846914E8
+## 
+## ---
+##     col_sample_rate learn_rate learn_rate_annealing max_depth min_rows sample_rate           model_ids                  mse
+## 286             0.9       0.01                 0.99         1     10.0         1.0 gbm_grid2_model_179  3.323851889022955E9
+## 287             1.0       0.01                 0.99         1     10.0         1.0 gbm_grid2_model_260 3.3243159009633546E9
+## 288             0.9       0.01                 0.99         1      5.0         0.5 gbm_grid2_model_199 3.3243216930611935E9
+## 289             0.8       0.01                 0.99         1     10.0         0.5  gbm_grid2_model_80 3.3244630344508557E9
+## 290             0.8       0.01                 0.99         1      1.0         0.5  gbm_grid2_model_71 3.3244630344508557E9
+## 291             0.8       0.01                 0.99         1      5.0         0.5 gbm_grid2_model_227 3.3244630344508557E9
+```
+
+In this example, the best model obtained a cross-validated RMSE of 22,695. Not quite as good as the full grid search; however, often the results come much closer.
+
+```{r eval=FALSE}
+# Grab the model id for the top model, chosen by validation error
+
+best_model_id <- grid_perf@model_ids[[1]]
+best_model <- h2o.getModel(best_model_id)
+
+# Now let’s get performance metrics on the best model
+h2o.performance(model = best_model, valid = TRUE)
+## H2ORegressionMetrics: gbm
+## ** Reported on validation data. **
+## 
+## MSE:  515072025
+## RMSE:  22695.2
+## MAE:  13841.13
+## RMSLE:  0.1427291
+## Mean Residual Deviance :  515072025
+```
+
+Once we’ve found our preferred model, we’ll go ahead and retrain a new model with the full training data. I’ll use the best model from the full grid search and perform a 5-fold CV to get a robust estimate of the expected error.
+
+```{r eval=FALSE}
+# train final model
+
+h2o.final <- h2o.gbm(
+  x = x,
+  y = y,
+  training_frame = train.h2o,
+  nfolds = 5,
+  ntrees = 10000,
+  learn_rate = 0.01,
+  learn_rate_annealing = 1,
+  max_depth = 3,
+  min_rows = 10,
+  sample_rate = 0.75,
+  col_sample_rate = 1,
+  stopping_rounds = 10,
+  stopping_tolerance = 0,
+  seed = 123
+)
+
+# model stopped after xx trees
+h2o.final@parameters$ntrees
+## [1] 9385
+
+# cross validated RMSE
+h2o.rmse(h2o.final, xval = TRUE)
+## [1] 23218.45
+```
+
+__Visualizing__
+__Variable importance__
+
+`h2o` provides a built function that plots variable importance. It only has one measure of variable importance, relative importance, which measures the average impact each variable has across all the trees on the loss function. The variable with the largest is most importance and the impact of all other variables are provided relative to the most important variable. The `vip` package also works with h2o objects to plot variable importance.
+
+```{r eval=FALSE}
+h2o.varimp_plot(h2o.final,
+                num_of_features = 10)
+
+# vip package usage - to be checked
+vip::vip(h2o.final)
+```
+
+__Partial dependence plots(PDP)__
+
+We can also create similar PDP and ICE plots as before. We only need to incorporate a specialty function that converts the supplied data to an `h2o` object and then formats the predicted output as a data frame. We feed this into the `partial` function and the rest is standard.
+
+```{r eval=FALSE}
+pfun <- function(object, newdata) {
+  as.data.frame(predict(object, newdata = as.h2o(newdata)))[[1L]]
+}
+
+pdp <- h2o.final %>%
+  partial(
+    pred.var = "Gr_Liv_Area", 
+    pred.fun = pfun,
+    grid.resolution = 20, 
+    train = ames_train
+    ) %>%
+  autoplot(rug = TRUE, train = ames_train, alpha = .1) +
+  scale_y_continuous(labels = scales::dollar) +
+  ggtitle("PDP")
+
+ice <- h2o.final %>%
+  partial(
+    pred.var = "Gr_Liv_Area", 
+    pred.fun = pfun,
+    grid.resolution = 20, 
+    train = ames_train,
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = ames_train, alpha = .1, center = TRUE) +
+  scale_y_continuous(labels = scales::dollar) +
+  ggtitle("ICE")
+
+gridExtra::grid.arrange(pdp, ice, nrow = 1)
+```
+
+`h2o` does not provide built-in ICE plots but it does provide a PDP plot that plots not only the mean marginal impact (as in a normal PDP) but also one standard error to show the variability.
+
+```{r eval=FALSE}
+h2o.partialPlot(h2o.final, data = train.h2o, cols = "Overall_Qual")
+```
+
+Unfortunately, `h2o`’s function plots the categorical levels in alphabetical order whereas `pdp` will plot them in their specified level order making inference more intuitive.
+
+```{r eval=FALSE}
+pdp <- h2o.final %>%
+  partial(
+    pred.var = "Overall_Qual", 
+    pred.fun = pfun,
+    grid.resolution = 20, 
+    train = as.data.frame(ames_train)
+    ) %>%
+  autoplot(rug = TRUE, train = ames_train, alpha = .1) +
+  scale_y_continuous(labels = scales::dollar) +
+  ggtitle("PDP")
+
+ice <- h2o.final %>%
+  partial(
+    pred.var = "Overall_Qual", 
+    pred.fun = pfun,
+    grid.resolution = 20, 
+    train = as.data.frame(ames_train),
+    ice = TRUE
+    ) %>%
+  autoplot(rug = TRUE, train = ames_train, alpha = .1, center = TRUE) +
+  scale_y_continuous(labels = scales::dollar) +
+  ggtitle("ICE")
+
+gridExtra::grid.arrange(pdp, ice, nrow = 1)
+```
+
+__LIME__
+
+LIME also provides built-in functionality for `h2o` objects (see `?model_type`).
+
+```{r eval=FALSE}
+# apply LIME
+explainer <- lime(ames_train, h2.final)
+explanation <- explain(local_obs, explainer, n_features = 5)
+plot_features(explanation)
+```
+
+#### Predicting
+
+Lastly, we use `h2o.predict` or `predict` to predict on new observations and we can also evaluate the performance of our model on our test set easily with `h2o.performance`. Results are quite similar to both `gbm` and `xgboost`.
+
+```{r eval=FALSE}
+# convert test set to h2o object
+test.h2o <- as.h2o(ames_test)
+
+# evaluate performance on new data
+h2o.performance(model = h2o.final, newdata = test.h2o)
+## H2ORegressionMetrics: gbm
+## 
+## MSE:  407532539
+## RMSE:  20187.44
+## MAE:  12683.01
+## RMSLE:  0.100829
+## Mean Residual Deviance :  407532539
+
+# predict with h2o.predict
+h2o.predict(h2o.final, newdata = test.h2o)
+##    predict
+## 1 130114.9
+## 2 162136.7
+## 3 263438.5
+## 4 484853.0
+## 5 219152.9
+## 6 208616.2
+## 
+## [879 rows x 1 column]
+
+# predict values with predict
+predict(h2o.final, test.h2o)
+##    predict
+## 1 130114.9
+## 2 162136.7
+## 3 263438.5
+## 4 484853.0
+## 5 219152.9
+## 6 208616.2
+## 
+## [879 rows x 1 column]
+```
 
 
+### Learning more {#GBM_Learn}
+
+GBMs are one of the most powerful ensemble algorithms that are often first-in-class with predictive accuracy. Although they are less intuitive and more computationally demanding than many other machine learning algorithms, they are essential to have in your toolbox. To learn more I would start with the following resources:
+
+Traditional book resources:
+
+An Introduction to Statistical Learning
+Applied Predictive Modeling
+Computer Age Statistical Inference
+The Elements of Statistical Learning
+Alternative online resources:
+
+- [Trevor Hastie - Gradient Boosting & Random Forests at H2O World 2014](https://koalaverse.github.io/machine-learning-in-R/%20//www.youtube.com/watch?v=wPqtzj5VZus&index=16&list=PLNtMya54qvOFQhSZ4IKKXRbMkyL%20Mn0caa) (YouTube)
+- [Trevor Hastie - Data Science of GBM (2013)](http://www.slideshare.net/0xdata/gbm-27891077) (slides)
+- [Mark Landry - Gradient Boosting Method and Random Forest at H2O World 2015](https://www.youtube.com/watch?v=9wn1f-30_ZY) (YouTube)
+- [Peter Prettenhofer - Gradient Boosted Regression Trees in scikit-learn at PyData London 2014](https://www.youtube.com/watch?v=IXZKgIsZRm0) (YouTube)
+- [Alexey Natekin1 and Alois Knoll - Gradient boosting machines, a tutorial (blog post)](http://journal.frontiersin.org/article/10.3389/fnbot.2013.00021/full)
 
 
+## Linear & Quadratic Discriminant Analysis
 
-#### Learning more {#GBM_Learn}
+In the previous tutorial, you learned that logistic regression is a classification algorithm traditionally limited to only two-class classification problems (i.e., _default_ = _Yes_ or _No_). However, if you have more than two classes then linear (and its cousin Quadratic) Discriminant Analysis (LDA & QDA) is an often-preferred classification technique. Discriminant analysis models the distribution of the predictors X separately in each of the response classes (i.e., default = _"Yes"_, default = _"No"_), and then uses [Bayes' theorem](https://en.wikipedia.org/wiki/Bayes'_theorem) to flip these around into estimates for the probability of the response category given the value of X.
+
+### tl;dr
+This tutorial covers an introduction to LDA & QDA and covers:
+
+1. [Replication requirements](#DA_RR): What you’ll need to reproduce the analysis in this tutorial
+2. [Why use discriminant analysis](#DA_Why): Understand why and when to use discriminant analysis and the basics behind how it works
+3. [Preparing our data](#LDA_Data): Prepare our data for modeling
+4. [Linear discriminant analysis](#DA_LDA): Modeling and 5. classifying the categorical response `Y` with a linear combination of predictor variables `X`.
+5. [Quadratic discriminant analysis](#DA_QDA): Modeling and classifying the categorical response `Y` with a non-linear combination of predictor variables `X`.
+6. [Prediction Performance](#DA_Pred): How well does the model fit the data? Which predictors are most important? Are the predictions accurate?
+7. [A comparison](#DA_Comp): An example comparing logistic regression & Discriminant Analysis
+8. [Additional resources](#DA_Resource): Additional resources to help you learn more
+
+### Replication requirements {#DA_RR}
+
+This tutorial primarily leverages the `Default` data provided by the `ISLR` package. This is a simulated data set containing information on ten thousand customers such as whether the customer defaulted, is a student, the average balance carried by the customer and the income of the customer. We will also use a few packages that provide data manipulation, visualization, pipeline modeling functions, and model outout tidying functions.
+
+```{r}
+library(tidyverse)  # data manipulation and visualization
+library(MASS)       # provides LDA & QDA model functions
+
+# data set from ISLR package
+library(ISLR)
+
+# Load data 
+(default <- as_tibble(ISLR::Default))
+## # A tibble: 10,000 × 4
+##    default student   balance    income
+##     <fctr>  <fctr>     <dbl>     <dbl>
+## 1       No      No  729.5265 44361.625
+## 2       No     Yes  817.1804 12106.135
+## 3       No      No 1073.5492 31767.139
+## 4       No      No  529.2506 35704.494
+## 5       No      No  785.6559 38463.496
+## 6       No     Yes  919.5885  7491.559
+## 7       No      No  825.5133 24905.227
+## 8       No     Yes  808.6675 17600.451
+## 9       No      No 1161.0579 37468.529
+## 10      No      No    0.0000 29275.268
+## # ... with 9,990 more rows
+```
+
+### Why use discriminant analysis {#DA_Why}
+
+In the previous tutorial, we saw that a logistic regression model does a fairly good job classifying customers that default. So why do we need another classification method beyond logistic regression? There are several reasons:
+
+- When the classes of the reponse variable Y (i.e. _default = “Yes”_, _default = “No”_) are well-separated, the parameter estimates for the logistic regression model are surprisingly unstable. LDA & QDA do not suffer from this problem.
+
+- If _n_ is small and the distribution of the predictors _X_ is approximately normal in each of the classes, the LDA & QDA models are again more stable than the logistic reression model.
+
+- LDA & QDA are often preferred over logistic regression when we have more than two non-ordinal response classes (i.e., _stroke_, _drug overdose_ and _epileptic seizure_).
+
+However, it is important to note that LDA & QDA have assumptions that are often more restictive than logistic regression:
+
+- Both LDA and QDA assume the the predictor variables _X_ are drawn from a multivariate Gaussian (aka _normal_) distribution.
+- LDA assumes equality of covariances among the predictor variables X across each all levels of _Y_. This assumption is relaxed with __the QDA model__.
+- LDA and QDA require the number of predictor variables (`p`) to be less then the sample size (`n`). Furthermore, its important to keep in mind that performance will severely decline as `p` approaches `n`. A simple rule of thumb is to use LDA & QDA on data sets where $n≥5×p$.
+
+Also, when considering between LDA & QDA its important to know that __LDA__ is a much __less flexible__ classifier than QDA, and so has substantially _lower variance_. This can potentially lead to improved prediction performance. But there is a trade-off: if LDA’s assumption that the the predictor variable share a common variance across each Y response class is badly off, then LDA can suffer from _high bias_. Roughly speaking, LDA tends to be a better bet than QDA if there are relatively few training observations and so reducing variance is crucial. In contrast, QDA is recommended if the training set is very _large_, so that the variance of the classifier is not a major concern, or if the assumption of a common covariance matrix is clearly untenable.
+
+### Preparing our data {#DA_Data}
+
+As we’ve done in the previous tutorials, we’ll split our data into a training (60%) and testing (40%) data sets so we can assess how well our model performs on an out-of-sample data set.
+
+```{r}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+
+### Linear discriminant analysis {#DA_LDA}
+
+LDA computes "discriminat scores" for each observation to classify what response variable class it is in (i.e., default or not default). These scores are obtained by finding linear combination of the independent variables. For a single predictor variable $X = x$ the LDA classifier is estimated as 
+
+$$
+\hat{\delta}_k(x) = x*\frac{\hat{\mu_k}}{\sigma^2} -\frac{\hat{\mu_k^2}}{2\sigma^2}+log(\hat{\pi_k})...(1) 
+$$
+
+where:
+
+- $\hat{\delta}_k(x)$  is the estimated discriminant score that the observation will fall in the kth class within the response variable (i.e. default or not default) based on the value of the predictor variable x
+- $\hat{\mu}_k$ is the average of all the training observations from the kth class
+- $\hat{\sigma}^2$ is the weighted average of the sample variances for each of the K classes
+- $\phi_k$ is the prior probability that an observation belongs to the kth class (not to be confused with the mathematical constant $\phi$
+≈3.14159.
+
+This clssifier assigns an observation to the kth class of $Y_k$ for which discriminant score $\delta_k(x)$ is largest. For example, lets assume there are two clases  (A and B) for the response variable $Y$. Based on the predictor variable, LDA is going to compute the probability distribution of being classified as class $A$ or $B$. The linear decision boundary between the probability distribution is represented by the dashed line. Discriminat scores to the left of the dashed line will be classified as $A$ and scores to the right will be classified as $B$.
+
+When dealing with more than one predictor variable, the LDA classifier assumes that the observations in the $k$th class are drawn from a multivariate Gaussian distribution $N (\mu_k, \Sigma)$, where $mu_k$ is class-specific mean vector, and $\Sigma$ is a covariance matrix that is common to all $K$ classes. Incorporate this into the LDA classifier results in:
+
+$$
+\delta_k(x) = x^T\Sigma^{-1}\hat{\mu}_k-\frac{1}{2} \hat{\mu}_k^T\Sigma^{-1} - \mu_k + log(\hat{\pi_k})
+$$
+
+,where an observation will be assigned to class $k$ where the discriminant score $\delta_k(x)$ is largest.
+
+#### Estimate & Understand Model
+
+In R, we fit a LDA model using the `lda` function, which is part of the `MASS` library. Notice that the syntax for the `lda` is identical to that of `lm` (as seen in the linear regression tutorial), and to that of `glm` (as seen in the logistic regression tutorial) except for the absence of the family option.
+
+```{r}
+(lda.m1 <- lda(default ~ balance + student, data = train))
+```
+
+The LDA output indicates that our prior probabilities are $\hat{\pi_1} = 0.968$ and $\hat{\pi_2}=0.032$: in other words, 96.8% of the training observations are customers who did not default and 3% represent those that defaulted. It also provides the group means; these are the average of each predictor within each class, and are used by LDA as estimates of $mu_k$. These suggest that customers that tend to default have, on average, a credit card balance of $1,777 and are more likely to be students then non-defaulters (29% of non-defaulters are students whereas 39% of defaulters are). However, as we learned from the last tutorial this is largely because students tend to have higher balances then non-students.
+
+The _coefficients of linear disciminants_ provide he linear combination of balance and student=Yes that are used to form the LDA decision rule. In other words, these are the multipliers of the elements of X = x in Eq 1 & 2. If 0.0022 × balance − 0.228 × student is large, then the LDA classifier will predict that the customer will default, and if it is small, then the LDA classifier will predict the customer will not default. We can use plot to produce plots of the linear discriminants, obtained by computing 0.0022 × balance − 0.228 × student for each of the training observations. As you can see, when 
+$0.0022×balance-0.228*student<0$  the probability increases that the customer will not default and when $0.0022×balance-0.228*student>0$ the probability increases that the customer will default.
+
+```{r}
+plot(lda.m1)
+```
+
+#### Make predictions
+
+We can use `predict` for LDA much like we did with logistic regression. I will illustrate the output that `predict` provides based on this simple data set.
+
+```{r}
+(df <- tibble(balance = rep(c(1000, 2000), 2), 
+       student = c("No", "No", "Yes", "Yes")))
+```
+
+Below we see that `predict` returns a list with three elements. The first element, `class` contains LDA's predictions about the customer defaulting. Here we see that the second observation (non-student with balance of $2,000) is the only one kthat is predicted to default. The second element, `posterior` is a matrix that contains the posterior probability that the corresponding observations will or will not default. Here we see that the only observation to have a posterior probability of defaulting greater than 50% is observation 2, which is why the LDA model predicted this observation will default. 
+
+However, we also see that observation 4 has a 42% probability of defaulting. Right now, the model is predicting that this observation will not default because this probability is less than 50%; however, we will see shortly how we can make adjustments to our posterior probability thresholds. Finally, `x` contains the linear discriminant values, described earlier.
+
+```{r}
+(df.pred <- predict(lda.m1, df))
+```
+
+As previously mentioned, the default setting is to use a 50% threshold for the posterior probabilities. We can recreate the predictions contained in the `class` element above:
+
+```{r}
+# number of non-defaulters
+sum(df.pred$posterior[,1]>.5)
+
+# number of defaulters
+sum(df.pred$posterior[,2]>.5)
+```
+
+If we wanted to use a posterior probability threshold other than 50% in order to make predictions, then we could easily do so. For instance, suppose that a credit card company is extremely risk-averse and want to assume that a customer with 40% or greater probability is a high-risk customer. We can easily assess the number of high-risk customers.
+
+```{r}
+# number of high-risk customers with 40$ probability of defaulting
+df.pred$posterior
+df.pred$posterior[,2] %>% sum(. > .4)
+sum(df.pred$posterior[, 2] > .4)
+```
+
+### Quadratic discriminant analysis] {#DA_QDA} 
+As previously mentioned, LDA asssumes that the observations within each class are drawn from a multivatiate Gaussian distribution and the covariance of the predictor variables are common across all $k$ levels of the response variable $Y$.
+
+Quadratic discriminant analysis (QDA) provides an alternative approach. 
+
+
+### Prediction Performance {#DA_Pred} 
+### A comparison {#DA_Comp}
+
+### Additional resources {}
 
 ## Resampling methods
 ### Resampling basics
