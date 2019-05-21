@@ -53,7 +53,10 @@ Reference: https://github.com/kojimizu/FES
 ### 2. Feature Engineering Book
 by Alice Zheng  
 
-## Tidyverse 
+
+=========================================
+# Modern R 
+## Modern commands
 ### Modern R with Tidyverse  
 Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), covering:
 
@@ -64,13 +67,25 @@ Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), 
 5. Graphs
 6. Statistical models
 7. Defining your own functions
-8. Functional programming
+8. _Functional programming__
 9. Package development
 10. Further topics
 
-### Cookbook for R
+## Purrr material 
+### RStudio 
+https://purrr.tidyverse.org/  
 
-## Data visualizations
+### Happy Purrrr 
+A tutorial video by Charotte Wickhkm: https://resources.rstudio.com/wistia-rstudio-conf-2017/happy-r-users-purrr-tutorial-charlotte-wickham  
+
+### Case study of Purrr
+Lessons and Examples by Jenny Brian: https://jennybc.github.io/purrr-tutorial/  
+- Background basics
+- Core purrr lessons
+- Worked examples 
+
+
+## Visualization
 ### Data visualition - A practical introduction  
 by Kieran Healy.   
 The book is available on http://socviz.co/index.html.
