@@ -10,19 +10,19 @@ Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The ma
 Hands-on Machine Learning with R: An applied book covering the fundamentals of machine learning with R.  
 This book covers multiple models 1) gm, 2) regularized glm, 3) random forest and 4) gradient boosting methods.  
 From 2018 to 2019 January  
-📚 Online book: http://bit.ly/HOML_with_R  
-{% octicon repo %} Github: https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
+📚 Book: http://bit.ly/HOML_with_R  
+📦 Repo: https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
 ### 📚 UC Business analyrics by R
 This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
-Link: University of Cincinatti - http://uc-r.github.io  
+📚 Book: University of Cincinatti - http://uc-r.github.io  
 
 - Predictive analyitics: 
     - ML(Linear, Naive Bayes, Regularized Regression, MARS, Regression Tree, Random Forests, GBM, Discriminant Analysis, SVM)
     - DL (To be updated)
 
 ## Modeling Resources
-### 📚 Caret
+### 📦 Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
 A package for ML modeling with pre-processing techniques 
 ```{R}
@@ -30,10 +30,14 @@ A package for ML modeling with pre-processing techniques
 install.packages("caret")
 ```
 From Sep 2018 - Oct 2018  
-http://topepo.github.io/caret/  
 
-### Tidymodels  
+📚 Book: http://topepo.github.io/caret/
+📦 Repo:   https://github.com/topepo/caret
+
+### 📦 Tidymodels  
 Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
+
+📦 Repo: https://github.com/tidymodels/tidymodels
 
 ```{R}
 # Avaiable from CRAN
@@ -47,18 +51,18 @@ install.packages("tidymodels")
 ## Feature Engineering Resouces 
 ### 📚 Feature Engineering and Selection (FES)  
 A Bookdown page prepared by Max Kuhn  
-http://www.feat.engineering/  
-Reference: https://github.com/kojimizu/FES  
+📚 Book: http://www.feat.engineering/  
+📦 Repo: https://github.com/kojimizu/FES  
 
 ### 📚 Feature Engineering Book
 by Alice Zheng  
-
 
 =========================================
 # Modern R 
 ## Modern commands
 ### 📚 R for Data Science
-Basic commands with tidyverse is summarised well: https://r4ds.had.co.nz/  
+Basic commands with tidyverse is summarised.
+📚 Book: https://r4ds.had.co.nz/  
 The excercise solution can be found on Bookdown as well.
 
 ### 📚 Modern R with Tidyverse  
@@ -91,7 +95,7 @@ Datacamp
 
 ### Case study of Purrr
 Lessons and Examples by Jenny Brian: 
-: https://jennybc.github.io/purrr-tutorial/  
+📚 Web: https://jennybc.github.io/purrr-tutorial/  
 - Background basics
 - Core purrr lessons
 - Worked examples 
@@ -100,18 +104,18 @@ Lessons and Examples by Jenny Brian:
 ## Visualization
 ### 📚 Data visualition - A practical introduction  
 by Kieran Healy.   
-The book is available on http://socviz.co/index.html.
+📚 Book: http://socviz.co/index.html.
 
 ### 📚 R Graphics cookbook
 by Winston Chang
-The book is available on https://r-graphics.org/  
+📚 Book: https://r-graphics.org/  
 Another useful website is Cookbook for R: covering other topics online: http://www.cookbook-r.com/
 
 
 ## Time series analysis
 ### 📚 Forecasing principles and Practice
 by Rob J Hyndman
-https://otexts.com/fpp2/
+📚 Book: https://otexts.com/fpp2/
 
 
 
