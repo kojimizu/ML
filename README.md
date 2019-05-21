@@ -68,9 +68,17 @@ Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), 
 9. Package development
 10. Further topics
 
+### Cookbook for R
 
+## Data visualizations
+### Data visualition - A practical introduction  
+by Kieran Healy.   
+The book is available on http://socviz.co/index.html.
 
-
+### R Graphics cookbook
+by Winston Chang
+The book is available on https://r-graphics.org/  
+Another useful website is Cookbook for R: covering other topics online: http://www.cookbook-r.com/
 
 
 
