@@ -11,7 +11,7 @@ Hands-on Machine Learning with R: An applied book covering the fundamentals of m
 This book covers multiple models 1) gm, 2) regularized glm, 3) random forest and 4) gradient boosting methods.  
 From 2018 to 2019 January  
 📚 Online book: http://bit.ly/HOML_with_R  
-<%= octicon "repo" %> Github: https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
+{% octicon repo %} Github: https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
 ### 📚 UC Business analyrics by R
 This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
