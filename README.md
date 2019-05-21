@@ -10,8 +10,8 @@ Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The ma
 Hands-on Machine Learning with R: An applied book covering the fundamentals of machine learning with R.  
 This book covers multiple models 1) gm, 2) regularized glm, 3) random forest and 4) gradient boosting methods.  
 From 2018 to 2019 January  
-https://bradleyboehmke.github.io/hands-on-machine-learning-with-r/   
-https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
+Online book: http://bit.ly/HOML_with_R  
+Github: https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
 ### 3. UC Business analyrics by R
 This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
