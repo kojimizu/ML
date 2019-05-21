@@ -57,6 +57,10 @@ by Alice Zheng
 =========================================
 # Modern R 
 ## Modern commands
+### R for Data Science
+Basic commands with tidyverse is summarised well: https://r4ds.had.co.nz/  
+The excercise solution can be found on Bookdown as well.
+
 ### Modern R with Tidyverse  
 Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), covering:
 
