@@ -80,7 +80,8 @@ Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), 
 https://purrr.tidyverse.org/  
 
 ### Happy Purrrr 
-A tutorial video by Charotte Wickhkm: https://resources.rstudio.com/wistia-rstudio-conf-2017/happy-r-users-purrr-tutorial-charlotte-wickham  
+🎥 A tutorial video by Charotte Wickhkm: 
+https://resources.rstudio.com/wistia-rstudio-conf-2017/happy-r-users-purrr-tutorial-charlotte-wickham  
 
 ### Case study of Purrr
 Lessons and Examples by Jenny Brian: https://jennybc.github.io/purrr-tutorial/  
