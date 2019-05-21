@@ -1,6 +1,4 @@
 # Machine Learning Archive  
-Bookdown is a R package, enabling users to publish books. 
-Bookdown.org has an archive storing published books based on the bookdown package. 
 The below is an simple introduction of useful books for statistical modeling and proeprocessing/feature engineering.
 
 ## ML Overview
@@ -21,6 +19,7 @@ Link: University of Cincinatti - http://uc-r.github.io
 
 - Predictive analyitics: 
     - ML(Linear, Naive Bayes, Regularized Regression, MARS, Regression Tree, Random Forests, GBM, Discriminant Analysis, SVM)
+    - DL (To be updated)
 
 ## Modeling Resources
 ### 1. Caret
@@ -45,7 +44,6 @@ install.packages("tidymodels")
 - recipes:  pre-processing functions (similar to caret)
 - parsnip:  modeling functions 
 
-
 ## Feature Engineering Resouces 
 ### 1. Feature Engineering and Selection (FES)  
 A Bookdown page prepared by Max Kuhn  
@@ -54,6 +52,28 @@ Reference: https://github.com/kojimizu/FES
 
 ### 2. Feature Engineering Book
 by Alice Zheng  
+
+## Tidyverse 
+### Modern R with Tidyverse  
+Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), covering:
+
+1. Hello R and RStudio
+2. object, types
+3. Load data (Reading and Writing)
+4. Descriptive statistics and data management
+5. Graphs
+6. Statistical models
+7. Defining your own functions
+8. Functional programming
+9. Package development
+10. Further topics
+
+
+
+
+
+
+
 
 
 
