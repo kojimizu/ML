@@ -32,68 +32,7 @@ knitr::opts_chunk$set(
 
 This is a practice of [UC business analytics R programming guide](http://uc-r.github.io/).
 
-# Descrptive analytics
-
-Descriptive methodologies focus on analyzing historic data of the purpose of identifying patterns or trends. Analytic techniques fall into this category are most often associated with exploratory data analysis which identifies central tendencies, variations, and distributional shapes. Descriptive methodologies can also search for underlying structures whithin data when no a _priori_ knowledge about patterns and relationships are assumed. 
-
-This can include correlation analysis, exploratory factor analysis, principal component analysis, trend analyses, and cluster analysis. The following tutorial walk you through common forms of descriptive analytics.
-
-1. Classical analyses
-- [Numerical data descrptive statistics](http://uc-r.github.io/descriptives_numeric)
-- Categorical data descriptive statistics
-- Assumption of normality
-- Assumption of homogeneity
-- Assessing correlations
-- Univariate statistical inference
-- Multivariate statistical inference
-- Bootstrapping for parameter estimates
-
-2. Text mining
-- Tidying text & word frequency
-- Sentiment analysis
-- Term vs Document frequency
-- Word relationships
-- Converting between tidy and non-tidy formats
-
-3. Unsupervised learning
-
-## Classical analyses
-### [Numerical data descriptive statistics](http://uc-r.github.io/descriptives_numeric)
-
-Descriptive statistics are the first piece of information used to understand and represent a dataset. There goal in essence, is to describe the main features of numerical and categorical information with simple summaries. These summaries can be presented with a single numeric measure, using summary tables, or via graphical representation. Here, I illustrate the most common forms of descriptive statistics for numerical data but keep in mind there are numerous ways to describe and illustrate key feature of data.
-
-#### tl;dr
-
-This tutorial covers the key features we are initially interested in understanding for numerical data, to include:
-
-- central tendency: what are the most typical values?
-- variability:How do the values vary?
-- shape: Are the values symmetrically or asymetrically distributed?
-- outliers: Are there values that represent abnormalities in the data?
-- visualization: We should understand these features of the data through statistics and visualization.
-
-#### Replication requirements
-
-To illustrate ways to comute different summary statistics, and to visualize the data to provide understanding of these key features, I'll demonstrate using this [data](https://github.com/bradleyboehmke/bradleyboehmke.github.io/blob/master/public/data/Baseball%20Salaries%202011.xlsx) which contains data on 843 MLB players in the 2011 season:
-
-```{r eval=FALSE}
-readxl::read_xlsx("https://github.com/bradleyboehmke/bradleyboehmke.github.io/blob/master/public/data/Baseball%20Salaries%202011.xlsx")
-```
-
-In addition, the packages we will leverage include the following:
-
-```{r eval=FALSE, warning=FALSE}
-library(outliers) # identidying and extracting outliers
-library(ggplot2)  # for generating visualization
-library(moments)  # for calculating the skew and kurtosis
-```
-
-#### Central tendency {AA}
-
-\{AA}
-
 # Predictive analytics
- 
 ## Machine Learning
 
 ### Preparing for regression problems
@@ -1652,7 +1591,7 @@ For categorical variables, this computation is quite simple as you just use the 
 
 ```{r}
 train %>% 
-  select(Age,DailyRate,DistanceFromHome, HourlyRate, MonthlyIncome, MonthlyRate) %>% 
+  dplyr::select(Age,DailyRate,DistanceFromHome, HourlyRate, MonthlyIncome, MonthlyRate) %>% 
   gather(metric, value) %>% 
   ggplot(aes(value, fill=metric))+
   geom_density(show.legend = FALSE)+
@@ -1687,7 +1626,9 @@ library(caret)
 
 # create response and feature data
 features <- setdiff(names(train), "Attrition")
-x <- train[,features]
+features
+
+x <- train[, features]
 y <- train$Attrition
 
 # set up 10-fold cross validation procedure
@@ -1703,7 +1644,6 @@ nb.m1 <- caret::train(
   method = "nb",
   trControl = train_control
 )
-
 # results 
 confusionMatrix(nb.m1)
 ```
@@ -1991,8 +1931,8 @@ library(broom)
 Linear regression is not approproate in the case of qualitative response. Why not? Suppose that we are trying to predict the medical condition of a patient in the emergency room on the basis of her symptoms. In this simplified example, there are three possible diagnoses: _stroke_, _drug overdose_, and _epileptic seizure_. We could consider encoding these values as a quantitative response variable, `Y` , as follows:
 
 $$
-Y = 1, if stroke; // 
-    2, if drug overdose;
+Y = 1, if stroke; \\
+    2, if drug overdose; \\
     3, if epileptic seizure
 $$
 
@@ -3054,7 +2994,7 @@ gridExtra::grid.arrange(p1, p2, p3, ncol=3)
 
 Although useful, the typical implementation of polynomial regression and step functions require the user to explicitly identify and incorporate which variables should have what specific degree of interaction or at points of a variable $x$ should cut points to be made for the step functions. Considering many data sets today can easily contain 50, 100, or more features, this would require an enormous and unncessary time commitment from an analyst to determine these explicit non-linear settings.
 
-#### Multivariage regression splines {#MARS}
+### Multivariage regression splines {#MARS}
 
 Multivariate adaptive regression splines (MARS) provide a convenient approach to capture the nonlinearity aspect of polynomial regression by assessing cutpoints ( _knots_) similar to step functions. The procedure assesses each data point for each predictor as a knot and creates a linear regression model with the candidate feature(s). For example, consider our simple model of `Sale_Price` ~ `Year_Built`. The MARS procedure will first look for the single point across the range of Year_Built values where two different linear relationships between `Sale_Price` and `Year_Built` achieve the smallest error. 
 
@@ -4356,177 +4296,3 @@ Random forests provide a very powerful out-of-the-box algorithm that often has g
 - Applied Predictive Modeling
 - Computer Age Statistical Inference
 - The Elements of Statistical Learning
-
-### Gradient boosting machines (GBM)
-
-Gradient boosted machines (GBMs) are an extremely popular machine learning algorithm that have proven successful across many domains and is one of the learning methods for winning Kaggle competitions. Whereas [random forest](http://uc-r.github.io/random_forests) build anc ensemble of deepe independent trees, GBMs build an ensemple of shallow and weak successive trees with each tree leading and improving on the previous. 
-
-When combined, these many weak successive trees produce a powerful ÅgcommitteeÅh that are often hard to beat with other algorithms. This tutorial will cover the fundamentals of GBMs for regression problems.
-
-#### tl;dr
-
-This tutotrial serves as an introduction to the GBMs. This tutorial will cover the following material:
-
-- [Replication Requirements](#GBM_RR): What youÅfll need to reproduce the analysis in this tutorial.
-- [Advantages & Disadvantages](#GBM_feature): Primary strengths and weaknesses of GBMs.
-- [The idea](#GBM_idea): A quick overview of how GBMs work.
-- [gbm](#GBM_gbm_pkg): Training and tuning with the gbm package
-- [xgboost](#GBM_xgboost_pkg): Training and tuning with the xgboost package
-- [h2o](#GBM_h2o_pkg): Training and tuning with the h2o package
-- [Learning more](#GBM_Learn): Where you can learn more.
-
-#### Replication requirements {#GBM_RR}
-
-This tutorial leverages the following packages. Some of these packages play a supporting role; however, we demonstrate how to implement GBMs with several different packages and discuss the pros and cons to each.
-
-```{r}
-library(rsample)      # data splitting 
-library(gbm)          # basic implementation
-library(xgboost)      # a faster implementation of gbm
-library(caret)        # an aggregator package for performing many machine learning models
-library(h2o)          # a java-based platform
-library(pdp)          # model visualization
-library(ggplot2)      # model visualization
-library(lime)         # model visualization
-```
-
-To illustrate various GBM concepts, we will use the Ames housing data that has been included in the `AmesHousing` package.
-
-```{r}
-# create training(70%) and test (30%) sets 
-# Use set.seed for reproducibility
-
-set.seed(123)
-ames_split <- initial_split(AmesHousing::make_ames(), prop = .7)
-ames_train <- training(ames_split)
-ames_test  <- testing(ames_split)
-```
-
-__Important notice__: tree-based methods tend to perform well on unprocessed data (i.e., without normalizing, centering, scaling features). In this tutorial, I focus on how to implement GBMs with various packages. Although I do not pre-process the data, realize that you __can__ improve model performance by spending time processing variable attributes.
-
-#### Advantages & Disadvantages {#GBM_feature}
-
-__Advantages__ 
-- Often provides predictive accuracy that cannot be beat.
-- Lots of flexibility - can optimize on different loss functions and provides several hyperparameter tuning options that make the function fit very flexible.
-- No data pre-processing required - often works great with categorical and numerical values as is.
-- Handles missing data - imputation not required.
-
-__Disadvantages__
-- GBMs will continue improving to minimize all errors. This can overemphasize outliers and cause overfitting. Must use cross-validation to neutralize.
-- Computationally expensive - GBMs often require many trees (>1000) which can be time and memory exhaustive.
-- The high flexibility results in many parameters that interact and influence heavily the behavior of the approach (number of iterations, tree depth, regularization parameters, etc.). This requires a large grid search during tuning.
-- Less interpretable although this is easily addressed with various tools (variable importance, partial dependence plots, LIME, etc.).
-
-#### The idea {#GBM_idea}
-
-Several supervised machine learning models are founded on a single predictive model (i.e., liner regression, penalized models, naive Bayes, support vector machines). Alternatively, other approaches such as bagging and random forests are built on the idea of building an ensemble of models where each individal model predicts the outcome and then the ensemble simply averages the predictive values. The family of boosting methods is based on a different, constructive strategy of ensemble formation.
-
-The main idea of boosting is to add new models to the ensemble __sequentially__. At each particular iteration, a new weak, base-learner model is trained with respect to the error of the whole ensemble learnt so far.
-
-```{r}
-knitr::include_graphics("C:/Protected/Data Science/UC Business Analytics/image/boosted-trees-process.png")
-```
-
-LetÅfs discuss each component of the previous sentence in closer detail because they are important.
-
-__Base-learning models__: Boosting is a framework that iteratively improves any weak learning model. Many gradient boosting applications allow you to Ågplug inÅh various classes of weak learners at your disposal. In practice however, boosted algorithms almost always use decision trees as the base-learner. Consequently, this tutorial will discuss boosting in the context of regression trees.
-
-__Training weak models__:A weak model is one whose error rate is only slightly better than random guessing. The idea behind boosting is that each sequential model builds a simple weak model to slightly improve the remaining errors. With regards to decision trees, shallow trees represent a weak learner. Commonly, trees with only 1-6 splits are used. Combining many weak models (versus strong ones) has a few benefits:
-
-- Speed: Constructing weak models is computationally cheap.  
-- Accuracy improvement: Weak models allow the algorithm to learn slowly; making minor adjustments in new areas where it does not perform well. In general, statistical approaches that learn slowly tend to perform well.  
-- Avoids overfitting:Due to making only small incremental improvements with each model in the ensemble, this allows us to stop the learning process as soon as overfitting has been detected (typically by using cross-validation).
-
-__Sequential training with respect to errors__: Boosted trees are grown sequentially; each tree is grown using information from previously grown trees. The basic algorithm for boosted regression trees can be generalized to the following where x represents our features and y represents our response:
-
-1. Fit a decision tree to the data: $F_1(x) = y$
-2. We then fit the next decision tree to the residuals of the previous: $h_1(x) = y-F_1(x)$
-3. Add this new tree to our algorithm: $F_2(x)=F_1(x) + h_1(x)$,
-4. Fir the next decision tree to the residuals of $F_2$: $h_2(x)=y-F_2(x)$
-5. Add this new tree to our algorithm: $F_3(x) = F_2(x) + h_1(x)$
-6. Continue this process until some mmechasim (i.e., cross-validation) tells us to stop.
-
-The basic algorithm for boosted regression trees can be generalized to the following where the final model is simply a stagewise additive model of $b$ individual regression trees:
-
-$$
-f(x) = \Sigma_{b=1}^B{f^b(x)}
-$$
-
-To illustrate the behaivor, assume the following $x$ and $y$ observations.  The blue sine wave represents the true underlying function and the points represent observations that include some irriducible error (noise). The boosted prediction illustrates the adjusted predictions after each additional sequential tree is added to the algorithm. Initially, there are large errors which the boosted algorithm improves upon immediately but as the predictions get closer to the true underlying function you see each additional tree make small improvements in different areas across the feature space where errors remain. Towards the end of the gif, the predicted values nearly converge to the true underlying function.
-
-__Gradient descent__
-
-Many algorithms, including decision trees, focus on minimizing the residuals and, therefore, emphasize the MSE loss function. The algorithm discussed in the previous section outlines the approach of sequentially fitting regression trees to minimize the errors. This specific approach is how gradient boosting minimizes the mean squared error (MSE) loss function. 
-
-However, often we wish to focus on other loss functions such as mean absolute error (MAE) or to be able to apply the method to a classification problem with a loss function such as deviance. The name __gradient__ boosting machines come from the fact that this procedure can be generalized to loss functions other than MSE.
-
-Gradient boosting is considered a __gradient descent__ algorithm. Gradient descent is a very generic optimization algorithm capable of finding optimal solutions to a wide range of problems. The general idea of a gradient descent is to tweak parameters iteratively in order to minimize a cost function. Suppose you are a downhill skier racing your friend. 
-
-A good strategy to beat your friend to the bottom is to take the path with the steepest sloep. This is is exactly what gradient descent does - it measures the local gradient of the loss (cost) function for a given set of parameter ($\phi$) and takes steps in the direction of the descending gradient. Once the gradient is zero, we have reached the minimum.
-
-Gradient descent can be performed on any loss function that is differentiable. Consequently, this allows GBMs to optimize different loss functions as desired (see ESL, p. 360 for common loss functions). An important parameter in gradient descent is the size of the steps which is determined by the _learning rate_. If the learning rate is too small, then the algorithm will take many iterations to find the minimum. On the other hand, if the learning rate is too high, you might jump cross the minimum and end up further away than when you started.
-
-Moreover, not all cost functions are convex (bowl shaped). There may be local minimas, plateaus, and other irregular terrain of the loss function that makes finding the global minimum difficult. _Stochastic gradient descent_ can help us address this problem by sampling a fraction of the training observations (typically without replacement) and growing the next tree using that subsample. 
-
-This makes the algorithms faster but the stochastic nature of random sampling also adds some random nature in descending the loss function gradient. Although this randomness does not allow the algorithm to find the absolute global minimum, it can actually helpt the algorithm jump out of local minima and off plateus get near the global minimum.
-
-As weÅfll see in the next section, there are several hyperparameter tuning options that allow us to address how we approach the gradient descent of our loss function.
-
-__Tuning__
-
-Part of the beauty and challenges of GBM is that they offer several tuning parameters. The beauty in this is GBMs are highly flexible. The challenge is that they can be time consuming to tune and find the optimal combination of hyperparamters. The most common hyperparameters that you will find in most GBM implementations include:
-
-- __Number of trees__: The total number of trees to fit. GBMs often require many trees; however, unlike random forests GBMs can overfit so the goal is to find the optimal number of trees that minimize the loss function of interest with cross validation. 
-
-- __Depth of trees__; The number $d$ of splits in each tree, which controls the complexity of the boosted ensembles. Often $d=1$ works well, in which case each tree is a stump consisting of a single split. More commonly, $d$ is greater than 1 but is unlikely $d>10$ will be required.
-
-- __Learning rate__: Controls how quickly the algorithm proceeds down the gradient descent. Smaller values reduce the chance of overfitting but also increases the time to find the optimal fit. This is also called _shrinkage_.
-
-- __Subsampling__: Controls whether or not you use a fraction of the available training observations. Using less than 100% of the training observations means you are implementing stochastic gradient descent. This can help to minimize overfitting and keep from getting stuck in a local minimum or plateau of the loss function gradien
-
-Throughout this tutorial youÅfll be exposed to additional hyperparameters that are specific to certain packages and can improve performance and/or the efficiency of training and tuning models.
-
-__Package implementation__
-
-There are many packages that implement GBMs and GBM variants. You can find a fairly comprehensive list [here](https://koalaverse.github.io/machine-learning-in-R/gradient-boosting-machines.html#gbm-software-in-r) and at the [CRAN Machine Learning Task View](https://cran.r-project.org/web/views/MachineLearning.html). However, the most popular implementations which we will cover in this plot include:
-
-- [gbm](https://cran.r-project.org/web/packages/gbm/index.html): The original R implementation of GBMs
-- [xgboost](https://cran.r-project.org/web/packages/xgboost/index.html): A fast and efficient gradient boosting framework (C++ backend)
-- [h2o](https://cran.r-project.org/web/packages/gamboostLSS/index.html): A powerful java-based interface that provides parallel distributed algorithms and efficient productionalization.
-
-
-#### gbm {#GBM_gbm_pkg}
-
-The `gbm` R package is an implementation of extensions to Freund and SchapireÅfs [AdaBoost algorithm](http://www.site.uottawa.ca/~stan/csi5387/boost-tut-ppr.pdf) and FriedmanÅfs [gradient boosting machine.](https://statweb.stanford.edu/~jhf/ftp/trebst.pdf) This is the original R implementation of GBM. A presentation is available [here](https://www.slideshare.net/mark_landry/gbm-package-in-r) by Mark Landry.
-
-Features include:
-
-- Stochastic GBM.
-- Supports up to 1024 factor levels.
-- Supports Classification and regression trees.
-- Can incorporate many loss functions.
-- Out-of-bag estimator for the optimal number of iterations is provided.
-- Easy to overfit since early stopping -functionality is not automated in this package.
-- If internal cross-validation is used, this can be parallelized to all cores on the machine.
-- Currently undergoing a major refactoring & rewrite (and has been for some time).
-- GPL-2/3 License.
-
-__Basic implementation__
-
-`gbm` has two primary training functions - `gbm::gbm` and `gbm::gbm.fit`
-
-#### xgboost {#GBM_xgboost_pkg}
-#### h2o {#GBM_h2o_pkg}
-#### Learning more {#GBM_Learn}
-
-## Resampling methods
-### Resampling basics
-
-
-
-
-
-
-
- 

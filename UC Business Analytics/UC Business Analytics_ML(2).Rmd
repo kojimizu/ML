@@ -1444,8 +1444,13 @@ plot(lda.m1)
 We can use `predict` for LDA much like we did with logistic regression. I will illustrate the output that `predict` provides based on this simple data set.
 
 ```{r}
-(df <- tibble(balance = rep(c(1000, 2000), 2), 
-       student = c("No", "No", "Yes", "Yes")))
+train
+
+df <- tibble(balance = rep(c(1000, 2000), 2), 
+       student = c("No", "No", "Yes", "Yes"))
+df <- df %>% 
+  mutate_at(vars(student), as.factor)
+df
 ```
 
 Below we see that `predict` returns a list with three elements. The first element, `class` contains LDA's predictions about the customer defaulting. Here we see that the second observation (non-student with balance of $2,000) is the only one kthat is predicted to default. The second element, `posterior` is a matrix that contains the posterior probability that the corresponding observations will or will not default. Here we see that the only observation to have a posterior probability of defaulting greater than 50% is observation 2, which is why the LDA model predicted this observation will default. 
@@ -1453,7 +1458,7 @@ Below we see that `predict` returns a list with three elements. The first elemen
 However, we also see that observation 4 has a 42% probability of defaulting. Right now, the model is predicting that this observation will not default because this probability is less than 50%; however, we will see shortly how we can make adjustments to our posterior probability thresholds. Finally, `x` contains the linear discriminant values, described earlier.
 
 ```{r}
-(df.pred <- predict(lda.m1, df))
+(df.pred <- predict(lda.m1, df, type="response"))
 ```
 
 As previously mentioned, the default setting is to use a 50% threshold for the posterior probabilities. We can recreate the predictions contained in the `class` element above:
@@ -1478,21 +1483,1188 @@ sum(df.pred$posterior[, 2] > .4)
 ### Quadratic discriminant analysis] {#DA_QDA} 
 As previously mentioned, LDA asssumes that the observations within each class are drawn from a multivatiate Gaussian distribution and the covariance of the predictor variables are common across all $k$ levels of the response variable $Y$.
 
-Quadratic discriminant analysis (QDA) provides an alternative approach. 
+Quadratic discriminant analysis (QDA) provides an alternative approach. Like LDA the QDA classifier assumes that the observations from each class of $Y$ are drawn from a Gaussian distribution.
+
+However, unlike LDA, QDA assumes that each class has its own covariance matrix. In other words, the predictor variables are not assumed to have common variance across each of the $k$ levels in $Y$. Mathemetically, it assumes that an observation from the $k$th class is of the form $X \sim N(\mu_k, \Sigma_k)$, where $\Sigma_k$ is a covariance matrix for the $k$th class. Under this assumption, the classifier assings an observation to the class for which:
+
+$$
+\hat{\delta_k(x)} = -\frac{1}{2}x^T\Sigma^{-1}_kx + x^T \Sigma^{-1}_k \hat{\mu_k} - \frac{1}{2} \hat{\mu}_k^T \Sigma^{-1}_k \hat{\mu_k} - \frac{1}{2} log|\Sigma_k|+log(\hat{\pi}_k)
+$$
+
+is largest. Why is this important? Consider the image below. In trying to classify the observation into the three (color coded) classes, LDA provides linear decision boundaries that are based on the assumption that the observations vary consistently across all classes.
+
+However, when looking at the data, it becomes apparent that the variability of the observations within each class differ. Consequently, QDA (right plot) is able to capture the differing covariances and provide more accurate non-linear classification decision boundaries.
+
+```{r eval=FALSE}
+knitr::include_graphics("C:/Protected/Data Science/UC Business Analytics/image/QDA.png")
+```
+
+#### Estimate & Understand model
+
+Similar to `lda`, we can use the `MASS` library to fit a QDa model. Here we use the `qda` function. The output is very similar to the `lda` output. It contains the prior probabilities and the group means. But it does not contain the coefficients of the linear disciminants, because the QDA classifier involves a quadratic, rather than a linear, function of the predictors.
+
+```{r}
+(qda.m1 <- MASS::qda(default ~ balance + student, data = train))
+```
+
+#### Make predictions
+
+The `predict` function works in exactly the same fashion as for LDA except it does not return the linear disciminant values. In comparing this simple prediction example to that seen in the LDA section we see minor changes in the posterior probabilities. Most notably, the posterior probability that observation 4 will default increased by nearly 8% points.
+
+```{r}
+predict(qda.m1, df, prob = TRUE)
+
+## $class
+## [1] No  Yes No  No 
+## Levels: No Yes
+## 
+## $posterior
+##          No         Yes
+## 1 0.9957697 0.004230299
+## 2 0.4381383 0.561861660
+## 3 0.9980862 0.001913799
+## 4 0.5148050 0.485194962
+```
 
 
 ### Prediction Performance {#DA_Pred} 
-### A comparison {#DA_Comp}
 
-### Additional resources {}
+Now that we understand the basics of evaluating our model and making predictions. Let's assess how well our two models (`lda.m1`, `qda.m1`) perform on our test data set. First, we need to apply our models to the test data.
+
+```{r}
+test.predicted.lda <- predict(lda.m1, newdata = test)
+test.predicted.qda <- predict(qda.m1, newdata = test)
+```
+
+Now, we can evaluate how well our model predicts by assessing the different classification rates discussed in the logistic regression tutorial. First, we will look at the confusion matrix in a percentage form.
+
+The below results show that the models perform in a very similar manner. 96% of the predicted observations are true negatives and about 1% are true positives. Both models have a type II error of less than 3% in which the model predicts the customer will not default but they actually did. And both models have a type I error of less than 1% in which the models predict the customer will default but they never did.
+
+```{r}
+lda.cm <- table(test$default, test.predicted.lda$class)
+qda.cm <- table(test$default, test.predicted.qda$class)
+
+list(LDA_model = lda.cm %>% prop.table() %>% round(3),
+     QDA_model = qda.cm %>% prop.table() %>% round(3))
+
+## $LDA_model
+##      
+##          No   Yes
+##   No  0.964 0.002
+##   Yes 0.028 0.007
+## 
+## $QDA_model
+##      
+##          No   Yes
+##   No  0.963 0.002
+##   Yes 0.026 0.009
+```
+
+Furtheremore, we can estimate the overall error rates. Here we see that the QDA model reduces the error rate by just a hair.
+
+```{r}
+test %>% 
+  mutate(lda.pred = (test.predicted.lda$class),
+         qda.pred = (test.predicted.qda$class)) %>% 
+  summarise(
+    lda.error = mean(default != lda.pred),
+    qda.error = mean(default != qda.pred)
+  )
+## # A tibble: 1 × 2
+##    lda.error  qda.error
+##        <dbl>      <dbl>
+## 1 0.02909183 0.02782697
+```
+
+However, as we discussed in the last tutorial, the overall error may be less important then understanding the _precision_ of our model. If we look at the raw number of our _confusion matrix_ we can compute the precision:
+
+- LDA model: $29/(109+29)=21$%
+- QDA model: $35/(103+35)=25$%
+
+So our QDA model has a slightly higer precision than the LDA model; however, both of them are lower than the logistic regression model precision of 29%.
+
+```{r}
+list(LDA_model = lda.cm,
+     QDA_model = qda.cm)
+```
+
+If we are concerned with increasing the precision of our model we can tune our model by adjusting the posterior probability threshold. For instance, we might label any customer with a posterior probability of default above 20% as high-risk. 
+
+Now the precision of our QDA model improves to $83/(83+55)=60$%. However, the overall error rate has increased to 4%. But a credit card company may consider this slight increase in the total error rate to be a small price to pay for more accurate identification of individuals who do indeed default. It is important to keep in mind these kinds of trade-offs, which are common with classification models - tuning models can improve certain classification rates while worsening others.
+
+```{r}
+# create adjusted predictions
+lda.pred.adj <- ifelse(test.predicted.lda$posterior[,2]>.2,"Yes","No")
+qda.pred.adj <- ifelse(test.predicted.qda$posterior[,2]>.2, "Yes", "No")
+
+# create new confusion matrices
+list(LDA_model = table(test$default, lda.pred.adj),
+     QDA_model = table(test$default, qda.pred.adj))
+## $LDA_model
+##      lda.pred.adj
+##         No  Yes
+##   No  3731   84
+##   Yes   69   69
+## 
+## $QDA_model
+##      qda.pred.adj
+##         No  Yes
+##   No  3699  116
+##   Yes   55   83
+```
+
+We can also assess the ROC curve for our models as we did in the logistic regression tutorial and compute the AUC.
+
+```{r}
+#ROC curve
+library(ROCR)
+
+par(mfrow=c(1,2))
+
+prediction(test.predicted.lda$posterior[,2], test$default) %>% 
+  performance(measure = "tpr", x.measure = "fpr") %>% 
+  plot()
+
+prediction(test.predicted.qda$posterior[,2], test$default) %>% 
+  performance(measure = "tpr", x.measure = "fpr") %>% 
+  plot()
+```
+
+```{r}
+# model 1 AUC
+prediction(test.predicted.lda$posterior[,2], test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+## [[1]]
+## [1] 0.9420727
+
+# model 2 AUC
+prediction(test.predicted.qda$posterior[,2], test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+## [[1]]
+## [1] 0.9420746
+```
+
+### Comparison of logistic regression & discriminant analysis {#DA_Comp}
+
+The logistic regression and LDA methods are closely connected and differ primarily in their fitting procedure. Consequently, the two often produce similar results. However, LDA assumes that the observations are drawn from a _Gaussian distribution__ with a common covariance matrix across each class of $Y$, and so can provide some improvements over logistic regression when this assumption approximately holds.
+
+Conversely, logistic regression can outperform LDA if these Gaussian assumptions are not met. Both LDA and logistic regression produce linear decision boundaries so when the true decision boundaries are linear, then the LDA and logistic regression approaches will tend to perform well. QDA, on the other hand, provides a non-linear quadratic decision boundary. Thus, when the decision boundary is moderately non-linear, QDA may give better results (we will see other non-linear classifiers in later tutorials).
+
+What is important to keep in mind is that non one method will dominate the others in every situation. And, often we want to compare multiple approaches to see how they compare. To illustrate, we will examine stock market (`Smarket`)  data provided by the ISLR package.
+
+This data sset consists of percentage returs for the S&P stock index over 1,250 days, from the beginning of 2001 until the end of 2005. For each date, percentage returns for each of the five previous trading days, _Lag1_ through _Lag5_ are provided. In addition, _Volume_ (the number of shares traded on the previous day, in billions), _Today_ (the percentage return on the date in question), and _Direction_(whether the market was Up or down on this date) are provided.
+
+```{r}
+dim(ISLR::Smarket)
+head(ISLR::Smarket)
+```
+
+Let's model this data with logistic regression, LDA and QDA to assess well each model does in predicting the direction of the stock market based on previous data returns. We will use 2001-2004 data to train our models and then test these models on 2005 data.
+
+```{r}
+train <- subset(ISLR::Smarket, Year < 2005)
+test <- subset(ISLR::Smarket, Year == 2005)
+```
+
+#### Logistic regression
+
+Here we fit a logistic regression model to the training data. Looking at the summary our modle does not look too convincing considering no coefficients are statistically significant and our residual deviance has barely been reduced.
+
+```{r}
+glm.fit <- glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume,
+               data = train,
+               family = binomial)
+
+glm.fit %>% summary()
+glm.fit %>% broom::tidy()
+```
+
+Now we comupte the predictions for 2005 and compare them to the actual movements of the market over that time period with a confusion matrix. The results are rather disappointing: the test error rate is 52%, which is worse than random guessing! Furthermore, our precision is only 31%. However, this should not be surprising considering the lack of statistical significance with our predictors.
+
+```{r}
+# predictions
+glm.probs <- predict(glm.fit, test, type="response")
+
+# confusion matrix
+table(test$Direction, ifelse(glm.probs >0.5, "Up", "Down"))
+
+# accracy rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down")==test$Direction)
+
+# error rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down")!=test$Direction)
+```
+
+Remeber that using predictors that have no relationship with the response tends to cause a deterioration in the test error rate(since such predictors cause an increase in variance without a corresponding decrease in bias), and so removing such predictors may in turn yield an improvement. The variables that appear to have the highest importance rating are _Lag1_ and _Lag2_.
+
+```{r}
+caret::varImp(glm.fit)
+```
+
+Lets re-fit with just these two variables and reassess performance. We don’t see much improvement within our model summary.
+
+```{r}
+glm.fit <- glm(Direction ~ Lag1 + Lag2, 
+               data = train,
+               family = binomial)
+
+summary(glm.fit)
+
+```
+
+However, our prediction classification rates have improved slightly. Our error rate has decreased to 44% (accuracy = 56%) and our precision has increased to 75%. However, its worth noting that the market moved up 56% of the time in 2005 and moved down 44% of the time. Thus, the logistic regression approach is no better than a naive approach!
+
+```{r}
+# predictions
+glm.probs <- predict(glm.fit, test, type = "response")
+
+# confusion matrix
+table(test$Direction, ifelse(glm.probs > 0.5, "Up", "Down"))
+##       
+##        Down  Up
+##   Down   35  76
+##   Up     35 106
+
+# accuracy rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down") == test$Direction)
+## [1] 0.5595238
+
+# error rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down") != test$Direction)
+## [1] 0.4404762
+```
+
+#### Linear disciminant analysis (LDA)
+
+Now we will perform LDA on the stock market data. Our summary shows that our prior probabilities of market movements are  49% (down) and 51% (up). The group means indicate that there is a tendency for the previous 2 days’ returns to be negative on days when the market increases, and a tendency for the previous days’ returns to be positive on days when the market declines.
+
+```{r}
+lda.fit <- lda(Direction ~ Lag1 + Lag2, data = train)
+lda.fit
+```
+
+When we predict with our LDA model and assess the confusion matrix we see that our prediction rates mirror those produced by logistic regression. The overall error and the __precision__ of our LDA and logistic regression models are the same.
+
+```{r}
+# predictions
+test.predicted.lda <- predict(lda.fit, newdata = test)
+
+# confusion matrix
+table(test$Direction, test.predicted.lda$class)
+
+# accuracy rate
+mean(test.predicted.lda$class == test$Direction)
+## [1] 0.5595238
+
+# error rate
+mean(test.predicted.lda$class != test$Direction)
+## [1] 0.4404762
+
+# visualize the results
+test %>% 
+  ggplot(aes(Lag1, Direction))+
+  geom_point(aes(col=Direction))+
+  geom_smooth(method = "lda", formula = y~x)
+```
+
+#### Quadratic disciminant analysis
+
+Lastly, we will predict with a QDA model to see if we can improve our performance.
+
+```{r}
+(qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train))
+```
+
+Surprisingly, the QDA predictions are acrurate almost 60% of the time! Furthermore, the precision of the model is 86%. This level of accuracy is quite impressive for stock market data, which is known to be quite hard to model accurarately. This uggests that the quadratic form assumed by QDA may capture the true relationship more accurately than the linear forms assumed by the LDA and logstic regression.
+
+```{r}
+# predictions
+test.predicted.qda <- predict(qda.fit, newdata = test)
+
+# confusion matrix
+table(test$Direction, test.predicted.qda$class)
+##       
+##        Down  Up
+##   Down   30  81
+##   Up     20 121
+
+# accuracy rate
+mean(test.predicted.qda$class == test$Direction)
+## [1] 0.5992063
+
+# error rate
+mean(test.predicted.qda$class != test$Direction)
+## [1] 0.4007937
+
+```
+
+We can see how our models differ with a ROC curve. Although you can't tell, the logistic regressio and LDA ROC curve sit directly on top of one another. However, we can see how the QDA (green) differs slightly.
+
+```{r}
+# ROC curve
+library(ROCR)
+
+p1 <- prediction(glm.probs, test$Direction) %>% 
+  performance(measure = "tpr", x.measure = "fpr")
+
+p2 <- prediction(test.predicted.lda$posterior[,2], test$Direction) %>% 
+  performance(measure = "tpr", x.measure = "fpr")
+
+p3 <- prediction(test.predicted.qda$posterior[,2], test$Direction) %>% 
+  performance(measure = "tpr", x.measure = "fpr")
+
+plot(p1, col = "red")
+plot(p2, add = TRUE, col = "blue")
+plot(p3, add = TRUE, col = "green")
+```
+
+The difference is subtle. You can see where we experince increases in the true positive predictions (where the green line go above the red and blue lines). An although our precision increases, overall AUC is not that much higher.
+
+```{r}
+# logistic regression AUC
+prediction(
+  glm.probs, test$Direction) %>% 
+  performance(measure = "auc") %>% 
+  .@y.values
+
+# LDA AUC
+prediction(test.predicted.lda$posterior[,2], test$Direction) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+## [[1]]
+## [1] 0.5584308
+
+# QDA AUC
+prediction(test.predicted.qda$posterior[,2], test$Direction) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+## [[1]]
+## [1] 0.5620088
+```
+
+Although we get some improvements with the QDA model we probabily want to continue tuning our models or assess other techniques to improve our classification performance before hedging any bets. But this ullustrates the usefulness of assessing multiple classification models.
+
+### Additional resources {#}
+
+This will get you up and running with LDA and QDA. Keep in mind that there is a lot more you can dig into so the following resources will help you learn more:
+
+- An Introduction to Statistical Learning
+- Applied Predictive Modeling
+- Elements of Statistical Learning
+
+
+## Support vector machine
+The advent of computers brough on rapid advances in the field of statistical classification, one of which is the _Support Vector Machine_, or SVM. The goal of an SVM is to take groups of observations and construct boundaries to predict which group future observations belong to based on their measurements. The different groups that must be separated will be called "classes". SVMs can handle any number of classes, as well as observations of any dimension. SVMs can take almost any shape (including linear, radial, and polynomial, among others), and are generally flexible enough to be used in almost any classification endeavor that the user chooses to undertake.
+
+### tl;dr
+
+1. [Replication Requirements](#SVM_RR): What you’ll need to reproduce the analysis in this tutorial
+2. [Maximal Margin Classifier](#SVM_MM_Classifier): Constructing a classification line for completely separable data
+3. [Support Vector Classifiers](#SVM_Classifier): Constructing a classification line for data that is not separable
+4. [Support Vector Machines](#SVM_Overview): Constructing a classification boundary, whether linear or nonlinear, for data that may or may not be separable
+5. [SVMs for Multiple Classes](#SVM_Multi_Class): SVM techniques for more than 2 classes of observations
+
+
+### Replication Requirements {#SVM_RR}
+
+In this tutorial, we will leverage the `tidyverse` package to perform data manipulation, the `kernlab` and `e1071` packages to perform calculkating and produce visualization related to SVMs, and the `ISLR` package to load a real world data set and demonstrate the functionality of SVM.
+
+
+```{r}
+# set pseudorandom number generator
+set.seed(10)
+
+# Attach Packages
+library(tidyverse)    # data manipulation and visualization
+library(kernlab)      # SVM methodology
+library(e1071)        # SVM methodology
+library(ISLR)         # contains example data set "Khan"
+library(RColorBrewer) # customized coloring of plots
+
+```
+
+The data sets used in the tutorial (with the exception of `Khan`) will be generated using built-in R commands. The Support Vector Machine methodology is sound for any number of dimensions, but becomes difficult to visualize for more than 2. As previously mentioned, SVMs are robust for any number of classes, but we will stick to no more than 3 for the duration of this tutorial.
+
+### Maximum Margin Classifier {#SVM_MM_Classifier}
+
+If the classes are separable by a linear boundary, we can use a _Maximal Margin Classifier_ to find the classification boundary. To visualize an example of separated data, we generate 40 random observations and assign them to two classes. Upon visual inspection, we can see that infinitely many lines exist that split the two classes.
+
+```{r}
+# Construct sample data set - completely separated
+x <- matrix(rnorm(20*2), ncol = 2)
+y <- c(rep(-1,10), rep(1,10))
+x[y==1,] <- x[y==1,] + 3/2
+dat <- data.frame(x=x, y=as.factor(y))
+
+# Plot data
+ggplot(data = dat, aes(x = x.2, y = x.1, color = y, shape = y)) + 
+  geom_point(size = 2) +
+  scale_color_manual(values=c("#000000", "#FF0000")) +
+  theme(legend.position = "none")
+```
+
+The goal of the maximum margin classifier is to identify the linear boundary that maximizes the total distance between the line and the closeset point in each class. We can use the `svm()` function in the `e1071` to find this boundary.
+
+For the aesttheic of the `svm()` function, there are four types of kernel availabile:
+
+1. linear: $u'v$
+2. polynomial: $(\gamma u' v + coef0)^{degree}$
+3. radial basis:  $e^{(-\gamma |u - v|)^2}$
+4. sigmoid: $tanh(\gamma u'v + coef0)$
+
+```{r}
+# Fit Support Vector Machine model to data set
+svmfit <- svm(y ~ ., 
+              data = dat,
+              kernel = "linear", 
+              scale = FALSE)
+
+# Plot Results
+plot(svmfit, dat)
+```
+
+In the plot, points that are represented by an "X" are the __support vectors__, or the points that directly affect the classification line. The points marked with an "o" are the other points, which don't affect the calculation of the line. This principle will lay the foundation for support vector machines. The same plot can be generated using the `kernlab` package, with the following results:
+
+```{r}
+# fit model and produce plot
+kernfit <- ksvm(x, y, type = "C-svc", kernel = 'vanilladot')
+plot(kernfit, data = x)
+```
+
+But how do we decide how costly these missclasifications actually are? Instead of specifying a cost up front, we can use the `tune()` function from `e1071` to test various costs and identify which value produces the best fitting model.
+
+```{r}
+# find optimal cost of misclassification
+tune.out <- tune(svm, y~., data = dat, kernel = "linear",
+                 ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+# extract the best model
+(bestmod <- tune.out$best.model)
+## 
+## Call:
+## best.tune(method = svm, train.x = y ~ ., data = dat, ranges = list(cost = c(0.001, 
+##     0.01, 0.1, 1, 5, 10, 100)), kernel = "linear")
+## 
+## 
+## Parameters:
+##    SVM-Type:  C-classification 
+##  SVM-Kernel:  linear 
+##        cost:  0.1 
+##       gamma:  0.5 
+## 
+## Number of Support Vectors:  16
+```
+
+For our data set, the optimal cost (from amongst the choices we provided), is calculated to be 0.1, which does not penalize the model for miscclasified observations. Once this model has been identified, we can construct a table of predicted classes against true classes using the `predict()` command as follows.
+
+```{r}
+# Create a table of misclassified observations
+ypred <- predict(bestmod, dat)
+(misclass <- table(predict = ypred, truth = dat$y))
+
+##        truth
+## predict -1 1
+##      -1  9 3
+##      1   1 7
+```
+
+Using this support vector classifier, 80% of the observations were correctly classified, which matches what we see in the plot. If we wanted to test our classifier more rigorously, we could split our data into training and testing sets and then see how our SVC performed with the observations not used to construct the model. We will use this training-testing method later in this tutorial to validate our SVMs.
+
+### Support Vector Machines {#SVM_Overview}
+
+Support Vector Classifiers are a subset of the group of classification structures known as Support Vector Machines. Support Vector Machines can construct classification boundaries that are nonlinear in shape. The options for classification structures using the `svm()` command from the `e1071` package are linear, polynomial, radial, and sigmoid. To demonstrate a nonlinear classification boundary, we will construct a new data set.
+
+```{r}
+# construct larger random data set
+x <- matrix(rnorm(200*2), ncol = 2)
+x[1:100,] <- x[1:100,] + 2.5
+x[101:150,] <- x[101:150,] - 2.5
+y <- c(rep(1,150), rep(2,50))
+dat <- data.frame(x=x,y=as.factor(y))
+
+# Plot data
+ggplot(data = dat, aes(x = x.2, y = x.1, color = y, shape = y)) + 
+  geom_point(size = 2) +
+  scale_color_manual(values=c("#000000", "#FF0000")) +
+  theme(legend.position = "none")
+```
+
+Notice that the data is not linearly separable, and furthermore, isn’t all clustered together in a single group. There are two sections of class 1 observations with a cluster of class 2 observations in between. To demonstrate the power of SVMs, we’ll take 100 random observations from the set and use them to construct our boundary. We set `kernel = "radial"` based on the shape of our data and plot the results.
+
+```{r}
+# set pseudorandom number generator
+set.seed(123)
+# sample training data and fit model
+train <- base::sample(200,100, replace = FALSE)
+svmfit <- svm(y~., data = dat[train,], kernel = "radial", gamma = 1, cost = 1)
+# plot classifier
+plot(svmfit, dat)
+```
+
+The same procedure can be run using the `kernlab` package, which has far more `kernel` options than the corresponding function in `e1071`. In addition to the four choices in `e1071`, this package allows use of a hyperbolic tangent, Laplacian, Bessel, Spline, String, or ANOVA RBF kernel. To fit this data, we set the cost to be the same as it was before, 1.
+
+```{r}
+# Fit radial-based SVM in kernlab
+kernfit <- ksvm(x[train,],y[train], type = "C-svc", kernel = 'rbfdot', C = 1, scaled = c())
+# Plot training data
+plot(kernfit, data = x[train,])
+```
+
+We see that, at least visually, the SVM does a reasonable job of separating the two classes. To fit the model, we used `cost = 1`, but as mentioned previously, it isn’t usually obvious which cost will produce the optimal classification boundary. We can use the `tune()` command to try several different values of cost as well as several different values of $γ$, a scaling parameter used to fit nonlinear boundaries.
+
+```{r}
+# tune model to find optimal cost, gamma values
+tune.out <- tune(svm, y~., data = dat[train,], kernel = "radial",
+                 ranges = list(cost = c(0.1,1,10,100,1000),
+                 gamma = c(0.5,1,2,3,4)))
+# show best model
+tune.out$best.model
+## 
+## Call:
+## best.tune(method = svm, train.x = y ~ ., data = dat[train, ], 
+##     ranges = list(cost = c(0.1, 1, 10, 100, 1000), gamma = c(0.5, 
+##         1, 2, 3, 4)), kernel = "radial")
+## 
+## 
+## Parameters:
+##    SVM-Type:  C-classification 
+##  SVM-Kernel:  radial 
+##        cost:  1 
+##       gamma:  0.5 
+## 
+## Number of Support Vectors:  34
+```
+
+The model that reduces the error the most in the training data uses a cost of 1 and $\gamma$ value of 0.5. We can now see how well the SVM performs by predicting the class of the 100 testing observations:
+
+```{r}
+# validate model performance
+(valid <- table(true = dat[-train,"y"], pred = predict(tune.out$best.model,newx = dat[-train,])))
+##     pred
+## true  1  2
+##    1 58 19
+##    2 16  7
+```
+
+Our best-fitting model produces 65% accuracy in identifying classes. For such a complicated shape of observations, this performed reasonably well. We can challenge this method further by adding additional classes of observations.
+
+### SVMs for Multiple Classes {#SVM_Multi_Class}
+
+The procedure does not change for data sets that involve more than two classes of observations. We construct our data set the same way as we have previously, only now specifying three classes instead of two:
+
+```{r}
+# construct data set
+x <- rbind(x, matrix(rnorm(50*2), ncol = 2))
+y <- c(y, rep(0,50))
+x[y==0,2] <- x[y==0,2] + 2.5
+dat <- data.frame(x=x, y=as.factor(y))
+# plot data set
+ggplot(data = dat, aes(x = x.2, y = x.1, color = y, shape = y)) + 
+  geom_point(size = 2) +
+  scale_color_manual(values=c("#000000","#FF0000","#00BA00")) +
+  theme(legend.position = "none")
+```
+
+The commands don’t change for the `e1071` package. We specify a cost and tuning parameter $\gamma$ and fit a support vector machine. The results and interpretation are similar to two-class classification.
+
+```{r}
+# fit model
+svmfit <- svm(y~., data = dat, kernel = "radial", cost = 10, gamma = 1)
+# plot results
+plot(svmfit, dat)
+```
+
+We can check to see how well our model fit the data by using the `predict()` command, as follows:
+
+```{r}
+#construct table
+ypred <- predict(svmfit, dat)
+(misclass <- table(predict = ypred, truth = dat$y))
+##        truth
+## predict   0   1   2
+##       0  38   2   4
+##       1   8 143   4
+##       2   4   5  42
+```
+
+As shown in the resulting table, 89% of our training observations were correctly classified. However, since we didn’t break our data into training and testing sets, we didn’t truly validate our results.
+
+The `kernlab` package, on the other hand, can fit more than 2 classes, but cannot plot the results. To visualize the results of the `ksvm` function, we take the steps listed below to create a grid of points, predict the value of each point, and plot the results:
+
+```{r}
+# fit and plot
+kernfit <- ksvm(as.matrix(dat[,2:1]),dat$y, type = "C-svc", kernel = 'rbfdot', 
+                C = 100, scaled = c())
+
+# Create a fine grid of the feature space
+x.1 <- seq(from = min(dat$x.1), to = max(dat$x.1), length = 100)
+x.2 <- seq(from = min(dat$x.2), to = max(dat$x.2), length = 100)
+x.grid <- expand.grid(x.2, x.1)
+
+# Get class predictions over grid
+pred <- predict(kernfit, newdata = x.grid)
+
+# Plot the results
+cols <- brewer.pal(3, "Set1")
+plot(x.grid, pch = 19, col = adjustcolor(cols[pred], alpha.f = 0.05))
+
+classes <- matrix(pred, nrow = 100, ncol = 100)
+contour(x = x.2, y = x.1, z = classes, levels = 1:3, labels = "", add = TRUE)
+
+points(dat[, 2:1], pch = 19, col = cols[predict(kernfit)])
+```
+
+#### Aplications
+
+The `Khan` data set contains data on 83 tissue samples with 2308 gene expression measurements on each sample. These were split into 63 training observations and 20 testing observations, and there are four distinct classes in the set. It would be impossible to visualize such data, so we choose the simplest classifier (linear) to construct our model. We will use the svm command from `e1071` to conduct our analysis.
+
+```{r}
+# fit model
+dat <- data.frame(x = Khan$xtrain, y=as.factor(Khan$ytrain))
+(out <- svm(y~., data = dat, kernel = "linear", cost=10))
+## 
+## Call:
+## svm(formula = y ~ ., data = dat, kernel = "linear", cost = 10)
+## 
+## 
+## Parameters:
+##    SVM-Type:  C-classification 
+##  SVM-Kernel:  linear 
+##        cost:  10 
+##       gamma:  0.0004332756 
+## 
+## Number of Support Vectors:  58
+```
+
+First of all, we can check how well our model did at classifying the training observations. This is usually high, but again, doesn’t validate the model. If the model doesn’t do a very good job of classifying the training set, it could be a red flag. In our case, all 63 training observations were correctly classified.
+
+```{r}
+# check model performance on training set
+table(out$fitted, dat$y)
+##    
+##      1  2  3  4
+##   1  8  0  0  0
+##   2  0 23  0  0
+##   3  0  0 12  0
+##   4  0  0  0 20
+```
+
+To perform validation, we can check how the model performs on the testing set:
+
+```{r}
+# validate model performance
+dat.te <- data.frame(x=Khan$xtest, y=as.factor(Khan$ytest))
+pred.te <- predict(out, newdata=dat.te)
+table(pred.te, dat.te$y)
+##        
+## pred.te 1 2 3 4
+##       1 3 0 0 0
+##       2 0 6 2 0
+##       3 0 0 4 0
+##       4 0 0 0 5
+```
+
+The model correctly identifies 18 of the 20 testing observations. SVMs and the boundaries they impose are more difficult to interpret at higher dimensions, but these results seem to suggest that our model is a good classifier for the gene data.
 
 ## Resampling methods
-### Resampling basics
+
+Resampling methods are an indispensable tool in modern statistics. They involve repeatedly drawing samples from a training set and refitting a model of interest on each sample in order to obtain additional information about the fitted model. For example, in order to estimate the variability of a linear regression fit, we can repeatedly draw different samples from the training data, fit a linear regression to each new sample, and then examine the extent to which the resulting fits differ. Such an approach may allow us to obtain information that would not be available from fitting the model only once using the oriiginal training sample.
+
+### tl;dr
+This tutorial services asa an itorudction to sampling methods and covers:
+
+1. [Replication requirements](#RS_RR): What you’ll need to reproduce the analysis in this tutorial.
+2. [Why resampling](#RS_Overview): Understand why resampling is important.
+3. [Leave-one-out cross-validation](#RS_LOCV): Provide greater reliability of an estimate test error.
+4. [k-fold cross validation](#RS_KFCV): A faster alternative to leave-one-out cross validation.
+5. [Bootstrapping](#RS_BSPNG): Quantify uncertainty around a particular statistic.
+6. [Additional resources](#RS_Resources): Additional resources to help you learn more.
+
+### Replication requirements {#RS_RR}
+
+This tutorial primarily leverages the `Auto` data provided by the `ISLR` package. This is a  data set that contains gas mileage, horsepower, and other information for 392 vehicles. We’ll also use tidyverse for some basic data manipulation and visualization. Most importantly, we’ll use the `boot` package to illustrate resampling methods.
+
+```{r}
+# Packages
+library(tidyverse)  # data manipulation and visualization
+library(boot)       # resampling and bootstrapping
+
+# Load data 
+(auto <- as_tibble(ISLR::Auto))
+```
 
 
+### Resampling basics {#RS_Overview}
+
+Thus far, in our tutorial we have been using the `validation` or `hold_out` approach to estimate the predicted error of our predictive models. This involves randomly dividing the available set of observations into two parts, a _training set_ and a _testing set_ (aka _validation set_). Our statistical model is fit on the training set, and the fitted model is used to predict the responses for the observations in the validation set. The resulting validation set error rate (typically assessed using MSE in the case of a quantitative response) provides an estimate of the test error rate. 
+
+The validation set approach is conceptually simple and is easy to implement. But it has two potential drawbacks:
+
+First, the estimate of the test error rate can be highly variable, depending on precisely which observations are included in the training set and which observations are included in the validation set. I will illustrate on our auto data set. Here we see that there is a relationship between mpg and horsepower and it doesn’t seem linear but we’re not sure which polynomial degree creates the best fit.
+
+```{r}
+ggplot(auto, aes(horsepower, mpg)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, linetype = 2) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, linetype = 3) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 4), se = FALSE, linetype = 4)  
+```
+
+Let's go ahead and do the traditional validation set approach to split our data into a training and testing set. Then we will fit 10 different models ranging from a linear model to a 10th degree polynomial model. 
+
+The results show us there is a steep decline in our test error (MSE) rate when we go from a linear model to a quadratic model; however, the MSE flatlines beyond that point suggesting that adding more polynomial degrees likely does not improve the model performance.
+
+```{r}
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(auto), replace=T,
+                 prob = c(0.6, 0.4))
+train <- auto[sample,]
+test <- auto[!sample, ]
+
+# loop for first ten polynomial
+mse.df <- tibble(degree=1:10, mse=NA)
+
+for (i in 1:10){
+  lm.fit <- lm(mpg ~ poly(horsepower, i), data = train)
+  mse.df[i,2] <- mean((test$mpg - predict(lm.fit, test))^2)
+}
+
+ggplot(mse.df, aes(degree, mse))+
+  geom_line()+
+  geom_point()+
+  ylim(c(10,30))
+
+```
+
+However, our MSE is dependent on our training and test samples. If we repeat the process of randomly splitting the sample set into two parts, we will get a somewhat different estimate for the test MSE each time. I illustrate below, which displays ten different validation set MSE curves from the auto data set, produced using ten different random splits of the observations into training and validation sets. All ten curves indicate that the model with quadratic term has a dramatically smaller validation set MSE than the model with only a linear term. 
+
+Furthermore, all ten curves indicate that there is not much benefit in including cubic or higher-order polynomial terms in the model. But it is worth noting that each of the ten curves result in a __different test MSE estimate__ for each of the ten regression models considered. And there is no consensus among the curves as to which model results in the smallest validation set MSE.
+
+```{r}
+mse.df.2 <- tibble(
+  sample = vector("integer", 100),
+  degree = vector("integer", 100),
+  mse = vector("double",100)
+)
+
+counter <- i
+
+for (i in 1:10){
+  set.seed(i)
+  sample <- sample(c(TRUE, FALSE), nrow(auto), replace=TRUE, prob=c(0.6,0.4))
+  train <- auto[sample, ]
+  test <- auto[!sample,]
+  
+  # modeling
+  for (j in 1:10){
+    lm.fit <- lm(mpg ~ poly(horsepower, j), data = train)
+    
+    # add degree & mse values
+    mse.df.2[counter,2] <- j
+    mse.df.2[counter, 3] <- mean((test$mpg - predict(lm.fit, test))^2)
+    
+    # add sample identifier
+    mse.df.2[counter,1] <- i
+    counter <- counter +1
+  }
+  next
+}
+
+mse.df.2 %>% 
+  ggplot(aes(degree, mse, color=factor(sample)))+
+  geom_line(show.legend = FALSE)+
+  geom_point(show.legend = FALSE)+
+  ylim(c(10,30))
+
+```
+
+### Leave-one-out cross-validation {#RS_LOCV}
+
+Leav-one-out cross-validation (LOOCV) is closely related to the validation set approach as it involves splitting the set of observations into two parts. However, instead of creating two subsets of comparable size (i.e.,  60% training, 40% validation), a single observation ($x_1, y_1$) is used for the validation set, and the remaining $n-1$ observations ($(x_2,y_2)$...$(x_n, y_n)$) make up the training set.
+
+The statistical learning method is fit on the $n-1$ training observations, and a prediction $\hat{y_1}$ is made for the excluded observation. since the validation observation $(x_1,y_1)$ was not used in the fitting process, the estimate error $MSE_1=(y_1-\hat{y_1})^2$ provides and approximately unbiased estimate for the test error. But even though $MSE_1$ is unbiased for the test error, it is a poor estimate because it is highly variable, since it is based on a single observation.
+
+However, we can repeat the procedure by selecting a difference row $(x_2,y_2)$ for the validation data, training the statistical learning procedure on the other $n-1$ observations and computing rror $MSE_2=(y_2-\hat{y_2})^2$. We can repeate this approach n times, where each time we holdout a different, single observation to validate on. This produces a total of n squared errors, $MSE_1,...,MSE_n$. The LOOCV estimate for the test MSE is the average of these $n$ test error estimates.
+
+$$
+CV_(n) = \frac{1}{n}\Sigma_{i=1}^n MSE_i...(1)
+$$
+
+To peform this procedure in R,  we first need to understand an important nuance. In the logistic regression tutorial, we used the `glm` function to perform logistic regression by passing in the `family = "binomial"` argument. But if we use glm to fit a model without passing in the family argument, then it performs linear regression, just like the `lm` function. So, for instance:
+
+```{r eval=FALSE}
+glm.fit <- glm(mpg ~ horsepower, data = auto)
+coef(glm.fit)
+## (Intercept)  horsepower 
+##  39.9358610  -0.157844
+```
+
+is the same as
+
+```{r eval=FALSE}
+lm.fit <- lm(mpg ~ horsepower, data = auto)
+coef(lm.fit)
+## (Intercept)  horsepower 
+##  39.9358610  -0.1578447
+```
+
+Why is this important? Because we can perform LOOCV for any generalized linear model using `glm` and the `cv.glm` function from the [`boot`](http://cran.r-project.org/web/packages/boot/index.html) package. boot provides extensive facilities for bootstrapping and related resampling methods. You can bootstrap a single statistic (e.g. a median), a vector (e.g., regression weights), or as you’ll see in this tutorial perform cross-validation. To perform LOOCV for a given generalized linear model we simply:
+
+1. fit our model across the entire data set with `glm`
+2. feed the entire data set and our fitted model into `cv.glm`
+
+```{r}
+# step 1: fit model
+glm.fit <- glm(mpg ~ horsepower, 
+               data = auto)
+
+# step 2 perform LOOCV across entire data set
+loocv.err <- cv.glm(auto, glm.fit)
+loocv.err %>% 
+  str()
+## List of 4
+##  $ call : language cv.glm(data = auto, glmfit = glm.fit)
+##  $ K    : num 392
+##  $ delta: num [1:2] 24.2 24.2
+##  $ seed : int [1:626] 403 392 -1703707781 1994959178 434562476 -1277611857 -1105401243 1020654108 526650482 -1538305299 ...
+```
+
+`cv.glm` provide a list with 4 outputs:
+
+1. `call`: the oroginal function call
+2. `K`: the number of _folds_ used. In our case, it is 392 because the LOOCV looped through and pulled out each observation at least once to use a test observation.
+3. `delta`: the CV estimate of prediction error. The first number, which is the primary number we care about, is the output from Eq.1 listed above.
+4. `seed`: the values of the random seed used for the function call
+
+The result we primarily care about is the corss-validation estimate of test error (Eq.1). our cross-validation estimate for the test error is approximately 24.23. This estimate is far less biased estimate of the test error compared to our single test MSE produced by a training - testing validation approach.
+
+```{r}
+loocv.err$delta[1]
+```
+
+We can repeat this procedure to estiamte an unbiased MSE across multiple model fits. For example, to assess multiple polynomial fits (as we did above) to identify the one that represents the best fit we can integrate this procedure into a function. 
+
+Here we develop a function that computes the LOOCV MSE based on specified polynomial degree. We then feed this function (via `map_dbl`) values 1-5 to compute the first through fifth polynomials.
+
+```{r}
+# create function that computes LOOCV MSE on specified polynomial degree
+loocv_error <- function(x){
+  glm.fit <- glm(mpg ~ poly(horsepower, x), data = auto)
+  cv.glm(auto, glm.fit)$delta[1]
+}
+
+# compute LOOCV MSE for polynomial degrees 1-5
+library(purrr)
+1:5 %>% 
+  map_dbl(loocv_error) %>% 
+  tibble()
+
+```
+
+Our results illustrate a sharp drop in the estimated test MSE between the linear and quadratic fits, but then no clear improvement from using higher-order polynomials. Thus, our unbiased MSEs suggest that using a 2nd polynomial (quadratic fit) is likely the optimal model balancing interpretation and low test errors.
+
+This LOOCV approach can be used with any kind of predictive modeling. For example, we could use it with logistic regression or linear disciminant analysis. Unfortunately, this can be very time consuming approach if $n$ is large, you are trying to loop through many models (1-10 polynomials), and if each individual model is slow to fit. For example, if we wanted to perform this approach on the `ggplot2::diamonds` data set for a linear regression model, which contains 53,940 observations, the comutation time is nearly 30 minutes.
+
+```{r eval=FALSE}
+# DO NOT RUN THIS CODE - YOU WILL BE WAITING A LONG TIME!!
+# system.time({
+#     diamonds.fit <- glm(price ~ carat + cut + color + clarity, data = diamonds)
+#     cv.glm(diamonds, diamonds.fit)
+# })
+#      user    system    elapsed 
+#  1739.041   285.496   2035.062 
+```
 
 
+### K-Fold Cross Validation {#RS_KFCV}
+
+An alternative to LOOCV is the `k`-fold cross validation approach. This resamling method involves randomly dividing the data into `k` groups (aka `folds`) of approximately equal size. 
+
+The first fold is treated as a validation set, and the statistical method is fit on the remaining data. The mean squared error, $MSE_1$ is then computed on the observations in the held-out fold. This procedure is repreated `k` times; each time, a different group of observations is treated as the validation set. 
+
+This process results in `k` estimates of the test error, $MSE_1, MSE_2, ..., MSE_k$. Thus, the `k` fold CV is computed by averaging these values:
+
+$$
+CV_(k) = \frac{1}{k} \Sigma_{i=1}^k MSE_i
+$$
+
+It is not hard to see that LOOCV is a special case of _k_-fold approach which _k_ is set to equal _n_. However, using the _k_-fold approach, one typically use $k=5$ or $k=10$. This can substantially reduce the computation burden of LOOCV.
+
+Furthermore, there has been sufficient empirical evidence that demonstrates using 5-10 folds yild surprisingly accurate test error rate estimates (see chapter 5 of ISLR for model details).
+
+We can implement the _k_-fold approach just as we did with the LOOCV approach. The only difference is incorporating the `K=10` argument that we include in the `cv.glm` function.
+
+Below illustrates our _k_-fold MSE values for the different polynomial models on our auto data. When compared to the LOOCV outputs we see that the results are nearly identical.
+
+```{r}
+# create functions that computes k-fold MSE based on specified polynomial degree
+
+kfcv_error <- function(x){
+  glm.fit <- glm(mpg ~ poly(horsepower, x), data = auto)
+  cv.glm(auto, glm.fit, K=10)$delta[1]
+}
+
+# compute k-fold MSE for polynomial degree 1-5
+1:5 %>% map_dbl(kfcv_error)
+
+# compare to LOOCV MSE values
+1:5 %>% map_dbl(loocv_error)
+```
+
+We can also illustrate the computational advantage of the k-fold approach. As we saw, using LOOCV on the diamonds data set took nearly 30 minutes whereas using the k-fold approach only takes about 4 seconds.
+
+```{r}
+system.time({
+  diamonds.fit <- glm(price ~ carat + cut + color + clarity, data = diamonds)
+  cv.glm(diamonds, diamonds.fit, K = 10)
+})
+##    user  system elapsed 
+##   3.760   0.564   4.347
+```
+
+We can apply this same approach to classification problems as well. For example, in the previous tutorial we compared the performance of a logistic regression, linear discriminant analysis (LDA), and quadratic discriminant analysis (QDA) on some stock market data using the traditional training vs. testing (60%/40%) data splitting approach. We could’ve performed the same assessment using cross validation. In the classification setting, the LOOCV error rate takes the form
+
+$$
+CV_(n) = \frac{1}{n}\Sigma_{i=1}^n Err_i
+$$
+
+where $Err_i = I(y_i = \hat{y_i})$. The k-fold CV error rate and validation set error rates are defined analogously.
+
+Consequently, for the logistic regression, we use `cv.glm` to perform a $k-$fold cross validation. The end result is an estimated CV error of .5 (Note: since the response variable is binary we incorporate a new cost function to compute the estimated error in Eq.3).
+
+```{r}
+stock <- ISLR::Smarket
+
+# The cost function here correlates to that in Equ.3 
+glm.fit <- glm(Direction ~ Lag1 + Lag2, family = binomial, data = stock)
+
+# The cost function here correlates to that in Eq.3
+cost <- function(r, pi = 0) {mean(abs(r - pi) > 0.5)}
+
+# compute the k-fold estimated error with our cost function
+cv.glm
+cv.glm(stock, glm.fit, cost, K = 10)$delta[1]
+```
+
+To performm cross validation with our LDA and QDA models we use a slightly different approach. Both the `lda` and `qda` functions have built-in cross validation arguments. Thus, setting `CV = TRUE` within these functions will result in a LOOCV execution and the class and posterior probabilities are a product of this cross validation.
+
+```{r}
+library(MASS)
+
+# fit discirimant analysis modles with cv=TRUE for LOOCV
+lda.fit <- lda(Direction ~ Lag1+Lag2, CV=TRUE, data=stock)
+qda.fit <- qda(Direction ~ Lag1+Lag2, CV=TRUE, data=stock)
+
+# compute estimated test error based on CV
+mean(lda.fit$class != stock$Direction)
+## [1] 0.4816
+mean(qda.fit$class != stock$Direction)
+## [1] 0.4872
+
+```
+
+Thus, the results are similar to what we saw in the previous tutorial, none of these models do an exceptional (or even decent) job! However, we see that the LOOCV estimated error for the QDA model (.487) is fairly higher than what we saw in the train-test approach(.40). This suggests our previous QDA model with the train-test validation approach may have been a bit optimistically biased.
+
+### Bootstrap {#RS_BSPNG}
+
+_Bootstrapping_ is widely applicable and extremely powerful statistical tool that can be used to quantify the uncertainty associated with a given estimator or statistical leanring method.
+
+As a simple example, bootstrapping can be used to estimate the standard errors of the coefficients from a linear regression fit. In the case of linear regression, this is not particularly useful, since we saw in the linear regression tutorial, that R provides such standard errors automatically. Howefver, the power of the boostrap lies in the fact that it can be easily applied to a wide range of statistical learning methods, including some for which a measure of variability is otherwise difficult to obtain and is not automatically output by statistical software..
+
+In essence bootstrapping repeatedly draws independent samples from our data set to create bootstrap data sets. This sample is performed with replacement, which means that the same observation can be sampled more than once. The figure below from the ISLR1 book depicts the bootsrap approach on a small data set (`n = 3`).
+
+```{r}
+knitr::include_graphics("image/bootstrap.png")
+```
+
+Each bootstrap data set ($Z^{*1}, Z^{*2}, Z^{*3}$) contains n observations, sampled with replacement from the original data set. Each bootstrap is used to compute the estimated statistic we are interested in ($\hat{\alpha}^*$). We can then use all the bootstrapped data sets to compute the standard error of $\hat{\alpha}^1,\hat{\alpha}^2, ..., \hat{\alpha}^B$ desired statistic as
+
+$$
+SE_B(\hat{\alpha}) = \sqrt{\frac{1}{B-1}\Sigma_{r=1}^B(\hat{\alpha}^{*r}-
+\frac{1}{B}\Sigma_{r7=1}^B \hat{\alpha}^{*r'})}...(4)
+$$
+
+Thus, $SE_B(\hat{\alpha})$ serves as an estimate of the standard error of $\hat{\alpha}$ estimated from the original data set. Let's look at how we can implement this in R on a couple of simple examples:
+
+#### Example 1: Estimating the accuracy of a single statistic
+
+Performing a bootstrap analysis in R entails two steps:
+
+1. Create a function that computes the statistic of interest
+2. Use the `boot` function from the `boot` package to perform the bootstrapping
+
+In this example, we will use the `ISLR::Portfolio` data set. This data set contains the return for two investment assets (`X` and `Y`)  Here, our goal is going to be minimizing the risk of investing a fixed sum of money in each asset. Mathematically, we can achieve this by minimizing the variance of our investment using the statistic
+
+$$
+\hat{\alpha} = \frac{\hat{\sigma_Y^2}-\hat{\sigma}_{XY}}
+{\hat{\sigma_X}^2+\hat{\sigma_Y}^2-2\hat{\sigma_{XY}}} 
+...(5)
+$$
 
 
+Thus, we need to create a function that will compute this test statistic:
 
- 
+```{r}
+statistic <- function(data, index) {
+  x <- data$X[index]
+  y <- data$Y[index]
+  (var(y) - cov(x, y)) / (var(x) + var(y) - 2* cov(x, y))
+}
+```
+
+Now we compute $\hat{\alpha}$ for a specified subset of our portfolio data:
+
+```{r}
+portfolio <- ISLR::Portfolio
+
+# compute our statistic for all 100 observations
+statistic(portfolio, 1:100)
+```
+
+Next, we can use `sample` to randomly select 100 observations from the range 1 to 100, with replacement. This is equivalent to constructing a new bootstrap data set and recomputing $\hat{\alpha}$ based on the new data set.
+
+```{r}
+statistic(portfolio, sample(100,100, replace=TRUE))
+```
+
+If you re-ran this function several times, you will see that you are getting a different output each time. What we want to do is run this many times, record our output each time, and then compute a valid standard error of all the outputs. to do this, we can `boot` and supply it our original data, the function that computes the test statistic, and the number of bootstrap replicates(`R`).
+
+```{r}
+set.seed(123)
+boot(portfolio, statistic, R = 1000)
+## 
+## ORDINARY NONPARAMETRIC BOOTSTRAP
+## 
+## 
+## Call:
+## boot(data = portfolio, statistic = statistic, R = 1000)
+## 
+## 
+## Bootstrap Statistics :
+##      original      bias    std. error
+## t1* 0.5758321 0.002396754  0.08752118
+```
+
+The final output shows that using the oroginal data, $\alpha = 0.5758$, and it also provides the bootstrap estimate of our standard error $SE(\hat{\alpha})=0.0875$. Once we generate the bootstrap estimates we can also view the confidence intervanls with `boot.ci` and plot our results.
+
+```{r}
+set.seed(123)
+result <- boot(portfolio, statistic, R = 1000)
+
+boot.ci(result, type = "basic")
+## BOOTSTRAP CONFIDENCE INTERVAL CALCULATIONS
+## Based on 1000 bootstrap replicates
+## 
+## CALL : 
+## boot.ci(boot.out = result, type = "basic")
+## 
+## Intervals : 
+## Level      Basic         
+## 95%   ( 0.3958,  0.7376 )  
+## Calculations and Intervals on Original Scale
+plot(result)
+```
+
+#### Example 2: Estimating the accuracy of a linear regression model
+
+We can use this same concept to assess the variability of the coefficient estimates and predictions from a statistical learning method such as linear regression. For instance, here we will assess the variability of the estimates for $\beta_0$ and $\beta_1$, the intercept and slope terms for the linear regression model that uses `horsepower` to predict `mpg` in our `auto` data set.
+
+First, we create the function to compute the statistic of interest. We can apply this to our entire data set to get the baseline coefficients.
+
+```{r}
+statistic <- function(data, index){
+  lm.fit <- lm(mpg ~ horsepower, data = data, subset = index)
+  coef(lm.fit)
+}
+```
+
+Now we can inject this into the `boot` function to compute the bootstrapped standard error estimate:
+
+```{r}
+set.seed(123)
+boot(auto, statistic, 1000)
+## 
+## ORDINARY NONPARAMETRIC BOOTSTRAP
+## 
+## 
+## Call:
+## boot(data = auto, statistic = statistic, R = 1000)
+## 
+## 
+## Bootstrap Statistics :
+##       original        bias    std. error
+## t1* 39.9358610  0.0295956008 0.863541674
+## t2* -0.1578447 -0.0002940364 0.007598619
+```
+
+This indicates that the boostrap estimate for $SE(\beta_0)$ is 0.86, and that the bootstrap estimate for $SE(\beta_1)$ is 0.0076. If we compute these to the standard error provided by the `summary` function we see a difference. 
+
+```{r}
+summary(lm(mpg ~ horsepower, data = auto))
+```
+
+This difference suggests the standard errors provided by `summary` may be biased. That is, certain assumptions may be violated which is causing the standard errors in the non-bootstrap approach to be different than those in the bootstrap approach.
+
+If you remember from earlier in the tutorial we found that a quadratic fit appeared to be the most approapriate for the relationship between `mpg` and `horsepower`. Lets adjust our code to capture this fit and see if we notice a difference with our outputs.
+
+```{r}
+quad.statistic <- function(data, index){
+  lm.fit <- lm(mpg ~ poly(horsepower, 2), data = data, subset = index)
+  coef(lm.fit)
+}
+
+set.seed(1)
+boot(auto, quad.statistic, 1000)
+
+## 
+## ORDINARY NONPARAMETRIC BOOTSTRAP
+## 
+## 
+## Call:
+## boot(data = auto, statistic = quad.statistic, R = 1000)
+## 
+## 
+## Bootstrap Statistics :
+##       original      bias    std. error
+## t1*   23.44592 0.003943212   0.2255528
+## t2* -120.13774 0.117312678   3.7008952
+## t3*   44.08953 0.047449584   4.3294215
+```
+
+Now if we compare the standard errors between the bootstrap approach and the non-bootstrap approach we see the standard errors align more closely. This better correspondence between the bootstrap estimates and the standard estimates suggests a better model fit. 
+
+Thus, bootstrapping provides an additional method for assessing the adequacy of our model's fit.
+
+```{r}
+summary(lm(mpg ~ poly(horsepower, 2), data = auto))
+## 
+## Call:
+## lm(formula = mpg ~ poly(horsepower, 2), data = auto)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -14.7135  -2.5943  -0.0859   2.2868  15.8961 
+## 
+## Coefficients:
+##                       Estimate Std. Error t value Pr(>|t|)    
+## (Intercept)            23.4459     0.2209  106.13   <2e-16 ***
+## poly(horsepower, 2)1 -120.1377     4.3739  -27.47   <2e-16 ***
+## poly(horsepower, 2)2   44.0895     4.3739   10.08   <2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 4.374 on 389 degrees of freedom
+## Multiple R-squared:  0.6876,	Adjusted R-squared:  0.686 
+## F-statistic:   428 on 2 and 389 DF,  p-value: < 2.2e-16
+```
+
+### Additional Resources
+This will get you started with resampling methods; however, understand that there are many approaches for resampling and even more options within R to implement these approaches. The following resources will help you learn more:
+
+- An Introduction to Statistical Learning
+- Introduction to Statistics Through Resampling Methods and R
+- Applied Predictive Modeling
+- Elements of Statistical Learning
+
