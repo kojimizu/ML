@@ -1,0 +1,2343 @@
+---
+title: "UC business Analytics R programming Guide"
+author: "Koji Mizumura"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    number_sections: yes
+    section_divs: yes
+    theme: readable
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+always_allow_html: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+
+This is a practice of [UC business analytics R programming guide](http://uc-r.github.io/).
+
+# Predictive analytics
+## Machine Learning
+
+### Preparing for regression problems
+
+Machine learning is a very iterative process. If performed and interpreted correctly, we can have great confidence in our outcomes. If not, the results will be useless. Approaching machine learning correctly means approaching it strategically by spending our data wisely on learning and validation procedures, properly pre-processing variables, minimizing data leakage, tuning parameters and assessing model performance. 
+
+Before introducing specific algorithms, this tutorial introduces concepts that are commonly required in the supervised machine learning process and that you will see briskly covered in tutorieals that follow. This tutorial will prepare you with the fundamentals needed prior to applying supervised machine learning algorithms.
+
+#### tl;dr
+
+Before introducing specific algorithms, this tutorial introduces concepts that you will see briskly covered in each chapter and are necessary for any type of supervised machine learning model:
+
+1. Prerequisites: what you will need to reproduce the analysis in this tutorial
+
+##### Prerequisites
+
+This tutorial leverages the following packages.
+
+```{r warning=FALSE, message=FALSE} 
+library(rsample)
+library(caret)
+library(h2o)
+library(dplyr)
+
+# turn off progress bars
+h2o.no_progress()
+
+# launch h2o
+h2o.init()
+```
+
+To illustrate some of concepts we will use the Ames Housing data that has been included in the `AmesHousing` package and the employee attrition data that has been included in the `rsample` package. The housing data represents a continuous response variable (`Sale_Price`) along with 80 features (predictor variables) for 2930 homes in Ames, IA. Read more about this data [here](https://cran.r-project.org/web/packages/AmesHousing/AmesHousing.pdf). The attrition data represents a classification response variable (`Attrition`) with 30 features for 1470 employees. Read more about this data [here](https://www.ibm.com/communities/analytics/watson-analytics-blog/hr-employee-attrition/)
+
+Throughout this tutorial, we will demonstrate approaches with the regular `df` data frame. However, since many of the supervised machine learning tutorials that we provide leverage `h2o`, we also show how to do some of the things with `h2o`. This requires your data to be in H2O object, which you can convert any data friame easily with `as.h2o`.
+
+```{r}
+# ames data
+ames <- AmesHousing::make_ames()
+ames.h2o <- as.h2o(ames)
+
+# attrition data
+churn <- rsample::attrition %>% 
+  mutate_if(is.ordered, factor, ordered=FALSE)
+churn.h2o <- as.h2o(churn)
+```
+
+#### Data splitting
+##### Spending our data wisely
+
+A major goal of the machine learning process is to find an algorithm $f(x)$ that most accurately predicts future values $(y)$ based on a set of inputs $(x)$. In other words, we want an algorithm that not only fits well to our past data, but more importantly, one that predicts a future outcome accurately. This is called the generalizability of our algorithm. How we “spend�? our data will help us understand how well our algorithm generalizes to unseen data.
+
+To provide an accurate understanding of the generalizability of our fina optimal model, we split our data into training and test data sets.
+
+- __Training set__: these data are used to train our algorithms and tune hyper-parameters. 
+- __Test set__: having chosen a final model, these data are used to estimate its prediction error (generalization error). These data should not be used _during model training_
+
+Given a fixed amount of data, typical recommendations for splitting your data into training-testing splits include 60% (training) - 40% (testing), 70%-30%, or 80%-20%. Generally speaking, these are appropriate guidelines to follow; however, it is good to keep in mind that as your overall data set gets smaller,
+
+- Spending too much in training ($>80%$) won't allow us to get a good assessment of predictive performance. We may find a model that fits the training data very well, but is not generalizable (overfitting),
+- sometimes too much spent in testing ($>40%$) won't allow us to get a good assessment of model parameters. 
+
+Typically, we are lacking in the size of our data here, so a 70-30 split is often sufficinet. The two most common ways of splittin data include __simple random sampling__ and __stratified sampling__.
+
+##### Simple random sampling
+
+The simplest way to split the data into training and test sets is to take a simple random sample. This does not control for any data attributes, such as the percentage of data in the quantiles in your response variable ($y$). There are multiple ways to split our data. Here we show four options to produce a 70-30 split (note that setting the seed value allows you to reproduce your randomized splits):
+
+```{r}
+# base R
+df <- ames
+df.h2o <- ames.h2o
+
+set.seed(123)
+df
+index   <- sample(1:nrow(df), round(nrow(df) * 0.7))
+train_1 <- df[index, ]
+test_1  <- df[-index, ]
+
+# caret package
+set.seed(123)
+index2  <- createDataPartition(df$Sale_Price, p = 0.7, list = FALSE)
+train_2 <- df[index2, ]
+test_2  <- df[-index2, ]
+
+# rsample package
+set.seed(123)
+split_1  <- initial_split(df, prop = 0.7)
+train_3  <- training(split_1)
+test_3   <- testing(split_1)
+
+# h2o package
+split_2 <- h2o.splitFrame(df.h2o, ratios = 0.7, seed = 123)
+train_4 <- split_2[[1]]
+test_4  <- split_2[[2]]
+```
+Since this sampling approach will randomly sample across the distribution of $y$ (`Sale_Price`), you will typically result in a similar distribution betwen your training and test sets as iilustrated below.
+
+```{r fig.height=3}
+# base R
+p1 <- ggplot()+
+  geom_density(data=train_1, aes(Sale_Price), show.legend = FALSE)+
+  geom_density(data=test_1, aes(x=Sale_Price, col="red"),show.legend = FALSE)
+ 
+# caret 
+p2 <- ggplot()+
+  geom_density(data=train_2, aes(Sale_Price),show.legend = FALSE)+
+  geom_density(data=test_2, aes(x=Sale_Price, col="red"),show.legend = FALSE)
+
+# sample
+p3 <- ggplot()+
+  geom_density(data=train_3, aes(Sale_Price),show.legend = FALSE)+
+  geom_density(data=test_3, aes(x=Sale_Price, col="red"),show.legend = FALSE)
+
+# h2o
+
+p4 <- ggplot()+
+  geom_density(data=as_tibble(train_4), aes(Sale_Price),show.legend = FALSE)+
+  geom_density(data=as_tibble(test_4), aes(x=Sale_Price, col="red"),show.legend = FALSE)
+
+gridExtra::grid.arrange(p1,p2,p3,p4,
+                        nrow=1)
+```
+
+
+##### Stratified sampling
+
+However, if we want to explictly control our sampling so that our training and test sets have similar $y$ distributions, we can use __stratified sampling__. This is more common with classification problems where the response variable may be imbalanced (90% of observations with response "Yes" and 10% with response "No"). However, we can also apply to regression problems for data sets that have a small sample size and where the response variable deviates strongly from _normality_.
+
+With a continuous response variable, stratified sampling will break y down into quantiles and randomly sample from each quantile. Consequently, this will help ensure a balanced representation of the response distribution in both the training and test sets.
+
+The easiest way to perform stratified sampling on a response variable is to use the `rsample` package, where you specify the response variable to `strata` fy. The following illustrates that in our original employee attrition data we have an imbalanced response (No: 84%, Yes:16%). By enforcing stratified sampling both our training and testing sets have approximiately equal response distributions.
+
+```{r}
+
+# original response distribution
+table(churn$Attrition) %>% prop.table()
+
+# stratified sampling with the rsample package
+set.seed(123)
+split_strat <- initial_split(churn, prop=0.7, strata = "Attrition")
+train_strat <- training(split_strat)
+test_strat <- testing(split_strat)
+
+# consistent response ratio between train & test
+table(train_strat$Attrition) %>% prop.table()
+table(test_strat$Attrition) %>% prop.table()
+```
+
+#### Feature engineering
+__Feature engineering__ generally refers to the process of adding, deleting and transforming the variables to be applied to your machine learning algorithms.
+
+Feature engineering is a siginificant process and requires you to spend substantial time understanding your data... or as Leo Breiman said "live with your data before you plunge into modeling"
+
+Although this guide is primarily concerned with machine learning algorithms, feature engineering can make or break an algorithm’s predictive ability. We will not cover all the potential ways of implementing feature engineering; however, we will cover a few fundamental pre-processing tasks that can significantly improve modeling performance.
+
+1) One-hot encoding
+
+Many models require all variables to be numeric. Consequently, we need to transform any categorical variables into numeric representation so that these algorithms  can compute. Some packages automate this process (i.e., `h2o`, `glm`, `caret`) while others do not (i.e., `glmnet`, `keras`). Furthermore, there are many ways to encode categorical variables as numeric representation (i.e., one-hot, orinal, binary, sum, Helmert).
+
+The most common is refered to as one-hot encoding, where we transpose our categorical variables so that each level of the feature is represented as a boolean value. For example, one-hot encoding variable `x` in the following:
+
+```{r}
+sample <- tibble::tribble(
+  ~id, ~x,
+  1,"a",
+  2,"c",
+  3,"b",
+  4,"c",
+  5,"c",
+  6,"a",
+  7,"b",
+  8,"c"
+)
+
+sample %>% 
+  mutate(x=as.factor(x))
+```
+
+results in the following representation:
+
+If you need to manually implement one-hot encoding yourself, you can do that with `caret::dummyVars`. Sometimes you many have a feature level with very few observations and all these observations show up in the test set but not the training set. The benefit of using `dummyVars` on the full data set and then applying the result to both the train and test data sets is that it will guarantee that the same features are represented in both the train and test data.
+
+```{r}
+# full rank one-hot encode - recommended for generalized linear models and neural networks.
+
+library(caret)
+full_rank <- dummyVars(~., data = df, fullRank = TRUE)
+train_oh <- predict(full_rank, train_1)
+test_oh <- predict(full_rank, test_1)
+
+train_1 %>% head()
+train_oh %>% as_tibble() %>% head()
+
+# less than full rank
+dummy <- dummyVars(~., data = df, fullRank=FALSE)
+train_oh <- predict(dummy, train_1)
+test_oh <- predict(dummy, test_1)
+```
+
+Two things to note:
+
+- Since one-hot encoding adds new features it can significantly increase the dimensionality of our data. If you have a dataset with many categorical variables and those categorical variables in turn have many unique levels, the number of features can explode. In these cases you may want to explore ordinal encoding of your data.
+
+- if using `h2o` you do not need to explictly encode your categorical variables but you can override the default encoding. This can be considered a tuning parameter as some encoding will improve modeling accuracy over other encodings. See the encoding options for `h2o` [here](http://docs.h2o.ai/h2o/latest-stable/h2o-docs/data-science/algo-params/categorical_encoding.html).
+
+
+##### Response Transformation
+
+Although not a requirement, normalizing the distribution of the response variable by using a _transformation_ can lead to a big improvement, especially for parametric models. As we saw in the data splitting section, our response variable `Sale_Price` is right skewed.
+
+```{r}
+ggplot(train_1,aes(x=Sale_Price))+
+  geom_density(trim=TRUE)+
+  geom_density(data=test_1, trim=T, col="red")
+```
+
+To normalize, we have two options:
+
+__Option 1__: normalize with a __log transformation_._ This will transform most right skewed distributions to be approximiately normal.
+
+```{r}
+# log transformation
+train_log_y <- log10(train_1$Sale_Price)
+test_log_y <- log10(test_1$Sale_Price)
+
+log_transform <- ggplot(data = tibble(train_log_y), aes(train_log_y))+
+  geom_density(trim=TRUE)+
+  geom_density(data=tibble(test_log_y),aes(test_log_y), trim=T, col="red")
+log_transform
+```
+
+__Option 2__: use a __Box Cox transformation__.
+
+A Box Cox transformation is more flexible and will find the transformation from a family of power transformations that will transform the variable as close as possible to a normal distribution. 
+
+__Important notes__: be sure to compute the `lambda` on the training set and apply that same `lambda` to both the training and test set to minimize data leakage.
+
+```{r}
+# Box cox transformation
+lambda <- forecast::BoxCox.lambda(train_1$Sale_Price)
+train_bc_y <- forecast::BoxCox(train_1$Sale_Price, lambda)
+test_bc_y <- forecast::BoxCox(test_1$Sale_Price, lambda)
+```
+
+We can see that in this example, the log transformation and Box Cox transformation both do about equally well in transforming our response variable to be normally distributed.
+
+```{r}
+p1 <- ggplot(data=train_1, aes(Sale_Price))+
+  geom_histogram(bins=100, col="red")+
+  ggtitle("Normal")
+
+p2 <- ggplot(data = tibble(train_log_y), aes(train_log_y))+
+  geom_histogram(bins=100, col="lime green")+
+  ggtitle("Log_Transform")
+
+p3 <- ggplot(data=tibble(train_bc_y), aes(train_bc_y))+
+  geom_histogram(bins=100,col="blue")+
+  ggtitle("BoxCox_Transform")
+
+gridExtra::grid.arrange(p1,p2,p3, nrow=1)
+```
+
+Note that when you model with a transformed response variable, your predictions will also be in the transformed value. You will likely want to re-transform your predicted values back to their normal state so that decision-makers can interpret the results. The following code can do this for you:
+
+```{r}
+# log transform a value
+y <- log(10)
+
+# re-transforming the log-transformed value
+exp(y)
+
+# Box Cox transform a value
+y <- forecast::BoxCox(10, lambda)
+y
+# forecast::BoxCox
+
+# inverse Box Cox function
+inv_box_cox <- function(x,lambda){
+  if (lambda==0) exp(x) else (lambda*x+1)^(1/lambda)
+}
+
+# re-transfrming the Box Cox transform value
+inv_box_cox(y, lambda)
+```
+
+##### Predictor transformation
+
+Some models such as <span style="color:red"> K-NN, SVMs, PLS, neural networks </span> require that the features have the same units. __Centering__ and __scaling__ can be used for this purpose and is often refered to as __standardizing__ the features. Standardizing numeric variables results in zero mean and unit variance, which provides a common comparable unit of measure across all the variables. 
+
+Some packages have built^in arguments (i.e., `h20`, `caret`) to standardize and some do not (ie., `glm`, `keras`). IF you need to manually standardize your variables you can use the `preProcess` function provided by the `caret` package.
+
+For example, here we center and scale our predictor variables. Note, it is important you standardize the test data based on the training mean and variance values of each feature. This minimizes data leakage. 
+
+```{r}
+# identify only the predictor variables
+features <- setdiff(names(train_1), "Sale_Price")
+
+# pre-process estimation based on training features 
+pre_process <- caret::preProcess(
+  x = train_1[,features],
+  method = c("center", "scale")
+)
+
+# apply to both training & test
+train_x <- predict(pre_process, train_1[, features])
+test_x <- predict(pre_process, test_1[,features])
+```
+
+##### Alternative feature transformation
+
+There are some alternative transformations that you can perform: 
+
+- Normalizing the predictor variables with a _Box Cox transformation_ can improve parametric model performance.
+
+- Collapsing highly correlated variables with _PCA_ can reduce the number of features and increase the stability of generalize linear models. However, this reduces the amount of information at your disposal and future tutorials show you how to use regularization as a better alternative to PCA.
+
+- Removing _near-zero_ or _zero variance variables_. Variables with vary little variance tend to not improve model performance and can be removed.
+
+- preProcess provides other options which you can read more about [here](https://topepo.github.io/caret/pre-processing.html).
+
+```{r}
+# identify only the predictor variables
+features <- setdiff(names(train_1), "Sale_Price")
+
+# pre-process estimation based on training features
+pre_process <- preProcess(
+  x      = train_1[, features],
+  method = c("center", "scale", "pca", "nzv") 
+  )
+
+# apply to both training & test
+train_x <- predict(pre_process, train_1[,features])
+test_x <- predict(pre_process, test_1[, features])
+```
+
+
+#### Basic mddel formulation
+
+There are __many__ packages to perform machine learning and there are always more than one to perform each algorithm (i.e., there are over 20 packages to perform random forests). There are pros/cons to each package; some nay be more computationally efficient while other may have more hyperparameter tuning options. 
+
+Future tutorials will expose you to several packages; some that have become "the standard" and others that are new and may be considered "maturing". Just realize there are more ways than one to skin.
+
+For example, these three functions will all produce the samme linear regression model output:
+
+```{r eval=FALSE}
+lm.lm <- lm(Sale_Price~., data = train_1) 
+lm.glm <- glm(Sale_Price~., data=train_1, family=gaussian)
+lm.caret <- caret::train(Sale_Price ~., data=train_1, method = "lm")
+
+lm_multiple_package = tibble(
+  model = c("lm", "glm", "caret"),
+  outcome = list(lm.lm, lm.glm, lm.caret)
+)
+
+# test <- "abcde"
+# stringr::str_sub(test, 1,3)
+
+lm_multiple_package$outcome[[1]] %>% 
+  broom::tidy() %>% 
+  ggplot(aes(stringr::str_sub(term, 1, 3), estimate, col=p.value<0.01))+
+  geom_point()+
+  coord_flip()
+
+# lm_multiple_package %>% 
+#   mutate( outcome_tidy = purrr::map(outcome, broom::tidy))
+```
+
+One thing you will notice throughout future tutotiral s is that we can specify our model formulation in different ways. In the above examples, we use the model formulation (`Sale_Price`, which says explain `Sale_Price` based on all features) approach. Alternative approaches include the matrix formulation and variable name specification approaches. 
+
+_Matrix formulation_ requires that we separate our response variable from our features. For example, in the regularization tutorial we will use `glmnet` which requires our features `x` and response `y` to be specified separately:
+
+```{r eval=FALSE}
+# get feature names
+features <- setdiff(names(train_1), "Sale_Price")
+
+# create feature and response set
+train_x <- train_1[, features]
+train_y <- train_1$Sale_Price
+
+# example of matrix formulation
+library(glmnet)
+glmnet.m1 <- glmnet(x = train_x, y = train_y)
+```
+
+Alternatively, `h2o` uses _variable name specification_ where we provide all the data combined in one `training_frame` but we specify the features and response with character strings:
+
+```{r}
+# create variable names and h2o training frame
+h2o.init()
+y <- "Sale_Price"
+x <- setdiff(names(train_1), y)
+train.h2o <- as.h2o(train_1)
+
+# example of variable name specification
+h20.m1 <- h2o.glm(x=x, y=y, training_frame = train.h2o)
+```
+
+
+##### Model tuning
+
+Hyperparameters control the level of model complexity. Some algorithms have many tuning parameters while others have only one or two. Tuning can be a good thing as it allows us to transform our model to better align with pattersn within our data For example the simple illustration below shows how the more flexible model aligns more closely to the data than fixed linear model.
+
+```{r fig.cap="Fig.5: Tuning allows for more flexibile pattersn to be fit"}
+
+```
+
+However, highly tunable models can also be dangerous because they allow us to overfit our model to the training data, which will not generalize well to future unseen data.
+
+```{r fig.cap="Fig.6: Highly tunable models can overfit if we are not careful"} 
+
+```
+
+Throughout the future tutorial, we will demonstrate how to tune the different parameters for each model. However, we bring up this point because it feeds into the next section nicely.
+
+##### Cross validation for generalization
+
+Our goal is to not only find a model that performs well on training data, but to find one that performs well on _future unseen data_. So although we can tune our model to reduce some error metric to near zero on our training data, this may not generalize well to future unseen data. Consequently, our goal is to find a model and its hyperparameters that will minimize error on hold-out data.
+
+```{r fig.cap="Fig.7: Bias versus variance"}
+
+```
+
+The model on the left is considered rigid and consistent. If we provided it a new training sample with slightly different values, the model would not change much, if at all. Although it is consistent, the models does not accurately capture the underlying relationship. This is considered a model with high _bias_. 
+
+The model on the right is far more inconsistent. Even with small changes to our training sample, this model would likely change significantly. This is considered a model with high _variance_.
+
+The model in the middle balances the two and likely will minimize the error on future unseen data compared to the high bias and high variance models. This is our goal.
+
+```{r fig.cap="Fig 8: Bias-variance tradeoff", eval=FALSE}
+knitr::include_graphics("")
+```
+
+To find the model that balances the _bias-variance tradeoff_, we search for a model that minimizes a _k_-fold cross-validation error metric (you will also be introduced to what's called an _out of bag error_ which provides a similar form of evaluation). _k_-fold cross-validation is a resampling method that randomly divides the training data into _k_ groups (aka folds) of approximately same size. The model is fit on $k-1$ folds and then held-out validation fods is used to compute the error. 
+
+This process results in _k_ estimates of the test error ($\epsilon_1,\epsilon_2,...,\epsilon_k$). Thus, the _k_-fold CV estimate is computed by averagin these values, which provides us with an approximation of the error to expect on unseen data.
+
+```{r fig.cap="Fig 9: Illustration of the k-fold cross validation process", eval=FALSE}
+knitr::include_graphics("")
+```
+
+Most algorithms and packages we cover in future tutorials have built-in cross-validation capabilities. One typically uses a 5 or 10 fold CV ( _k_=5 or _k_=10 ). For example, `h2o` implements CV with the `nfolds` argument:
+
+```{r eval=FALSE}
+# example of 10 fold CV in h2o
+h2o.cv <- h2o.gbm(
+  x=x,
+  y=y,
+  training_frame = train.h2o,
+  nfolds =10
+)
+```
+
+#### Model evaulation
+
+This leads us to our final topic, error metrics to evaluate performance. There are several metrics we can choose from to assess the error of a supervised machine learning model. The most common include:
+
+###### Regression models
+
+- __MSE__: Mean squared error is the average of the squared eorr ($MSE = \frac{1}{n}\Sigma_{i=1}^n(y_i-\hat{y})^2$). The squared component results in larger errors having larger penalties. This (along with RMSE) is the most common error metric to use. Objective: __minimize__  
+
+- __RMSE__: Root Root mean squared error. This simply takes the square root of the MSE metric (RMSE=$\sqrt{\frac{1}{n}\Sigma_{i=1}^n(y_i-\hat{y})^2} $) so that your error is in the same units as your response variable. If your response variable units are dollars, the units of MSE are dollars-squared, but the RMSE will be in dollars. Objective: __minimize__  
+
+- __Deviance__:Short for mean residual deviance. In essence, it provides a measure of goodness-of-fit of the model being evaluated when compared to the null model (intercept only). If the response variable distribution is gaussian, then it is equal to MSE. When not, it usually gives a more useful estimate of error. __Objective: minimize__
+
+- __MAE__:ean absolute error. Similar to MSE but rather than squaring, it just takes the mean absolute difference between the actual and predicted values ($MAE=\frac{1}{n}\Sigma_{i=1}^n|(y_i-\hat{y})|$) __Objective: minimize__
+
+- __RMSLE__:Root mean squared logarithmic error. Similiar to RMSE but it performs a `log()` on the actual and predicted values prior to computing the difference ($ RMSLE = \sqrt{\frac{1}{n}\Sigma_{i=1}^n (log(y_i+1)-log())$ ) When your response variable has a wide range of values, large response values with large errors can dominate the MSE/RMSE metric. RMSLE minimizes this impact so that small response values with large errors can have just as meaningful of an impact as large response values with large errors. __Objective: minimize__
+
+- __$R^2$__: This is a popular metric that represents the proportion of the variance in the dependent variable that is predictable from the independent variable. Unfortunately, it has several limitations. For example, two models built from two different data sets could have the exact same RMSE but if one has less variability in the response variable then it would have a lower $R^2$
+ than the other. You should not place too much emphasis on this metric. 
+
+Most models we assess in future tutorials will report most, if not all, of these metrics. We will often emphasize and RMSE but its good to realize that certain situations warrant emphasis on some more than others.
+
+##### Classification models
+
+- __Misclassification__: This is the overall error. For example, say you are predicting 3 classes ( high, medium, low ) and each class has 25, 30, 35 observations respectively (90 observations total). If you misclassify 3 observations of class high, 6 of class medium, and 4 of class low, then you misclassified 13 out of 90 observations resulting in a 14% misclassification rate. Objective: minimize
+
+- __Mean per class error__: This is the average error rate for each class. For the above example, this would be the mean of $\frac{3}{25}, \frac{6}{30}, \frac{4}{35} $ , which is 12%. If your classes are balanced this will be identical to misclassification. __Objective: minimize__
+
+- __MSE__: Mean squared error. Computes the distance from 1.0 to the probability suggested. So, say we have three classes, A, B, and C, and your model predicts a probabilty of 0.91 for A, 0.07 for B, and 0.02 for C. If the correct answer was A the $MSE=0.09^2=.0081$, if it is B $MSE=0.93^2=0.8649$, if it is C $MSE=0.98^2=0.9604$. The squared component results in large differences in probabilities for the true class having larger penalties. __Objective: minimize__
+
+- __Cross-entropy (aka Log Loss or Deviance)__: Similar to MSE but it incorporates a log of the predicted probability multiplied by the true class. Consequently, this metric disproportionately punishes predictions where we predict a small probability for the true class, which is another way of saying having high confidence in the wrong answer is really bad. __Objective: minimize__
+
+- __Gini index__: Mainly used with tree-based methods and commonly referred to as a measure of purity where a small value indicates that a node contains predominantly observations from a single class. __Objective: minimize__
+
+When applying classification models, we often use a _confusion matrix_ to evaluate certain performance measures.A confusion matrix is simply a matrix that compares actual categorical levels (or events) to the predicted categorical levels. When we predict the right level, we refer to this as a true positive. However, if we predict a level or event that did not happen this is called a false positive (i.e. we predicted a customer would redeem a coupon and they did not). Alternatively, when we do not predict a level or event and it does happen that this is called a false negative (i.e. a customer that we did not predict to redeem a coupon does).
+
+```{r fig.cap="Fig 10: Confusion matrix"}
+
+```
+
+We can extract different levels of performance from these measures. For example, given the classification matrix below, we can assess the following:
+
+- __Accuracy__: Overall, how often is the classifier correct? Opposite of misclassification above. Example: $\frac{TP+TN}{total} = \frac{100+50}{165}=0.91$. __Objective: maximize__
+
+- __Precision__: How accurately does the classifier predict events? This metric is concerned with maximizing the true positives to false positive ratio. In other words, for the number of predictions that we made, how many were correct? Example: $\frac{TP}{TP+FP} = \frac{100}{100+10}=0.91$. __Objective: maximize__
+
+- __Sensitivity (aka recall)__: How accurately does the clasifier classify actual events? This metric is concerned with maximizing the true positives to false negative ratio. In other words, for the events that occured, how many did we predict? Example: $\frac{TP}{TP+FN} = \frac{100}{100+5}=0.95$. __Objective: maximize__
+
+- __Specificity__: How accurately does the classifier classify actual events? This metric is concerned with maximizing the true positives to false negatives ratio. In other words, for the events that occurred, how many did we predict? Example: $\frac{TN}{TN+FP} = \frac{50}{50+10}=0.95$. __Objective: maximize__
+
+```{r fig.cap="Fig 11: Example confusion matrix"}
+```
+
+- __AUC__: Area under the curve. A good classifier will have high precision and sensitivity. This means the classifier does well when it predicts an event will and will not occur, which minimizes false positives and false negatives. To capture this balance, we often use a ROC curve that plots the false positive rate along the x-axis and the true positive rate along the y-axis. A line that is diagonal from the lower left corner to the upper right corner represents a random guess. The higher the line is in the upper left-hand corner, the better. AUC computes the area under this curve. Objective: maximize
+
+### Linear regression
+
+Linear regression is a very simple approach for supervised learning.In particular, linear regression is a useful tool for predicting a quantitative response. Linear regression has been around for a long time and is the topic of innumerable textbooks. Though it may seem somewhat dull compared to some of the more modern statistical learning approaches described in later tutorials, linear regression is still a useful and widely used statistical learning method. Moreover, it serves as a good jumping-off point for newer approaches: as we will see in later tutorials, many fancy statistical learning approaches can be seen as generalizations or extensions of linear regression. Consequently, the importance of having a good understanding of linear regression before studying more complex learning methods cannot be overstated.
+
+#### tl;dr
+
+This tutorial serves asa an introduction to linear regression
+1. [Replication requirements](#RR): What you will need to reproduce 
+2. Preparing our data: Prepare our data for modeling
+3. Simple linear regression: Predicting a quantitative response $Y$ with a single predictor variable $X$
+4. Multiple linear regression: Predicting a quantitative response $Y$ with multiple predictor variables $X_1, X_2, ..., X_p$
+5. Incorporating interactions: Removing the additive assumption
+6. Additional considerations: A few other considerations to know about
+
+##### Replication requirements {#RR}
+
+This tutorial primarily leverages this [advertising data](http://www-bcf.usc.edu/~gareth/ISL/Advertising.csv) provided by the authors of [an Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/index.html). This is a simple data set that contains, in thousands of dolloars, `TV`, `Radio`, and `Newspaper` budgets for 200 different markets along with the `Sales`, in thousands of units, for each market. We will also use a few package that provide data manipulation, visualization, pipeline modeling functions, and model output tidying functions. 
+
+```{r}
+# Packages
+library(tidyverse) # data manipulation and visualizations
+library(modelr)# provides easy pipeline modeling functions
+library(broom) # helps to tidy up model outputs
+
+advertising <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Advertising.csv") %>%
+   select(-X1)
+
+advertising
+```
+
+
+##### Preparing our data
+
+Initial descovery of relationships is usually done with a training set while a test set is used for evaluating whether the discovered relationships hold.More formally, a training set is a set of data used to discover potentially predictive relationships. A test set is a set of data used to assess the strength and utility of a predictive relationship. In a later tutorial we will cover more sophisticated ways for training, validating, and testing predictive models but for the time being we’ll use a conventional 60% / 40% split where we training our model on 60% of the data and then test the model performance on 40% of the data that is withheld.
+
+```{r}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(advertising), replace=TRUE, prob=c(0.6,0.4))
+train <- advertising[sample, ]
+test <- advertising[!sample, ]
+
+```
+
+#### Simple linear regression
+
+_Simple linear regression_ lives up to its name; it is a very straightfoward approach for prediting a quantitative response $Y$ on the basis of a single predictor variable $X$. It assumes that there is approximately a linear relationship between $X$ and $Y$. Using our advertising data, suppose we wish to model the linear relationship between the TV budget and sales. We can write this as:
+$$
+Y = \beta_0 + \beta_1X+\epsilon
+$$
+
+where;
+- $X$ represents sale
+- $X$ represents _TV adversiting budget_
+- $\beta_o$ is the intercept
+- $\beta_1$ is the coefficient representing the linear relationship
+- $\epsilon$ is mean-zero random error term
+
+##### Model building 
+
+To build this model in R we use the formula notation of $Y~X$. 
+
+```{r}
+model1 <- lm(sales ~ TV, data = train)
+summary(model1)
+```
+
+In the background the `lm`, which stands for “linear model�?, is producing the best-fit linear relationship by minimizing the least squares criterion (alternative approaches will be considered in later tutorials). This fit can be visualized in the following illustration where the “best-fit�? line is found by minimizing the sum of squared errors (the errors are represented by the vertical black line segments).
+
+```{r}
+ggplot(data = train, aes(TV, sales))+
+  geom_point()+
+  geom_line(aes(y=predict(model1,train)), col="red")
+```
+
+For initial assessment of our model we can use `summary`. This provides us with a host of information about our model, which we’ll walk through. Alternatively, you can also use `glance(model1)` to get a “tidy�? result output.
+
+```{r}
+library(broom)
+model_results <- 
+  list(
+    tidy = broom::tidy(model1),
+    glance = glance(model1)
+  )
+
+model_results[[1]]
+model_results[[2]]
+```
+
+##### Asessing coeficcients
+
+Our original formula in Eq. (1) includes $\β_0$ for our intercept coefficent and 
+$/β_1$  for our slope coefficient. If we look at our model results (here we use tidy to just print out a tidy version of our coefficent results) we see that our model takes the form of
+
+```{r}
+#broom::tidy()
+model_results[[1]]
+```
+
+In other words, our intercept estiamte is $6.76$ so when the TV advertising budget is zero, we can expect sales to be $6,760$ (remember we are operating in units of $1,000$). And for every $1,000$ increase in the TV advertising budget we expect the average increase in sales to be 50 units.
+
+It’s also important to understand if the these coefficients are statistically significant. In other words, can we state these coefficients are statistically different then 0? To do that we can start by assessing the standard error (SE). The SE for $\beta_0$ and $\beta_1$ are computed with:
+
+$$
+SE(\beta_0)=\sigma^2[\frac{1}{n}+\frac{\hat x^2}{\Sigma_i=1^n(x_i-\bar{x})^2}],
+SE(\beta_1)=\frac{\sigma^2}{\Sigma_{i=1}^n(x_i-\bar{x})^2}...(3)
+$$
+
+where $\sigma=Var(\epsilon)$. We see that our model results provide the SE (noted as Std.error). We can use the SE to compute the 95% confidence internal for the coefficients.
+
+$$
+\beta_1 = 2*SE(\beta_1)...(4)
+$$
+
+To get this information in R, we can simply use:
+
+```{r}
+confint(model1)
+```
+
+Our results show us that our 95% confidence interval for $β_1$ (TV) is [.043, .057]. Thus, since zero is not in this interval we can conclude that as the TV advertising budget increases by $1,000 we can expect the sales to increase by 43-57 units. This is also supported by the _t-statistic_ provided by our results, which are computed by
+
+$$
+t = \frac{\beta_1 -0}{SE(\beta_1)}...(5)
+$$
+
+which measures he number of standard deviations that $β_1$ is away from 0. Thus a large t-statistic such as ours will produe a small p-value (a small p-value indicates that it is unlikely to observe such a substantial association between the predictor variable and the response due to chance). Thus, we can conclude that a relationship between TV advertising budget and sales exists.
+
+##### Assessing model accuracy
+
+Next, we want to understand the extent to which the model fits the data. This is typically referred to as the _goodness-of-fit_. We can measure this quantitatively by assessing three things:
+
+1. Residual standard error
+2. R squared($R^2$)
+3. F-statistic
+
+The RSE is an  estimate of the standard deviation of 
+$ϵ$. Roughly speaking, it is the average amount that the response will deviate from the true regression line. It is computed by:
+
+$$
+RSE = \sqrt{\frac{1}{n-2}\Sigma_{i=1}^n(y_i-\hat{y_i})^2}...(6)
+$$
+
+We get the RSE at the bottom of `summary(model1)`, we can also get it directly with:
+
+```{r}
+sigma(model1)
+```
+
+An RSE value of $3.2$ means the actual sales in each market will deviate from the true regression line by approximately $3,200$ units, on average. Is this significant? Well, that’s subjective but when compared to the average value of sales over all markets the percentage error is $22%$:
+
+```{r}
+sigma(model1)/mean(train$sales)
+```
+
+The RSE provides an absolute measure of lack of fit of our model to the data. But since it is measured in the units of $Y$, it is not always clear what constitutes a good RSE. The $R^2$ statistic provides an alternative measure of fit. It represents the proportion of variance explained and so it always takes on a value between 0 and 1, and is independent of the scale of $Y$.$R^2$ is simply a function of residual sum of squares (RSS) and total sum of squares (TSS):
+
+$$
+R^2 = 1 - \frac{RSS}{TSS} = 1- \frac{\Sigma_{i=1}^n  (y_i-\hat{y_i})^2}{\Sigma_{i=1}^n  (y_i-\bar{y_i})^2}
+$$
+
+Similar to RSE the $R^2$ can be found at the bottom of `summary(model1)` but we can also generate it directly with `rsquare`. The result suggests that TV advertising budget can explain 64% of the variability in our sales data.
+
+```{r}
+rsquare(model1, data = train)
+```
+
+As a side note, in a simple linear regression model the $R^2$ value will equal the squared correlation between $X$ and $Y$:
+```{r}
+cor(train$TV, train$sales)^2
+```
+
+Lastly, the _F-statistic_ tests to see if at least one predictor variable has a non-zero coefficient. This becomes more important once we start using multiple predictors as in multiple linear regression; however, we’ll introduce it here. The _F-statistic_ is computed as:
+
+$$
+F = \frac{(TSS-RSS)/p}
+         {RSS/(n-p-1)}
+$$
+
+Hence, a larger F-statistic will produce a significant p-value (<0.05). In ou case, we see at the bottom of our summary statement that the F-statistic is 210.8 producing a p-value of $p<2.2e-16$. 
+
+Combined, our RSE, $R^2$, and F-statistic results suggest that our model has an ok fit, but we could likely do better.
+
+##### Asessing our model visually
+
+Not only is it important to to understand quantitative measures regarding our coefficient and model accuracy but we should also understand visual approaches to assess our model. First, we should always visualize our model within our data when possible. For simple linear regression this is quite simple. Here we use `geom_smooth(method = "lm")` followed by `geom_smooth()`. This allows us to compare the linearity of our model (blue line with the 95% confidence interval in shaded region) with a non-linear __LOESS model__. Considering the LOESS smoother remains within the confidence interval we can assume the linear trend fits the essence of this relationship. However, we do note that as the TV advertising budget gets closer to 0 there is a stronger reduction in sales beyond what the linear trend follows.
+
+```{r}
+ggplot(train, aes(TV, sales))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  geom_smooth(se=FALSE, color="red")
+```
+
+An important part of assessing regression models is visualizing residuals. If you use `plot(model1)` four residual plots will be produced that provide some insights. Here I will walk through creating each of these plots within ggplot and explain their insights.
+
+```{r}
+plot(model1)
+```
+
+First is a plot of residual versus fitter values. This will signal two important concerns:
+
+1. Non-linearity: if a discernible pattern (blue line) exists then this suggests either non-linearity or that other attributes have not been adequately captured. Our plot indicates that the assumption of linearity is fair.
+
+2. Heteroskedasticity: an important assumption of linear regression is that the error terms have a constant variance, $Var(\epsilon)=\sigma^2$. If there is a funnel shape with our residuals, as in our plot, then we have  violated this assumption. Sometimes this can be resolved with a log or square root transformation of $Y$ in our model.
+
+```{r}
+# add model diagnostics to our training data
+model1_results <- augment(model1, train)
+model1_results
+
+ggplot(model1_results, aes(.fitted, .resid))+
+  geom_ref_line(h=0)+
+  geom_point()+
+  geom_smooth(se=FALSE)+
+  ggtitle("Residual vs Fitted")
+```
+
+We can get this same kind of information with a couple other plots which you will see when using `plot(model1)`. The first is comparing standardized residuals versus fitted values. This is the same plot as above but with the residuals standardized to show where residuals deviate by 1, 2, 3+ standard deviations. This helps us to identify outliers that exceed 3 standard deviations. The second is the scale-location plot. This plot shows if residuals are spread equally along the ranges of predictors. This is how you can check the assumption of equal variance (homoscedasticity). It’s good if you see a horizontal line with equally (randomly) spread points.
+
+```{r}
+p1 <- ggplot(model1_results, aes(.fitted, .std.resid))+
+  geom_ref_line(h=0)+
+  geom_point()+
+   geom_smooth(se = FALSE) +
+  ggtitle("Standardized Residuals vs Fitted")
+
+p2 <- ggplot(model1_results, aes(.fitted, sqrt(.std.resid))) +
+  geom_ref_line(h = 0) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  ggtitle("Scale-Location")
+
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+The next plot assess the normality of our residuals. A Q-Q plot plots the distribution of our residuals against the theoretical normal distribution. The closer the points are to falling directly on the diagonal line then the more we can interpret the residuals as normally distributed. If there is strong snaking or deviations from the diagonal line then we should consider our residuals non-normally distributed. In our case we have a little deviation in the bottom left-hand side which likely is the concern we mentioned earlier that as the TV advertising budget approaches 0 the relationship with sales appears to start veering away from a linear relationship.
+
+```{r}
+qq_plot <- qqnorm(model1_results$.resid)
+qq_plot <- qqline(model1_results$.resid)
+```
+
+Last are the Cook’s Distance and residuals versus leverage plot. These plot helps us to find influential cases (i.e., subjects) if any. Not all outliers are influential in linear regression analysis. Even though data have extreme values, they might not be influential to determine a regression line. That means, the results wouldn’t be much different if we either include or exclude them from analysis. They follow the trend in the majority of cases and they don’t really matter; they are not influential. On the other hand, some cases could be very influential even if they look to be within a reasonable range of the values. They could be extreme cases against a regression line and can alter the results if we exclude them from analysis. Another way to put it is that they don’t get along with the trend in the majority of the cases.
+
+Here we are looking for outlying values (we can select the top n outliers to report with `id.n`. The identified (labeled) points represent those splots where cases can be influential against a regression line. When cases have high Cook’s distance scores and are to the upper or lower right of our leverage plot they have leverage meaning they are influential to the regression results. The regression results will be altered if we exclude those cases.
+
+```{r}
+par(mfrow=c(1, 2))
+
+plot(model1, which = 4, id.n = 5)
+plot(model1, which = 5, id.n = 5)
+```
+
+If you want to look at these top 5 observations with the highest Cook’s distance in case you want to assess them further you can use the following.
+
+```{r}
+model1_results %>% 
+  top_n(5, wt=.cooksd)
+```
+
+So, what does having patterns in residuals mean to your research? It’s not just a go-or-stop sign. It tells you about your model and data. Your current model might not be the best way to understand your data if there’s so much good stuff left in the data.
+
+In that case, you may want to go back to your theory and hypotheses. Is it really a linear relationship between the predictors and the outcome? You may want to include a quadratic term, for example. A log transformation may better represent the phenomena that you’d like to model. Or, is there any important variable that you left out from your model? Other variables you didn’t include (e.g., Radio or Newspaper advertising budgets) may play an important role in your model and data. Or, maybe, your data were systematically biased when collecting data. You may want to redesign data collection methods.
+
+Checking residuals is a way to discover new insights in your model and data!
+
+##### Making predictions
+
+Often the goal with regression approaches is to make predictions on new data. To assess how well our model do in this endeavor we need to assess how it does in making predictions against our test data set. This informs us how well our model generalizes to data outside our training set. We can use our model to predict Sales values for our test data by using `add_predictions`.
+
+```{r}
+test <- test %>% 
+  add_predictions(model1)
+test
+```
+
+The primary concern is to assess if the __out-of-sample__ mean squared error (MSE), also known as the mean squared prediction error, is substantially higher than the in-sample mean square error, as this is a sign of deficiency in the model. The MSE is computed as
+
+$$
+MSE = \frac{1}{n}\Sigma_{i=1}^n (y_i-\hat{y_i})^2
+$$
+
+We can easily compare the test sample MSE to the training sample MSE with the following.The difference is not that significant. However, this practice becomes more powerful when you are comparing multiple models. For example, if you developed a simple linear model with just the Radio advertising budget as the predictor variable, you could then compare our two different simple linear models and the one that produces the lowest test sample MSE is the preferred model.
+
+```{r}
+# test MSE
+test %>% 
+  add_predictions(model1) %>% 
+  summarise(MSE = mean((sales-pred)^2))
+
+# training MSE
+train %>% 
+  add_predictions(model1) %>%
+  summarise(MSE = mean((sales - pred)^2))
+## # A tibble: 1 �? 1
+##        MSE
+##      <dbl>
+## 1 10.09814
+```
+
+In the next tutorial we will look at how we can extend a simple linear regression model into a multiple regression.
+
+#### Multiple regression
+
+Simple linear regression is a useful approach for predicting a response on the basis of a single predictor variable. However, in practice we often have more than one predictor. For example, in the Advertising data, we have examined the relationship between sales and TV advertising. We also have data for the amount of money spent advertising on the radio and in newspapers, and we may want to know whether either of these two media is associated with sales. How can we extend our analysis of the advertising data in order to accommodate these two additional predictors?
+
+We can extend the simple linear regression model so that it can directly accommodate multiple predictors. We can do this by giving each predictor a separate slope coefficient in a single model. In general, suppose that we have p distinct predictors. Then the multiple linear regression model takes the form
+
+$$
+Y = \beta_0 + \beta_1X_1+...+\beta_pX_p+\epsilon...(10)
+$$
+
+##### Model building
+
+If we want to run a model that uses TV, Radio, and Newspaper to predict Sales then we build this model in R using a similar approach introduced in the Simple Linear Regression tutorial.
+
+```{r}
+model2 <- lm(sales ~ TV + radio + newspaper, data=train)
+```
+
+We can also assess this model as before:
+
+```{r}
+summary(model2)
+```
+
+##### Assessing coefficients
+
+The interpreation of our coefficients is the same as in a linear regression model. First, we see that our coefficients for TV and Radio advertising budget are statistically significant (p-value < 0.05) while the coefficient for Newspaper is not. Thus, changes in Newspaper budget do not appear to have a relationship with changes in sales. However, for TV our coefficent suggests that for every $1,000$ increase in TV advertising budget, holding all other predictors constant, we can expect an increase of 47 sales units, on average (this is similar to what we found in the simple linear regression). The Radio coefficient suggests that for every $1,000$ increase in Radio advertising budget, holding all other predictors constant, we can expect an increase of 196 sales units, on average.
+
+```{r}
+broom::tidy(model2)
+```
+
+We can also get our confidence intervals around these coefficient estimates as we did before. Here we see how the confidence interval for Newspaper includes 0 which suggests that we cannot assume the coefficient estimate of -0.0106 is different than 0.
+
+```{r}
+confint(model2)
+```
+
+##### Assessing model accuracy
+
+Assessing model accuracy is very similar as when assessing simple linear regression models. Rather than repeat the discussion, here I will highlight a few key considerations. First, multiple regression is when the F-statistic becomes more important as this statistic is testing to see if at least one of the coefficients is non-zero. When there is no relationship between the response and predictors, we expect the F-statistic to take on a value close to 1. On the other hand, if at least predictor has a relationship then we expect $F>1$. In our summary print out above for model 2 we saw that $F=445.9$ with $p<0.05$ suggesting that at least one of the advertising media must be related to sales.
+
+In addition, if we compare the results from our simple linea regression model (`model1`) and our multiple regression model (`model2`) we can make some important comparisons:
+
+```{r}
+list(
+  model1 = broom::glance(model1),
+  model2 = broom::glance(model2)
+)
+```
+
+1. __$R^2$__: Model 2’s $R^2=.92$ is substantially higher than model 1 suggesting that model 2 does a better job explaining the variance in sales. It’s also important to consider the adjusted $R^2$. The adjusted $R^2$ is a modified version of $R^2$ that has been adjusted for the number of predictors in the model. The adjusted $R^2$
+ increases only if the new term improves the model more than would be expected by chance. Thus, since model 2’s adjusted $R^2$ is also substantially higher than model 1 we confirm that the additional predictors are improving the model’s performance.
+2. __RSE__: Model 2’s RSE (sigma) is lower than model 1. This shows that model 2 reduces the variance of our 
+$ϵ$ parameter which corroborates our conclusion that model 2 does a better job modeling sales.
+3. __F-statistic__: the F-statistic (statistic) in model 2 is larger than model 1. Here larger is better and suggests that model 2 provides a better “goodness-of-fit�?.
+4. __Other__: We can also use other various statistics to compare the quality of our models. These include Akaike information criterion (AIC) and Bayesian information criterion (BIC), which we see in our results, among others. We’ll go into more details regarding these statistics in the Linear Model Selection tutorial but for now just know that models with lower AIC and BIC values are considered of better quality than models with higher values.
+
+So we understand that quantitative attributes of our second model suggest it is a better fit, how about visually?
+
+##### Assessing our model visually
+
+Our main focus is to assess and compare residual behavior with our models. First, if we compare model 2’s residuals versus fitted values we see that model 2 has reduced concerns with heteroskedasticity; however, we now have discernible patter suggesting concerns of linearity. We’ll see one way to address this in the next section.
+
+```{r}
+# add model diagnostics to our training data
+model1_results <- model1_results %>%
+  mutate(Model = "Model 1")
+
+model2_results <- augment(model2, train) %>%
+  mutate(Model = "Model 2") %>%
+  rbind(model1_results)
+
+ggplot(model2_results, aes(.fitted, .resid)) +
+  geom_ref_line(h = 0) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~ Model) +
+  ggtitle("Residuals vs Fitted")
+```
+
+This concern with normality is supported when we compare the Q-Q plots. So although our model is performing better numerically, we now have a greater concern with normality then we did before! This is why we must always assess models numerically and visually!
+
+```{r}
+par(mfrow=c(1, 2))
+
+# Left: model 1
+qqnorm(model1_results$.resid); qqline(model1_results$.resid)
+
+# Right: model 2
+qqnorm(model2_results$.resid); qqline(model2_results$.resid)
+```
+
+##### Making predictions
+
+To see how our models compare when making predictions on an out-of-sample data set we’ll compare MSE. Here we can use `gather_predictions` to predict on our test data with both models and then, as before, compute the MSE. Here we see that model 2 drastically reduces MSE on the out-of-sample. So although we still have lingering concerns over residual normality model 2 is still the preferred model so far.
+
+```{r}
+test %>%
+  gather_predictions(model1, model2) %>%
+  group_by(model) %>%
+  summarise(MSE = mean((sales-pred)^2))
+## # A tibble: 2 �? 2
+##    model      MSE
+##    <chr>    <dbl>
+## 1 model1 11.34993
+## 2 model2  3.75494
+```
+
+
+#### Incorporating interactions
+
+In our previous analysis of the Advertising data, we concluded that both TV and radio seem to be associated with sales. The linear models that formed the basis for this conclusion assumed that the effect on sales of increasing one advertising medium is independent of the amount spent on the other media. For example, the linear model (Eq. 10) states that the average effect on sales of a one-unit increase in TV is always $β_1$, regardless of the amount spent on radio.
+
+However, this simple model may be incorrect. Suppose that spending money on radio advertising actually increases the effectiveness of TV advertising, so that the slope term for TV should increase as radio increases. In this situation, given a fixed budget of $100,000, spending half on radio and half on TV may increase sales more than allocating the entire amount to either TV or to radio. In marketing, this is known as a synergy effect, and in statistics it is referred to as an interaction effect. One way of extending our model 2 to allow for interaction effects is to include a third predictor, called an interaction term, which is constructed by computing the product of $X_1, and $X_2$
+ (here we’ll drop the Newspaper variable). This results in the model
+ 
+ $$
+ Y = \beta_0 + \beta_1X_1 + \beta_2X_2+\beta_3X_1X_2+\epsilon...(11)
+ $$
+
+```{r}
+# Option 1
+model3 <- lm(sales~TV+radio+TV*radio, data=train)
+
+# Option 2
+model3 <- lm(sales ~ TV * radio, data = train)
+```
+
+##### Asessing coefficients
+
+We see that all our coefficients are statistically significant. Now we can interpret this as an increase in TV advertising of $1,000 is associated with increased sales of ($\beta_1$+$\beta_3$*radio) * 1000 = 21 + 1*radio. And an increase in radio advertising of $1,000 will be associated with an increase in sales of 
+
+```{r}
+broom::tidy(model3)
+```
+
+##### Assessing model accuracy
+
+We can compare our model results across all three models. We see that our adjusted $R^2$ and F-statistic are highest with model 3 and our RSE, AIC and BIC are the lowest with model 3; suggesting the model 3 outperforms the other models.
+
+```{r}
+list(model1 = broom::glance(model1),
+     model2 = broom::glance(model2),
+     model3 = broom::glance(model3)) 
+```
+
+##### Assessing our model visually
+
+Visually assessing our residuals versus fitted values we see that model three does a better job with constant variance and, with the exception of the far left side, does not have any major signs of non-normality.
+
+```{r}
+# add model diagnostics to our training data
+
+model3_results <- augment(model3, train) %>% 
+  mutate(Model = "Model 3") %>% 
+  rbind(model2_results)
+
+ggplot(model3_results, aes(.fitted, .resid))+
+  geom_ref_line(h=0)+
+  geom_point()+
+  geom_smooth(se=FALSE)+
+  facet_wrap(~Model)+
+  ggtitle("Residual vs Fitted")
+```
+
+As an alternative to the Q-Q plot we can also look at residual histograms for each model. Here we see that model 3 has a couple large left tail residuals. These are related to the left tail dip we saw in the above plots.
+
+```{r}
+ggplot(model3_results, aes(.resid))+
+  geom_histogram(binwidth = .25)+
+  facet_wrap(~Model, scales="free_x")+
+  ggtitle("Residual Histogram")
+```
+
+These residuals can be tied back to when our model is trying to predict low levels of sales (< 10,000). If we remove these sales our residuals are more normally distributed. What does this mean? Basically our linear model does a good job predicting sales over 10,000 units based on TV and Radio advertising budgets; however, the performance deteriates when trying to predict sales less than 10,000 because our linear assumption does not hold for this segment of our data.
+
+```{r}
+model3_results %>%
+  filter(sales > 10) %>%
+  ggplot(aes(.resid)) +
+  geom_histogram(binwidth = .25) +
+  facet_wrap(~ Model, scales = "free_x") +
+  ggtitle("Residual Histogram")
+```
+
+This can be corroborated by looking at the Cook’s Distance and Leverage plots. Both of them highlight observations 3, 5, 47, 65, and 94 as the top 5 influential observations.
+
+```{r}
+par(mfrow=c(1, 2))
+
+plot(model3, which = 4, id.n = 5)
+plot(model3, which = 5, id.n = 5)
+```
+
+If we look at these observations we see that they all have low Sales levels.
+```{r}
+train[c(3,5,47,65,94),]
+```
+
+##### Making prediction
+
+Again, to see how our models compare when making predictions on an out-of-sample data set we’ll compare the MSEs across all our models. Here we see that model 3 has the lowest out-of-sample MSE, further supporting the case that it is the best model and has not overfit our data.
+
+```{r}
+test %>% 
+  gather_predictions(model1, model2,model3) %>% 
+  group_by(model) %>% 
+  summarise(MSE = mean((sales-pred)^2))
+```
+
+
+#### Additional consideration
+##### Qualitative predictors
+
+In our discussion so far, we have assumed that all variables in our linear regression model are _quantitative_. But in practice, this is not necessarily the case; often some predictors are _qualitative_.
+
+For example, the [Credit data set](http://www-bcf.usc.edu/~gareth/ISL/Credit.csv) records balance (average credit card debt for a number of individuals) as well as several quantitative predictors: age, cards (number of credit cards), education (years of education), income (in thousands of dollars), limit (credit limit), and rating (credit rating).
+
+Suppose that we wish to investigate differences in credit card balance between males and females, ignoring the other variables for the moment. If a qualitative predictor (also known as a factor) only has two levels, or possible values, then incorporating it into a regression model is very simple. We simply create an indicator or dummy variable that takes on two possible numerical values. For example, based on the gender, we can create a new variable that takes the form
+
+and use this variable as a predictor in the regression equation. This results in the model
+
+Now can be interpreted as the average credit card balance among males, as the average credit card balance among females, and as the average difference in credit card balance between females and males. We can produce this model in R using the same syntax as we saw earlier:
+
+```{r}
+# credit <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Credit.csv")
+credit <- ISLR::Credit
+credit %>% head()
+model4 <- lm(Balance ~ Gender, data=credit)
+```
+
+The results below suggest that females are estimated to carry $529.54$ in credit card debt where males carry $529.54 - 19.73 = 509.81$
+
+```{r}
+broom::tidy(model4)
+```
+
+The decision to code females as 0 and makes as 1 in is arbitrary, and has no effect on the regression fit, but does alter the interpretation of the coefficients. If we want to change the reference variable (the variable coded as 0) we can change the factor levels.
+
+```{r}
+# credit$Gender <- factor(credit$Gender, levels = c("Male", "Female"))
+
+lm(Balance ~ Gender, data = credit) %>%
+  tidy()
+```
+
+A similar process ensues for qualitative predictor categories with more than two levels. For instance, if we want to assess the impact that ethnicity has on credit balance we can run the following model. Ethnicity has three levels: _African American, Asian, Caucasian_. We interpret the coefficients much the same way. In this case we see that the estimated balance for the baseline, African American, is `$531.00`. It is estimated that the Asian category will have `$18.69` less debt than the African American category, and that the Caucasian category will have $12.50 less debt than the African American category. However, the p-values associated with the coefficient estimates for the two dummy variables are very large, suggesting no statistical evidence of a real difference in credit card balance between the ethnicities.
+
+```{r}
+lm(Balance ~ Ethnicity, data = credit) %>% 
+  broom::tidy()
+```
+
+The process for assessing model accuracy, both numerically and visually along with measuring predictions can follow the same process as outlined for qualitative predictor variables.
+
+##### Transformations
+
+Linear regression models assume a linear relationship between the response and predictors. But in some cases, the true relationship between the response and the predictors may be non-linear. We can accomodate certain non-linear relationships by transforming variables (i.e. `log(x)`, `sqrt(x)`) or using polynomial regression.
+
+As an example consider the `Auto` data set. We can see that a linear trend does not fit the relationship between mpg and horsepower.
+
+```{r}
+auto <- ISLR::Auto
+ggplot(auto, aes(horsepower, mpg)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+We can try to address the non-linear relationship with a quadratic relationship, which takes the form of:
+
+We can fit this model in R with:
+```{r}
+model5 <- lm(mpg ~ horsepower + I(horsepower^2), data = auto)
+broom::tidy(model5)
+```
+
+Does this fit our relationship better? We can visualize it with:
+
+```{r}
+ggplot(auto, aes(horsepower, mpg)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x + I(x^2))
+```
+
+##### Correlation of error terms
+
+An important assumption of the linear regression model is that the error terms, , are uncorrelated. Correlated residuals frequently occur in the context of time series data, which consists of observations for which measurements are obtained at discrete points in time. In many cases, observations that are obtained at adjacent time points will have positively correlated errors. This will result in biased standard errors and incorrect inference of model results.
+
+To illustrate, we’ll create a model that uses the number of unemployed to predict personal consumption expenditures (using the `economics` data frame provided by `ggplot2`). The assumption is that as more people become unemployed personal consumption is likely to reduce. However, if we look at our model’s residuals we see that adjacent residuals tend to take on similar values. In fact, these residuals have a .998 autocorrelation. This is a clear violation of our assumption. We’ll learn how to deal with correlated residuals in future tutorials.
+
+```{r}
+df <- economics %>% 
+  mutate(observation = 1:n())
+
+model6 <- lm(pce ~ unemploy, data = df)
+
+df %>% 
+  add_residuals(model6) %>% 
+  ggplot(aes(observation, resid))+
+  geom_line()
+```
+
+##### Collinearity
+
+_Collinearity_ refers to the situation in which two or more predictor variables are closely related to one another. The presence of collinearity can pose problems in the regression context, since it can be difficult to separate out the individual effects of collinear variables on the response. In fact, collinearity can cause predictor variables to appear as statistically insignificant when in fact they are significant.
+
+For example, compares the coefficient estimates obtained from two separate multiple regression models. The first is a regression of balance on age and limit, and the second is a regression of balance on rating and limit. In the first regression, both age and limit are highly significant with very small p- values. In the second, the collinearity between limit and rating has caused the standard error for the limit coefficient estimate to increase by a factor of 12 and the p-value to increase to 0.701. In other words, the importance of the limit variable has been masked due to the presence of collinearity.
+
+```{r}
+model7 <- lm(Balance ~ Age + Limit, data = credit)
+model8 <- lm(Balance ~ Rating + Limit, data = credit)
+
+list(`Model1` = broom::tidy(model7),
+     `Model2` = broom::tidy(model8))
+```
+
+
+A simple way to detect collinearity is to look at the correlation matrix of the predictors. An element of this matrix that is large in absolute value indicates a pair of highly correlated variables, and therefore a collinearity problem in the data. Unfortunately, not all collinearity problems can be detected by inspection of the correlation matrix: it is possible for collinear- ity to exist between three or more variables even if no pair of variables has a particularly high correlation. We call this situation multicollinearity.
+
+Instead of inspecting the correlation matrix, a better way to assess multi- collinearity is to compute the _variance inflation factor (VIF)_. The VIF is the ratio of the variance of when fitting the full model divided by the variance of if fit on its own. The smallest possible value for VIF is 1, which indicates the complete absence of collinearity. Typically in practice there is a small amount of collinearity among the predictors. As a rule of thumb, a VIF value that exceeds 5 or 10 indicates a problematic amount of collinearity. The VIF for each variable can be computed using the formula
+
+where is the from a regression of onto all of the other predictors. We can use the `vif` function from the `car` package to compute the VIF. As we see below model 7 is near the smallest possible VIF value where model 8 has obvious concerns.
+
+```{r}
+car::vif(model7)
+##      Age    Limit 
+## 1.010283 1.010283
+car::vif(model8)
+##   Rating    Limit 
+## 160.4933 160.4933
+```
+
+
+### Linear model selection
+
+It is often the case that some or many of the variables used in a multiple regression model are in fact not associated with the response variable. Including such irrelevant variables leads to unnecessary complexity in the resulting model. Unfortunately, manually filtering through and comparing regression models can be tedious. Luckily, several approaches exist for automatically performing feature selection or variable selection �? that is, for identifying those variables that result in superior regression results. This tutorial will cover a traditional approach known as model selection.
+
+#### tl;dr
+
+This tutorial serves as an introduction to linear model selection and covers:
+
+1. [Replication requrements: What you will need to reproduce the analysis in this tutorial](#replication_requirements)
+2. Best subset selection: Finding the best combination of the p predictors
+3. Stepwise selection: Computationally efficient approach for feature selection
+4. Comparing models: Determining which model is best
+5. Additional resources: additional resources to help you learn more
+
+#### Replication requirements {#replication_requirements}
+
+This tutorial primary leverages the `Hitters` data provided by the `ISLR` package. This is a data set that contains number of hits, homeruns, RBIs, and other information for 322 major league baseball players. We’ll also use `tidyverse` for some basic data manipulation and visualization. Most importantly, we’ll use the `leaps` package to illustrate subset selection methods.
+
+```{r}
+# package
+library(leaps) # model selection functions
+
+# load data and remove rows with missing data
+(hitters <- na.omit(ISLR::Hitters) %>% 
+  as_tibble())
+```
+
+#### Best subset selection
+
+To perform best subset selection, we fit a separate least squares regression for each possible combination of the _p_ predictors. That is, we fit all _p_ models that contain exactly one predictor, all \begin{pmatrix}
+p  \\2  \\\end{pmatrix} = p(p-1)/2  models that contain exactly two predictors, and so forth. 
+
+We then look at all of the resulting models, with the goal of identifying the one that is best. 
+
+The three-stage process of perfoming best subset selection includes:
+
+__step1__: LEt $M_0$ denote the null model, which contains no predictors. This model simply predicts the sample mean for each observation.
+
+__Step2__: For k = 1,2,...,p:
+
+- Fit all (p k) models that contain exactly k predictors
+- Pick the best among these (p k) models, and call it $M_k$. Here best is defined as having the smallest RSS, or equivalently largest $R^2$
+
+__Step3__: Select a single best model from among $<M_0, ,...,M_p$ using cross-validated prediction error, $C_p$, AIC, BIC or adjusted $R^2$. 
+
+Let's illustrate with our data. We can perform a best subset search using `regsubsets` (part of the `leaps` library), which identifies the best model for a given number of _k_ predictors, where best is quantified using RSS. 
+
+The syntax is the same as the lm function. By default, `regsubsets` only reports results up to the best eight-variable model. But the `nvmax` option can be used in order to return as many variables as are desired. Here we fit up to a 19-variable model.
+
+```{r}
+best_subset <- regsubsets(Salary ~ ., hitters, nvmax = 19)
+```
+
+The resubsets function returns a list-object with lots of information. Initially, we can use the `summary` command to assess the best set of variables for each model size. So, for a model with 1 variable we see that CRBI has an asterisk signalling that a regression model with _Salary ~ CRBI_ is the best single variable model. The best 2 variable model is _Salary ~ CRBI + Hits_. The best 3 variable model is _Salary ~ CRBI + Hits + PutOuts_. An so forth.
+
+```{r}
+summary(best_subset)
+```
+
+We can also get the RSS, $R^2$, adjusted $R^2$, $C_p$ and BIC from the results which help us to assess the best overall model; however, we will illustrate this in the [comparing models] section. First, let's look at how to perform stepwise selection.
+
+#### Stepwise selection
+
+For computational reasons, best subset selection cannot be applied when the number of _p_ predictor variable is large. est subset selection may also suffer from statistical problems when p is large. The larger the search space, the higher the chance of finding models that look good on the training data, even though they might not have any predictive power on future data. Thus an enormous search space can lead to overfitting and high variance of the coefficient estimates. For both of these reasons, stepwise methods, which explore a far more restricted set of models, are attractive alternatives to best subset selection.
+
+##### Foward stepwise
+
+_Forward stepwise_ selection begins with a model containing no predictors, and then adds predictors to the model, one-at-a-time, until all of the predictors are in the model. In particular, at each step the variable that gives the greatest additional improvement to the fit is added to the model.
+
+The three-state process of performing foward stepwise selection includes:
+
+__Step1__:Let $M_0$ denote the null model, which contains no predictors. This model simply predicts the sample mean for each observation.
+ 
+__step2__: For $k=0,...,p-1$
+- Consider all _p-k_ models that augument the predictors in $M_k$ with one additional predictor
+- Choose the best among these _p-k_ models, and call it $M_{k+1}$. Here best is defined as having smallest RSS or highest $R^2$
+
+__Step3:__ Select a single best model from among $M_0, ..., M_p$ using cross-validated prediction error $C_p$, AIC, BIC or adjusted $R^2$
+
+We can perform backward stepwise using `regsubsets` by setting `method = "backward"`:
+
+```{r}
+backward <- regsubsets(Salary ~ ., hitters,
+                       nvmax = 19, method = "backward")
+```
+
+
+#### Comparing models
+
+So far, I've illustrated how to perform the best subset and stepwise procedures. Now let's discuss how to compare all the models that these approaches output in order to identify the _best_ model. That is, let's perform step 3 discussed in each of the 3-state processes outlined approaches.
+
+1. We can indirectly estimate test error by making an adjustment to the training error to account for the bias due to ovefitting.
+
+2. We can directly estimate the test error, using either a validation set approach or a cross-validation approach.
+
+We consider both of these approaches below.
+
+##### Indirectly estimating test error with $C_p$, AIC, BIC and adjusted $R^2$
+
+When performing the best subset or stepwise approaches, the $M_0,...,M_p$ models are selected based on the fact that they minimize the training set mean square error (MSE). Because of this and the fact that using the training MSE and $R^2$ will bias our results we should not use these statstics to determine which of the $M_0,...,M_p$ models is "the best".
+
+However, a number of technique for adjusting the training error for the model size are available. These approaches can be used to select among a set of models with different number of variables These include:
+
+__Objective: Minimize__
+- $C_p$: $C_p = \frac{1}{n}(RSS+2d\hat{\sigma})$
+- $Akaike information criterion$: $AIC = \frac{1}{n\hat{\sigma}}(RSS+2d\hat{\sigma^2})$
+- $Bayesian information criterion(BIC): BIC = \frac{1}{n}(RSS + log(n)d\hat{\sigma)}$
+
+__Objective: Maximize__
+- adjusted $R^2$: adj $R^2$ = 1 - $\frac{RSS/(n-d-1)}{TSS/(n-1)}$
+
+where, $d$ is the number of predictors and $\sigma^2$ is an estimate of the variance of the error $\epsilon$ associated with each response measurement in a regression model. Each of these statistics adds a penalty to the training RSS in order to adjust for the fact that the training error tends to underestimate the test error. Clearly, the penalty increases as the number of predictors in the model increases.
+
+Therefore, these statistics provide an unbiased estimate of test MSE. If we perform our model using a training vs. testing validation approach we can use these statistics to determine the preferred model. These statistics are contained in the output provided by the `regsubsets` function. Let’s extract this information and plot them.
+
+```{r}
+# create training - testing data
+set.seed(1)
+sample <- sample(c(T,F), nrow(hitters), replace=T, prob = c(0.6, 0.4))
+train <- hitters[sample,]
+test <- hitters[!sample,]
+
+# perform best subset selection
+best_subset <- regsubsets(Salary~., train, nvmax = 19)
+results <- summary(best_subset)
+
+# extract and plot results
+tibble(predictors = 1:19,
+       adj_R2 = results$adjr2,
+       Cp = results$cp,
+       BIC = results$bic) %>% 
+  gather(statistic, value, -predictors) %>% 
+  ggplot(aes(predictors, value, color=statistic))+
+  geom_line(show.legend = F)+
+  geom_point(show.legend = F)+
+  facet_wrap(~statistic, scales="free")
+```
+
+Here we see that our results identify slightly different models that are considered the best. The adjusted $R^2$ statistic suggests the 10 variable model is preferred, the BIC statistic suggests the 4 variable model, and the $C_p$ suggests the 8 variable model.
+
+```{r}
+which.max(results$adjr2)
+which.min(results$bic)
+min(results$bic)
+which.min(results$cp)
+```
+
+We can compare the variables and coefficinets that these models include using the `coef` function.
+
+```{r}
+# 10 variable model
+coef(best_subset, 10)
+
+# 4 variable model
+coef(best_subset, 4)
+
+# 8 variable model
+coef(best_subset, 8)
+```
+
+We could perform the same process using foward and backward stepwise selection and obtain even more options for optimal models. For example, if I assess the optimal $C_p$ for foward/backward stepwise, we see that they suggest that an 8 variable model minimizes the $C_p$ statsitic, similar to the best subset approach above.
+
+```{r}
+forward <- regsubsets(Salary ~ ., train, nvmax = 19, method = "forward")
+backward <- regsubsets(Salary ~ ., train, nvmax = 19, method = "backward")
+
+# which models minimize Cp?
+which.min(summary(forward)$cp)
+## [1] 8
+which.min(summary(backward)$cp)
+## [1] 8
+```
+
+However, when we assess these models we see that the 8 variable models include different predictors. Although, all models include AtBat, Hits, Walks, CWalks, and PutOuts, there are unique variables in each model.
+
+```{r}
+coef(best_subset, 8)
+## (Intercept)       AtBat        Hits       Walks      CAtBat       CHits 
+## -59.2371674  -1.4744877   6.6802515   4.4777879  -0.3203862   1.5160882 
+##      CHmRun      CWalks     PutOuts 
+##   1.1861142  -0.4714870   0.2748103
+coef(forward, 8)
+##  (Intercept)        AtBat         Hits        Walks        CRuns 
+## -112.7724200   -2.1421859    8.8914064    5.4283843    0.8555089 
+##         CRBI       CWalks      LeagueN      PutOuts 
+##    0.4866528   -0.9672115   64.1628445    0.2767328
+coef(backward, 8)
+## (Intercept)       AtBat        Hits       Walks      CAtBat       CHits 
+## -59.2371674  -1.4744877   6.6802515   4.4777879  -0.3203862   1.5160882 
+##      CHmRun      CWalks     PutOuts 
+##   1.1861142  -0.4714870   0.2748103
+```
+
+This highlights two important findings:
+
+1. Different subsetting procedures (best subset vs. forward stepwise vs. backward stepwise) will likely identify different “best�? models.
+2. Different indirect error test estimate statistics ($C_p, AIC, BIC and adjusted R^2$) will likely identify different best models.
+
+This is why it is important to always perform validation; that is to always estiamte the test error directly either by using a validation set or using cross-validation.
+
+##### Directly estimating test error
+
+We now compute the validation set error for the best model of each model size. We first make a model matrix from the test data. The model.matrix function is used in many regression packages for build- ing an “X�? matrix from data.
+
+```{r}
+test_m <- model.matrix(Salary~., data = test)
+```
+
+Now we can loop through each moel size (i.e., 1 variable, 2 variables, ... 19 variables) and extract the coefficient for the best model of that size, multiply them into the appropriate coluns of the test moel matrix to form the predictors and compute the test MSE. 
+
+```{r}
+# create empty vector to fill with erro values
+validation_errors <- vector("double", length=19)
+
+for(i in 1:19) {
+  coef_x <- coef(best_subset, id = i)                     # extract coefficients for model size i
+  pred_x <- test_m[ , names(coef_x)] %*% coef_x           # predict salary using matrix algebra
+  validation_errors[i] <- mean((test$Salary - pred_x)^2)  # compute test error btwn actual & predicted salary
+}
+
+# plot validation errors
+plot(validation_errors, type = "b")
+```
+
+Here, we actually see that the 1 variable model produced by the best subset approach produces the lowest test MSE! If we repeat this using a different random value seed, we will get a slightly different model that is the “best�?. However, if you recall from the [Resampling Methods](http://uc-r.github.io/resampling_methods) tutorial, this is to be expected when using a training vs. testing validation approach.
+
+```{r}
+# create training - testing data
+set.seed(5)
+sample <- sample(c(TRUE, FALSE), nrow(hitters), replace = T, prob = c(0.6,0.4))
+train <- hitters[sample, ]
+test <- hitters[!sample, ]
+
+# perform best subset selection
+best_subset <- regsubsets(Salary ~ ., train, nvmax = 19)
+
+# compute test validation errors
+test_m <- model.matrix(Salary ~ ., data = test)
+validation_errors <- vector("double", length = 19)
+
+for(i in 1:19) {
+  coef_x <- coef(best_subset, id = i)                     # extract coefficients for model size i
+  pred_x <- test_m[ , names(coef_x)] %*% coef_x           # predict salary using matrix algebra
+  validation_errors[i] <- mean((test$Salary - pred_x)^2)  # compute test error btwn actual & predicted salary
+}
+
+# plot validation errors
+plot(validation_errors, type = "b")
+```
+
+A more robust approach is to perform cross validation. But before we do, let’s turn our our approach above for computing test errors into a function. Our function pretty much mimics what we did above. The only complex part is how we extracted the formula used in the call to `regsubsets`. I suggest you work through this line-by-line to understand what each step is doing.
+
+```{r}
+predict.regsubsets <- function(object, newdata, id ,...) {
+  form <- as.formula(object$call[[2]]) 
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  mat[, xvars] %*% coefi
+  }
+```
+
+We now try to choose among the models of different sizes using k-fold cross-validation. This approach is somewhat involved, as we must perform best subset selection within each of the `k training sets`. First, we create a vector that allocates each observation to one of `k = 10` folds, and we create a matrix in which we will store the results.
+
+```{r}
+k <- 10
+set.seed(1)
+folds <- sample(1:k, nrow(hitters), replace = TRUE)
+cv_errors <- matrix(NA, k, 19, dimnames = list(NULL, paste(1:19)))
+cv_errors
+```
+
+Now we write a for loop that performs cross-validation. In the jth fold, the elements of folds that equal j are in the test set, and the remainder are in the training set. We make our predictions for each model size, compute the test errors on the appropriate subset, and store them in the appropriate slot in the matrix `cv_errors`.
+
+```{r}
+for(j in 1:k) {
+  
+  # perform best subset on rows not equal to j
+  best_subset <- regsubsets(Salary ~ ., hitters[folds != j, ], nvmax = 19)
+  
+  # perform cross-validation
+  for( i in 1:19) {
+    pred_x <- predict.regsubsets(best_subset, hitters[folds == j, ], id = i)
+    cv_errors[j, i] <- mean((hitters$Salary[folds == j] - pred_x)^2)
+    }
+  }
+```
+
+This has given us a 10�?19 matrix, of which the (i,j)th element corresponds to the test MSE for the ith cross-validation fold for the best j-variable model. We use the `colMeans` function to average over the columns of this matrix in order to obtain a vector for which the jth element is the cross-validation error for the j-variable model.
+
+```{r}
+mean_cv_errors <- colMeans(cv_errors)
+plot(mean_cv_errors, type = "b")
+```
+
+We see that our more robust cross-validation approach selects an 11-variable model. We can now perform best subset selection on the full data set in order to obtain the 11-variable model.
+
+```{r}
+final_best <- regsubsets(Salary ~ ., data = hitters , nvmax = 19)
+coef(final_best, 11)
+```
+
+
+#### Additional resources
+
+This will get you started with approaches for performing linear model selection; however, understand that there are other approaches for more sophisticated model selection procedures. The following resources will help you learn more:
+
+- [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISLR/)
+- [Applied Predictive Modeling](http://appliedpredictivemodeling.com/)
+- [Elements of Statistical Learning](https://statweb.stanford.edu/~tibs/ElemStatLearn/)
+
+### Naive Bayes
+
+The __Naive Bayes classifier__ is a simple probabilistic classifier which is based on Bayes theorem but with strong assumptions regarding independence. Historically, this technique became popular with application in emal filtering, spam detection and document categorization. 
+
+Although it is often outperformed by other techniques, and desipite the naive design and oversimplified assumptions, this classifier can perform well in many complex real-world problems. And since it is a resource efficient algorithm that is fast and scales well, it is definitely a machine learning algorithms to have in your toolkit.
+
+#### tl;dr
+This tutorial serves as an introduction to naive Bayes classifier and covers:
+
+1. [Replication requirment](#Naive_Bayes_RR): what you will need to reproduce the analysis in this tutorial.
+2. [A naive overview](): A closer look behind the naive Bayes classifier and its pros and cons
+3. [caret](): Implementing with the `caret` package.
+4. [H2O](): Implementing with the `h2o` package.
+5. [Learning more]() Where to go from here.
+
+#### Replication requirements {#Naive_Bayes_RR}
+
+This tutorial leverages the following packages.
+
+```{r, warning=FALSE}
+library(rsample) # data splitting
+library(dplyr)   # data transformation
+library(ggplot2) # data visualization
+library(caret)   # implementing with caret
+library(h2o)     # implemeting with h2o
+```
+
+To illustrate the naive Bayes classifier, we will use the attrition data that has been included in the `rsample` package. The goal is to predict employee attrition.
+
+```{r}
+# convert some numeric variables to factors
+
+attrition <- attrition %>% 
+  mutate(
+    JobLevel = factor(JobLevel),
+    StockOptionLevel = factor(StockOptionLevel),
+    TrainingTimesLastYear = factor(TrainingTimesLastYear)
+  )
+
+# Create training (70%) and test (30%) sets for the attrition data.
+# Use set.seed for reproducibility
+set.seed(123)
+split <- initial_split(attrition, prop = .7, strata = "Attrition")
+train <- training(split)
+test  <- testing(split)
+
+# distribution of Attrition rates across train & test set
+table(train$Attrition) %>% prop.table()
+## 
+##       No      Yes 
+## 0.838835 0.161165
+table(test$Attrition) %>% prop.table()
+## 
+##        No       Yes 
+## 0.8386364 0.1613636
+```
+
+#### A Naive overview
+##### The idea
+
+The naive Bayes classifier is founded on Bayesian probability, which originated from [Reverend Thomas Bayes](https://en.wikipedia.org/wiki/Thomas_Bayes). Bayesian probability incorporates the concept of conditional probability, the probabilty of event A given that event B has occurred [denoted as $P(A|B)$. In the context of our attrition data, we are seeking the probability of an employee belonging to attrition class $C_k$ (where $C_{yes} attrition$ and $C_{no}=non-attrition$) given that its predictor values are $x_1, x_2,...,x_p$. This can be written as $P(C_k|x_1, ...,x_p)$.
+
+The Bayesian formula for claculating the probability is 
+
+$$
+P(C_k|X) = \frac{P(C_k) P(X|C_k)}{P(X)}
+$$
+
+where:
+
+- $P(C_k)$ is the _prior_ probability of the outcome. Essentially, based on the historical data, what is the probability of an employee attriting or not. As we saw in the above section preparing our training and test sets, our prior probability of an employee attriting was about 16% and the probability of not attriting was about 84%.
+- $P(X)$ is the probability of the predictor variables (same as $P(C_k|x_1,...,x_p)$.Essentially, based on the historical data, what is the probability of each observed combination of predictor variables. When new data comes in, this becomes our _evidence_.
+- $P(X|C_k)$ is the _conditional probability or likelihood_. Essentially, for each class of the response variable (i.e. attrit or not attrit), what is the probability of observing the predictor values. 
+- $P(C_k|X)$ is called our _posterior probability_. By combining our observed information, we are updating our a priori information on probabilities to compute a posterior probability that an observation has class $C_k$.
+
+We can re-write Eq.(1) in plaini english as:
+
+$$
+posterior = \frac{prior*likelihood}{evidence}
+$$
+
+Although Eq. (1) has simplistic beauty on its surface, it becomes complex and interactable as the number of predictor variables grow. In fact, to compute the posterior probability for a response variable with _m_ classes and a data set with _p_ predictors, Eq. (1) would require $m^p$ probabilities computed. Sor for our attrition data, we have 2 classes (attrition vs. non-attrition) and 31 variables, requiring 2,147,483,648 probabilities computed.
+
+##### The simplified classifier
+
+Consequently, the naive Bayes classifier makes a simplifying assumption (hence the name) to allow the computation to scale. With naive Bayes, we assume that the predictor variables are _conditionally independent_ of one another given the response value. This is an extremely strong assumption. We can see quickly that our attrition data violates this as we have several moderately to strongly correlated variables.
+
+```{r}
+train %>%
+  filter(Attrition == "Yes") %>% 
+  select_if(is.numeric) %>% 
+  cor() %>% 
+  corrplot::corrplot()
+```
+
+However, by making this assumption, we can simplify our calculation such that the posterior probability is simply the product of the probability distribution for each individual variable  conditioned on the response category (Eq. 2). Now we are only required to compute $m �? p$  probabilities (this equates to 62 probabilities for our data set), a far more managable task.
+
+$$
+P(C_k|X) = \prod_{i=1}^{n} P(x_i|C_k)
+$$
+
+For categorical variables, this computation is quite simple as you just use the frequencies from the data. However, when including continuous predictor variables often an assumption of normality is made so that we can use the probability from the variable’s probability density function. If we pick a handful of our numeric features we quickly see assumption of normality is not always fair.
+
+```{r}
+train %>% 
+  dplyr::select(Age,DailyRate,DistanceFromHome, HourlyRate, MonthlyIncome, MonthlyRate) %>% 
+  gather(metric, value) %>% 
+  ggplot(aes(value, fill=metric))+
+  geom_density(show.legend = FALSE)+
+  facet_wrap(~metric, scales="free")
+```
+
+Granted, some numeric features may be normalized with a Box-Cox transformation; however, as you will see in this tutorial we can also use non-parametric kernel density estimators to try get a more accurate representation of continuous variable probabilities. Ultimately, transforming the distributions and selecting an estimator is part of the modeling development and tuning process.
+
+##### Laplace Smoother
+
+One additional issue to be aware of - since naïve Bayes uses the product of feature probabilities conditioned on each class, we run into a serious problem when new data includes a feature value that never occurs for one or more levels of a response class. What results is $P(x_i|C_k)=0$ for this individual feature adn this zero will ripple through the entire multiplication of all features and this zero will ripple through the entire multiplication of all features and will always force the posterior probability to be zero for that class.
+
+A solution to this problem involves using the __Laplace smooother__. The Laplace smooother adds a small number to each of the counts in the frequencies for each feature, which ensures that each feature has a nonzero probability of occuring for each class. Typically, a value of one to two for the Laplace smoother is sufficient, but this is a tuning parameter to incorporate and optimize with cross validation.
+
+##### Advantage and Shortcomins
+
+The naïve Bayes classifier is simple (both intuitively and computationally), fast, performs well with small amounts of training data, and scales well to large data sets. The greatest weakness of the naïve Bayes classifier is that it relies on an often-faulty assumption of equally important and independent features which results in biased posterior probabilities. Although this assumption is rarely met, in practice, this algorithm works surprisingly well. This is primarily because what is usually needed is not a propensity (exact posterior probability) for each record that is accurate in absolute terms but just a reasonably accurate rank ordering of propensities.
+
+For example, we may not care about the exact posterior probability of attrition, we just want to know for a given observation, is the posterior probability of attriting larger than not attriting. Even when the assumption is violated, the rank ordering of the records�? propensities is typically preserved. Consequentely, naïve Bayes is often a surprisingly accurate algorithm; however, on average it rarely can compete with the accuracy of advanced tree-based methods (random forests & gradient boosting machines) but is definitely worth having in your toolkit.
+
+#### Implementation
+
+There are several packages to apply naive Bayes (i.e., `e1071`, `klaR`, `naivebayes`, `bnclassify`). This tutorial demonstrates using the `caret` and `h2o` packages. `caret` allows us to use different naive Bayes packages above but in a common framework, and also allows for easy cross validation and tuning. `h2o` allows us to perform naive Bayes in a powerful and scalable architecture.
+
+##### `caret`
+
+First, we apply a naive Bayes model with 10-fold cross validation, which gets 83% accuracy. Consider about 83% of our obsevations in our training set do not attrit, our overall accuracy is not better than 
+if we just predicted "No" attrition for every observation.
+
+```{r message=FALSE, warning=FALSE}
+library(caret)
+
+# create response and feature data
+features <- setdiff(names(train), "Attrition")
+features
+
+x <- train[, features]
+y <- train$Attrition
+
+# set up 10-fold cross validation procedure
+train_control <- trainControl(
+  method = "cv",
+  number = 10
+)
+
+# train model
+nb.m1 <- caret::train(
+  x = x,
+  y = y,
+  method = "nb",
+  trControl = train_control
+)
+# results 
+confusionMatrix(nb.m1)
+```
+
+We can turn the few hyperparameters that a naive Bayes model has.
+
+- `usekernel`: parameter allows us to use a kernel density estimate for continuous variables versus a guassian density estimate,
+- `adjust`:  allows us to adjust the bandwidth of the kernel density (larger numbers mean more flexible density estimate),
+- `fL`: allows us to incorporate the Laplace smoother.
+
+If we just tuned our modelwith the above parameters, we are able to lift our accuracy to 85%; however, by incorporating some preprocessing of our features (normalize with Box Cox, standardize with center-scaling, and reducing with PCA), we actually get about another 2% lift in our accuracy.
+
+```{r eval=FALSE}
+# set up tuning grid
+search_grid <- expand.grid(
+  usekernel = c(TRUE, FALSE),
+  fL = 0:5,
+  adjust = seq(0, 5, by = 1)
+)
+
+# train model
+nb.m2 <- train(
+  x = x,
+  y = y,
+  method = "nb",
+  trControl = train_control,
+  tuneGrid = search_grid,
+  preProc = c("BoxCox", "center", "scale", "pca")
+  )
+
+# top 5 model
+nb.m2$results %>% 
+  top_n(5, wt=Accuracy) %>% 
+  arrange(Desc(Accuracy))
+##   usekernel fL adjust  Accuracy     Kappa AccuracySD   KappaSD
+## 1      TRUE  1      3 0.8737864 0.4435322 0.02858175 0.1262286
+## 2      TRUE  0      2 0.8689320 0.4386202 0.02903618 0.1155707
+## 3      TRUE  2      3 0.8689320 0.4750282 0.02830559 0.0970368
+## 4      TRUE  2      4 0.8689320 0.4008608 0.02432572 0.1234943
+## 5      TRUE  4      5 0.8689320 0.4439767 0.02867321 0.1354681
+
+
+# plot search grid results
+plot(nb.m2)
+```
+
+```{r eval=FALSE}
+# results for best model
+confusionMatrix(nb.m2)
+
+## Cross-Validated (10 fold) Confusion Matrix 
+## 
+## (entries are percentual average cell counts across resamples)
+##  
+##           Reference
+## Prediction   No  Yes
+##        No  80.8  9.5
+##        Yes  3.1  6.6
+##                             
+##  Accuracy (average) : 0.8738
+```
+
+
+We can assess the accuracy on our final holdout test set. Its obvious that our model is not capturing a large percentage of our actual attritions (illustrated by our low specificity).
+
+```{r eval=FALSE}
+pred <- predict(nb.m2, newdata = test)
+confusionMatrix(pred, test$Attrition)
+## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction  No Yes
+##        No  349  41
+##        Yes  20  30
+##                                           
+##                Accuracy : 0.8614          
+##                  95% CI : (0.8255, 0.8923)
+##     No Information Rate : 0.8386          
+##     P-Value [Acc > NIR] : 0.10756         
+##                                           
+##                   Kappa : 0.4183          
+##  Mcnemar's Test P-Value : 0.01045         
+##                                           
+##             Sensitivity : 0.9458          
+##             Specificity : 0.4225          
+##          Pos Pred Value : 0.8949          
+##          Neg Pred Value : 0.6000          
+##              Prevalence : 0.8386          
+##          Detection Rate : 0.7932          
+##    Detection Prevalence : 0.8864          
+##       Balanced Accuracy : 0.6842          
+##                                           
+##        'Positive' Class : No              
+## 
+```
+
+#### `h2o`
+
+Lets go ahead and start up `h2o`:
+
+```{r}
+# start up h2o
+library(h2o)
+h2o.no_progress()
+h2o.init()
+```
+
+We can compute a naïve Bayes model in `h2o` with `h2o.naiveBayes`. Here we use the default model with no Laplace smoother. We experience similar results on our training cross validation as we did using `caret`.
+
+```{r}
+# create feature names
+y <- "Attrition"
+x <- setdiff(names(train), y)
+
+library(magrittr)
+# h2o cannot ingest ordered factors
+train.h2o <- train %>%
+  mutate_if(is.factor, factor, ordered=FALSE) %>% 
+  as.h2o()
+
+# train model
+nb.h2o <- h2o.naiveBayes(
+  x = x,
+  y = y,
+  training_frame = train.h2o,
+  nfolds = 10,
+  laplace = 0
+)
+
+# assess results
+h2o.confusionMatrix(nb.h2o)
+## Confusion Matrix (vertical: actual; across: predicted)  for max f1 @ threshold = 0.751627773135859:
+##         No Yes    Error       Rate
+## No     812  52 0.060185    =52/864
+## Yes     77  89 0.463855    =77/166
+## Totals 889 141 0.125243  =129/1030
+```
+
+We can also do some feature preprocessing as we did with caret and tune the Laplace smoother using `h2o.grid`. We don’t see much improvement.
+
+```{r}
+# do a little preprocessing
+preprocess <- preProcess(train, method = c("BoxCox", "center", "scale", "pca"))
+train_pp <- predict(preprocess, train)
+test_pp <- predict(preprocess, test)
+
+# convert to h2o objects
+train_pp.h2o <- train_pp %>% 
+  mutate_if(is.factor, factor, ordered=FALSE) %>% 
+  as.h2o()
+
+test_pp.h2o <- test_pp %>% 
+  mutate_if(is.factor, factor, ordered=FALSE) %>% 
+  as.h2o()
+
+# get new feature names -> PCA preprocessing reduced and changed some fe
+x <- setdiff(names(train_pp), "Attrition")
+y <- "Attrition"
+
+# create tuning grid
+hyper_params <- list(
+  laplace = seq(0,5, by = 0.5)
+)
+
+# build grid search
+grid <- h2o.grid(
+  algorithm = "naivebayes",
+  grid_id = "nb_grid",
+  x = x,
+  y = y,
+  training_frame = train_pp.h2o,
+  nfolds = 10,
+  hyper_params = hyper_params
+)
+
+# sort the grid models by mse
+sorted_grid <- h2o.getGrid("nb_grid", sort_by = "accuracy",
+                           decreasing = TRUE)
+sorted_grid
+## H2O Grid Details
+## ================
+## 
+## Grid ID: nb_grid 
+## Used hyper parameters: 
+##   -  laplace 
+## Number of models: 11 
+## Number of failed models: 0 
+## 
+## Hyper-Parameter Search Summary: ordered by decreasing accuracy
+##    laplace        model_ids           accuracy
+## 1      2.5  nb_grid_model_5 0.8572815533980582
+## 2      5.0 nb_grid_model_10 0.8572815533980582
+## 3      3.0  nb_grid_model_6 0.8533980582524272
+## 4      2.0  nb_grid_model_4 0.8504854368932039
+## 5      1.5  nb_grid_model_3 0.8466019417475728
+## 6      4.5  nb_grid_model_9 0.8407766990291262
+## 7      0.5  nb_grid_model_1 0.8398058252427184
+## 8      4.0  nb_grid_model_8 0.8339805825242719
+## 9      3.5  nb_grid_model_7 0.8281553398058252
+## 10     1.0  nb_grid_model_2 0.8194174757281554
+## 11     0.0  nb_grid_model_0 0.8009708737864077
+
+# grab top model id
+best_h2o_model <- sorted_grid@model_ids[[1]]
+best_model <- h2o.getModel(best_h2o_model)
+
+# confusion matrix of best model
+h2o.confusionMatrix(best_model)
+
+# ROC curve
+auc <- h2o.auc(best_model, xval = TRUE)
+fpr <- h2o.performance(best_model, xval = TRUE) %>% h2o.fpr() %>% .[['fpr']]
+tpr <- h2o.performance(best_model, xval = TRUE) %>% h2o.tpr() %>% .[['tpr']]
+
+data.frame(fpr = fpr,
+           tpr = tpr) %>% 
+  ggplot(aes(fpr, tpr))+
+  geom_line()+
+  ggtitle(sprintf('AUC: %f', auc))
+```
+
+Once we’ve identified the optimal model we can assess on our test set.
+
+```{r}
+# evaluate on test set
+h2o.performance(best_model, newdata = test_pp.h2o)
+## H2OBinomialMetrics: naivebayes
+```
+
+```{r}
+# predict new data
+h2o.predict(nb.h2o, newdata = test_pp.h2o)
+##   predict        No         Yes
+## 1      No 0.9851309 0.014869060
+## 2      No 0.9109746 0.089025413
+## 3      No 0.9947524 0.005247592
+## 4      No 0.9694504 0.030549563
+## 5      No 0.9683716 0.031628419
+## 6      No 0.9836910 0.016308996
+## 
+## [440 rows x 3 columns]
+
+# shut down h2o
+h2o.shutdown(prompt = FALSE)
+## [1] TRUE
+```
+
+#### Learning more
+Although we did not see much improvement over the baseline response class proportions in this example, the naïve Bayes classifier is often hard to beat in terms of CPU and memory consumption as shown by Huang, J. (2003), and in certain cases its performance can be very close to more complicated and slower techniques. Consquently, its a solid technique to have in your toolkit. If you want to dig deeper into this classifier, I would start with:
+
+- [Andrew Moore’s tutorials](http://www.cs.cmu.edu/~./awm/tutorials/naive.html)
+- [Naive Bayes classifiers by Kevin Murphy](https://datajobsboard.com/wp-content/uploads/2017/01/Naive-Bayes-Kevin-Murphy.pdf)
+- [Data Mining and Predictive Analytics, Ch. 14](https://www.amazon.com/Mining-Predictive-Analytics-Daniel-Chantal/dp/8126559136/ref=sr_1_1?ie=UTF8&qid=1524231609&sr=8-1&keywords=data+mining+and+predictive+analytics+2nd+edition+%2C+by+larose)
+
+### Logistic regression
+
+Logistic regression (aka logit regressionor logit model) was developed by statistician David Cox in 1958 and is a regression model where the response variable Y is categorical. Logistic regression allows us to estimate the probability of a categorical response based on one or more predictor variables ($X$). It allows one to say that the presence of a predictor increases (or decreases) the probability of a given outcome by a specific percentage. This tutorial covers the case when Y is binary �? that is, where it can take only two values, �?0�? and �?1�?, which represent outcomes such as pass/fail, win/lose, alive/dead or healthy/sick. Cases where the dependent variable has more than two outcome categories may be analysed with multinomial logistic regression, or, if the multiple categories are ordered, in ordinal logistic regression. However, _discriminant analysis_ has become a popular method for multi-class classification so our next tutorial will focus on that technique for those instances.
+
+#### tl;dr
+
+This turorial serves as an introudction to logistic regression and covers:
+
+1. [Replication requirements](#log-pre-requisite): What you’ll need to reproduce the analysis in this tutorial
+2. [Why logistic regression](#why-logit): Why use logistic regression?
+3. [Preparing our data](#logit-data): Prepare our data for modeling
+4. [Simple Logistic regression](): Predicting the probability of response Y with a single predictor variable X
+5. [Multiple Logistic regression](): Predicting the probability of response Y with multiple predictor variables $X_1, X_2,...X_p$
+6. [Model evaluation & diagnostics](): How well does the model fit the data? Which predictors are most important? Are the predictions accurate?
+
+#### Replication requirements {#log-pre-requisite}
+
+This tutorial primarily leverages the `Default` data provided by the `ISLR` package. This is simulated data set containing information on ten thousand customers such as whether the customer defaulted, is a student,  the average balance carried by the customer and the income of the customer. We’ll also use a few packages that provide data manipulation, visualization, pipeline modeling functions, and model output tidying functions.
+
+```{r logistic-prerequisite}
+library(tidyverse)
+library(modelr)
+library(broom)
+
+# load data
+(default <- as_tibble(ISLR::Default))
+```
+
+#### Why Logistic regression {#why-logit}
+
+Linear regression is not approproate in the case of qualitative response. Why not? Suppose that we are trying to predict the medical condition of a patient in the emergency room on the basis of her symptoms. In this simplified example, there are three possible diagnoses: _stroke_, _drug overdose_, and _epileptic seizure_. We could consider encoding these values as a quantitative response variable, `Y` , as follows:
+
+$$
+Y = 1, if stroke; \\
+    2, if drug overdose; \\
+    3, if epileptic seizure
+$$
+
+Using this coding, least squares could be used to fit a linear regression model to predict Y on the basis of a set of predictors $X_1,..., X_p$. . Unfortunately, this coding implies an ordering on the outcomes, putting drug overdose in between stroke and epileptic seizure, and insisting that the difference between stroke and drug overdose is the same as the difference between drug overdose and epileptic seizure. In practice there is no particular reason that this needs to be the case. For instance, one could choose an equally reasonable coding,
+
+$$
+Y = 1, if epileptic seizure;
+    2, if stroke;
+    3  if drug overdose 
+$$
+
+which would imply a totally different relationship among the three conditions. Each of these codings would produce fundamentally different linear models that would ultimately lead to different sets of predictions on test observations.
+
+More relevant to our data, if we are trying to classify a customer as a high- vs. low-risk defaulter based on their balance we could use linear regression; however, the left figure below illustrates how linear regression would predict the probability of defaulting. Unfortunately, for balances close to zero we predict a negative probability of defaulting; if we were to predict for very large balances, we would get values bigger than 1. These predictions are not sensible, since of course the true probability of defaulting, regardless of credit card balance, must fall between 0 and 1.
+
+```{r}
+default %>% colnames()
+
+lm <- lm(default ~ balance, data=default)
+glm <- glm(default ~ balance, data=default, family = "binomial")
+```
+
+
+To avoid this problem, we must model `p(X)` using a function that gives outputs between 0 and 1 for all values of `X`. Many functions meet this description. In logistic regression, we use the logistic function, which is defined in Eq. 1 and illustrated in the right figure above.
+
+$$
+p(x) = \frac{e^{\beta_o + \beta_1X}}{1+e^{\beta_o + \beta_1X}
+$$
+
+#### Preparing our data {#logit-data}
+
+As in the regression tutorial, we will split our data into a training (60%) and testing (40%) data sets so we can assess how well our model performs on an out-of-sample data set.
+
+```{r}
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(default), replace = T, prob = c(0.6,0.4))
+train <- default[sample, ]
+test <- default[!sample, ]
+```
+
+#### Simple logistic regression 
+
+We will fit a logistic regression model in order to predict the probability of a customer defaulting based on the average balance carried by the customer. The `glm` function fits generalized linear models, a class of models that includes logistic regression. The syntax of the `glm` function is similar to that of `lm`, except that we must pass the argument `family = binomial` in order to tell R to run a logistic regression rather than some other type of generalized linear model.
+
+```{r}
+model1 <- glm(default ~ balance, family = "binomial",
+             data = train)
+```
+
+In the background the `glm`, uses _maximum likelihood_ to fit the model. The basic intuition behind using maximum likelihood to fit a logistic regression model is as follows: we seek estimates for $\beta_0$ and $\beta_1$ such that the predicted probability $p(x_i)$ of default for each individual, using Eq.1, corresponds as closely as possible to the individual's observed default status. In other words, we try to find $\beta_0$ and $\beta_1$ 1
+  such that plugging these estimates into the model for $p(X)$, given in Eq. 1, yields a number close to one for all individuals who defaulted, and a number close to zero for all individuals who did not. This intuition can be formalized using a mathematical equation called a likelihood function:
+
+$$
+l(\beta_0, \beta_1) = \Pi_{i:y_i-1} p(x_i) \Pi_{i':y_i'=0}(1-p(x_i'))
+$$
+
+The estimates $\beta_0 and \beta_1$ are chosen to _maximize_ this likelihood function. Maximum likelihood is very general approach that is used to fit many of the non-linear models that we will examine in future totorial. What resuls is an S-shaped probability curve illustrated below (note that to plot the logistic regression fit line, we need to convert our response variable to a $[0,1]$ binary coded variable)
+
+```{r}
+default %>%
+  mutate(prob = ifelse(default == "Yes", 1, 0)) %>%
+  ggplot(aes(balance, prob)) +
+  geom_point(alpha = .15) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) +
+  ggtitle("Logistic regression model fit") +
+  xlab("Balance") +
+  ylab("Probability of Default")
+```
+
+Similar to linear regression we can assess the model using `summary` or `glance`. Note that the coefficient output format is similar to what we saw in linear regression; however, the goodness-of-fit details at the bottom of `summary` differ. We’ll get into this more later but just note that you see the word deviance. Deviance is analogous to the sum of squares calculations in linear regression and is a measure of the lack of fit to the data in a logistic regression model. The null deviance represents the difference between a model with only the intercept (which means “no predictors�?) and a saturated model (a model with a theoretically perfect fit). The goal is for the model deviance (noted as _Residual deviance_) to be lower; smaller values indicate better fit. In this respect, the null model provides a baseline upon which to compare predictor models.
+
+```{r}
+summary(model1)
+## 
+## Call:
+## glm(formula = default ~ balance, family = "binomial", data = train)
+## 
+## Deviance Residuals: 
+##     Min       1Q   Median       3Q      Max  
+## -2.2905  -0.1395  -0.0528  -0.0189   3.3346  
+## 
+## Coefficients:
+##               Estimate Std. Error z value Pr(>|z|)    
+## (Intercept) -1.101e+01  4.887e-01  -22.52   <2e-16 ***
+## balance      5.669e-03  2.949e-04   19.22   <2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## (Dispersion parameter for binomial family taken to be 1)
+## 
+##     Null deviance: 1723.03  on 6046  degrees of freedom
+## Residual deviance:  908.69  on 6045  degrees of freedom
+## AIC: 912.69
+## 
+## Number of Fisher Scoring iterations: 8
+```
+
+##### Asessing coefficients
+
+The below table shows the coefficient estimates and related information that result from fitting a logistic regression model in order to predict the probability of default = Yes using balance. Bear in mind that the coefficient estimates from logistic regression characterize the relationship between the predictor and response variable on a _log-odds_ scale (see Ch. 3 of ISLR1 for more details). Thus, we see that $\hatβ_1=0.0057$ ; this indicates that an increase in balance is associated with an increase in the probability of default. To be precise, a one-unit increase in balance is associated with an increase in the log odds of default by 0.0057 units.
+
+```{r}
+broom::tidy(model1)
+##          term      estimate   std.error statistic       p.value
+## 1 (Intercept) -11.006277528 0.488739437 -22.51972 2.660162e-112
+## 2     balance   0.005668817 0.000294946  19.21985  2.525157e-82
+```
+
+We can further interpret the _balance_ coefficient as - for every one dollar increase in monthly balance carried, the odds of the customer defaulting increases by a factor of 1.0057.
+
+```{r}
+exp(coef(model1))
+```
+
+Many aspects of the coefficient output are similar to those discussed in the linear regression output. For example, we measure the confidence intervals and accuracy of the coefficient estimates by computing their standard errors. For instance, $\hatβ_1$ has a p-value < $2e-16$ and the probability of defaulting. We can also use the standard errors to get confidence intervals as we did in the linear regression tutorial:
+
+```{r}
+confint(model1)
+```
+
+##### Making predictions
+
+Once the coefficients have benn estimated, it is a simple matter to comupte the probability of default for any given credit card balance.  Mathematically, using the coefficient estimates from our model we predict that the default probability for an individual with a balance of $1,000 is less than 0.5%
+
+$$
+\hat p(x) = \frac{e^{\hat \beta_0 + \hat \beta_1 X}}{1 +e ^{\hat \beta_0 + \hat \beta_1 X}} = 0.004785
+
+, where \beta_o = -11.0063, 0.0057
+$$
+
+We can predict the probability of defaulting in R using the `predict` function (be sure to include `type = "response"`). Here we compare the probability of defaulting based on balances of `$1000 and $2000`. As you can see as the balance moves from `$1000 to $2000` the probability of defaulting increases signficantly, from 0.5% to 58%!
+
+```{r}
+predict(model1, 
+        data.frame(balance = c(1000, 2000)), 
+        type = "response")
+##           1           2 
+## 0.004785057 0.582089269
+```
+
+One can also use qualitative predictors with the logistic regression model. As an example, we can fit a model that uses the `student` variable.
+
+```{r}
+model2 <- glm(default ~ student, family = "binomial", data = train)
+
+tidy(model2)
+##          term   estimate  std.error statistic     p.value
+## 1 (Intercept) -3.5534091 0.09336545 -38.05914 0.000000000
+## 2  studentYes  0.4413379 0.14927208   2.95660 0.003110511
+```
+
+The coefficient associated with `student = Yes` is positive, and the associated p-value is statistically significant. This indicates that students tend to have higher default probabilities than non-students. In fact, this model suggests that a student has nearly twice the odds of defaulting than non-students. However, in the next section we’ll see why.
+
+$$
+p(default = Yes|student = Yes) = 
+\frac{e^{-3.55+0.44*1}}{1+e^{-3.55+0.44*1}}=0.0426 \\
+
+p(default = Yes|student = No) = 
+\frac{e^{-3.55+0.44*0}}{1+e^{-3.55+0.44*0}}=0.0426
+
+$$
+
+
+```{r}
+predict(model2, data.frame(student = factor(c("Yes", "No"))), type = "response")
+##          1          2 
+## 0.04261206 0.02783019
+```
+
+#### Multiple logistic regression
+
+We can also extend our model as seen in Eq. 1 so that we can predict a binary response using multiple predictors where $X = (X_1,..., X_p$) are p predictors:
+
+$$
+p(X) = \frac{e^{\beta_0+\beta_1X_1+...+\beta_pX_p}}{1+e^{\beta_0+\beta_1X_1+...+\beta_pX_p}}
+$$
+
+Let’s go ahead and fit a model that predicts the probability of _default_ based on the balance, income (in thousands of dollars), and student status variables. There is a surprising result here. The p-values associated with `balance` and `student=Yes` status are very small, indicating that each of these variables is associated with the probability of defaulting. However, the coefficient for the student variable is negative, indicating that students are less likely to default than non-students. In contrast, the coefficient for the student variable in model 2, where we predicted the probability of default based only on student status, indicated that students have a greater probability of defaulting. What gives?
+
+```{r}
+model3 <- glm(default ~ balance + income + student, family = "binomial", data = train)
+tidy(model3)
+```
+
+The right-hand panel of the figure below provides an explanation for this discrepancy. The variables student and balance are correlated. Students tend to hold higher levels of debt, which is in turn associated with higher probability of default. In other words, students are more likely to have large credit card balances, which, as we know from the left-hand panel of the below figure, tend to be associated with high default rates. Thus, even though an individual student with a given credit card balance will tend to have a lower probability of default than a non-student with the same credit card balance, the fact that students on the whole tend to have higher credit card balances means that overall, students tend to default at a higher rate than non-students. This is an important distinction for a credit card company that is trying to determine to whom they should offer credit. A student is riskier than a non-student if no information about the student’s credit card balance is available. However, that student is less risky than a non-student with the same credit card balance!
+
+```{r include=FALSE}
+model3$model
+
+predict(model3, 
+        data.frame(balance = c(1000, 2000),
+                   student = c("Yes", "No"),
+                   income=1000), 
+        type = "response")
+
+pred <- predict(model3, test,
+        type = "response")
+
+pred_results <- test %>% 
+  bind_cols(pred = pred)
+
+pred_results %>% 
+  ggplot(aes(balance, pred, col=student, group=student))+
+  geom_point(size=0.5)+
+  geom_line()
+```
+
+This simple example illustrates the dangers and subtleties associated with performing regressions involving only a single predictor when other predictors may also be relevant. The results obtained using one predictor may be quite different from those obtained using multiple predictors, especially when there is correlation among the predictors. This phenomenon is known as _confounding_.
+
+In the case of multiple predictor variables sometimes we want to understand which variable is the most influential in predicting the response (`Y`) variable. We can do this with `varImp` from the `caret` package. Here, we see that _balance_ is the most important by a large margin whereas student status is less important followed by income (which was found to be insignificanbt anyways (p = .64)).
+
+```{r}
+caret::varImp(model3)
+```
+
+As before, we can easily make predictions with this model. For example, a student with a credit card balance of $1,500$ and an income of $40,000$ has an estimated probability of default of
+
+$$
+p(X) = p(X) = \frac{e^{-10.907+0.0591*1,500-0.00001*50-0.809*1}}{1+e^{-10.907+0.0591*1,500-0.00001*50-0.809*1}} = 0.054
+
+$$
+
+A non-student with the same balance and income has an estimated probability of default of 
+
+
+$$
+p(X) = p(X) = \frac{e^{-10.907+0.0591*1,500-0.00001*50-0.809*0}}{1+e^{-10.907+0.0591*1,500-0.00001*50-0.809*}} = 0.114
+$$
+
+```{r}
+new.df <- tibble(balance = 1500, income = 40, student = c("Yes", "No"))
+predict(model3, new.df, type = "response")
+##          1          2 
+## 0.05437124 0.11440288
+```
+
+Thus, we see that for the given balance and income (although income is insignificant) a student has about half the probability of defaulting than a non-student.
+
+#### Mode evaluation & diagnostics
+
+So far three logistic regression models have been built and the coefficients have been examined. However, some critical questions remain. Are the models any good? How well does the model fit the data? And how accurate are the predictions on an out-of-sample data set?
+
+##### Goodness of fit
+
+In the linear regression tutorial we saw how the F-statistic, $R^2$ and adjusted $R^2$ and residual diagnostics inform us of how good the model fits the data. Here, we will look at a few ways to assess the goodness of fit ofr our logit models.
+
+##### Likelihood ratio test
+
+First, we can use a _Likelihood Ratio Test_ to assess if our models are improving the fit. Adding predictor variables to a model will almost always improve the model fit (i.e. increase the log likelihood and reduce the model deviance compared to the null deviance), but it is necessary to test whether the observed difference in model fit is statistically significant. We can use _anova_ to perform this test. The results indicate that, compared to `model1`, `model3` reduces the residual deviance by over 13 (remember, a goal of logistic regression is to find a model that minimizes deviance residuals). More imporantly, this improvement is statisticallly significant at p = 0.001. This suggests that `model3` does provide an improved model fit.
+
+```{r}
+anova(model1, model3, test="Chisq")
+```
+
+##### pseudo $R^2$
+
+Unlike linear regression with ordinary least squares estimation, there is no $R^2$ statistic which explains the proportion of variance in the dependent variable that is explained by the predictors. However, there are a number of pseudo $R^2$ metrics that could be of value. Most notable is [McFadden's $R^2$](http://stats.stackexchange.com/questions/82105/mcfaddens-pseudo-r2-interpretation), which is defined as 
+
+$$
+1 - \frac{ln(LM_1)}{ln(LM_0)}
+$$
+
+where $ln(LM_1)$ is the log likelihood value for the fitted model and ln(LM_0) is the log likelohood for the null model with only an intercept as a predictor. The measure ranges from 0 to just under 1, with values closer to zero indicating that the model has no predictive power. However, unlike $R^2$ in linear regression, models rarely achieve a high McFadden $R^2$. In fact, in McFadden’s own words models with a McFadden pseudo $R^2 ~ 0.40$ represents a very good fit. We can assess McFadden's pseudo $R^2$ values for our models with:
+
+```{r}
+list(
+  model1 = pscl::pR2(model1)["McFadden"],  
+  model2 = pscl::pR2(model2)["McFadden"],  
+  model3 = pscl::pR2(model3)["McFadden"])
+```
+
+##### Residual assessment
+Keep in mind that logistic regression does not assume the residuals are normally distributed nor that the variance is constant. However, the deviance residual is useful for determining if individual points are not well fit by the model. Here we can fit the standardized deviance residuals to see how many exceed 3 standard deviations. First we extract several useful bits of model results with `augment` and then proceed to plot.
+
+```{r}
+model1_data <- augment(model1) %>% 
+  mutate(index = 1:n())
+
+ggplot(model1_data, aes(index, .std.resid, col=default))+
+  geom_point(alpha = .5)+
+  geom_ref_line(h = 3)
+```
+
+Those standardized residuals that exceed 3 represent possible outliers and may deserve closer attention. We can filter for these residuals to get a closer look. We see that all these observations represent customers who defaulted with budgets that are much lower than the normal defaulters.
+
+```{r}
+model1_data %>% 
+  filter(abs(.std.resid) > 3)
+```
+
+Similar to linear regression we can also identify influential observations with Cook’s distance values. Here we identify the top 5 largest values.
+
+```{r}
+plot(model1, which = 4, id.n = 5)
+```
+
+
+And we can investigate these further as well. Here we see that the top five influential points include:
+
+- hose customers who defaulted with very low balances and
+- two customers who did not default, yet had balances over $2,000
+
+This means if we were to remove these observations (not recommended), the shape, location, and confidence interval of our logistic regression S-curve would likely shift.
+
+```{r}
+model1_data %>% 
+  top_n(5, .cooksd)
+```
+
+#### Validation of predicted values
+
+##### Classification rate
+
+When developing models for prediction, the most critical metric is regarding how well the model does in predicting the target variable on out-of-sample observations. First, we need to use the estimated models to predict values on our training data set(`train`). When using `predict` be sure to include `type=response` so that the prediction returns the probability of default.
+
+```{r}
+test.predicted.m1 <- predict(model1, newdata = test, type = "response")
+test.predicted.m2 <- predict(model2, newdata = test, type = "response")
+test.predicted.m3 <- predict(model3, newdata = test, type = "response")
+```
+
+Now we can compare the predicted target variable versus the observed values for each model and see which performs the best. We can start by using the confusion matrix, which is a table that describes the classification performance for each model on the test data. Each quadrant of the table has an important meaning. In this case the “No�? and “Yes�? in the rows represent whether customers defaulted or not. The “FALSE�? and “TRUE�? in the columns represent whether we predicted customers to default or not.
+
+- __true positives__ (Bottom-right quadrant): these are cases in which we predicted the customer would default and they did.
+- __true negatives__ (Top-left quadrant): We predicted no default, and the customer did not default.
+- __false positives__ (Top-right quadrant): We predicted yes, but they didn’t actually default. (Also known as a “Type I error.�?)
+- __false negatives__ (Bottom-left): We predicted no, but they did default. (Also known as a “Type II error.�?)
+
+The results show that `model1` and `model3` are very similar. 96% of the predicted observations are true negatives and about 1% are true positives. Both models have a type II error of less than 3% in which the model predicts the customer will not default but they actually did. And both models have a type I error of less than 1% in which the models predicts the customer will default but they never did. `model2` results are notably different; this model accurately predicts the non-defaulters (a result of 97% of the data being non-defaulters) but never actually predicts those customers that default!
+
+```{r}
+list(
+  model1 = table(test$default, test.predicted.m1 > 0.5) %>% prop.table() %>% round(3),
+  model2 = table(test$default, test.predicted.m2 > 0.5) %>% prop.table() %>% round(3),
+  model3 = table(test$default, test.predicted.m3 > 0.5) %>% prop.table() %>% round(3))
+```
+
+We also want to understand the misclassification (aka _error_) rates (or we could flip this for the accuracy rates). . We don’t see much improvement between models 1 and 3 and although model 2 has a low error rate don’t forget that it never accurately predicts customers that actually default.
+
+```{r}
+test %>%
+  mutate(m1.pred = ifelse(test.predicted.m1 > 0.5, "Yes", "No"),
+         m2.pred = ifelse(test.predicted.m2 > 0.5, "Yes", "No"),
+         m3.pred = ifelse(test.predicted.m3 > 0.5, "Yes", "No")) %>%
+  summarise(m1.error = mean(default != m1.pred),
+            m2.error = mean(default != m2.pred),
+            m3.error = mean(default != m3.pred))
+## # A tibble: 1 �? 3
+##     m1.error   m2.error   m3.error
+##        <dbl>      <dbl>      <dbl>
+## 1 0.02782697 0.03491019 0.02807994
+```
+
+
+
+We can gain some additional insights by looking at the raw values (not percentages) in our confusion matrix. Lets look at model 1 to illustrate. We see that there are a total of 
+$98+40=138$ customers that defaulted. Of the total defaults, $98/138=71%$ were not predicted. Alternatively, we could say that only $40/138=29$ of default occurrences were predicted - this is known as the the precision (also known as sensitivity) of our model. So while the overall error rate is low, the precision rate is also low, which is not good!
+
+```{r}
+table(test$default, test.predicted.m1>0.5)
+```
+
+With classification models you will also here the terms _sensitivity_ and _specificity_ when characterizing the performance of the model. As mentioned above sensitivity is synonymous to precision. However, the specificity is the percentage of non-defaulters that are correctly identified, here $1 -12/(3803+12) = 99.6%$ (the accuracy here is largely driven by the fact that 97% of the observations in our data are non-defaulters). The importance between _sensitivityy_ and _specificity_ is dependent on context. In this case, a credit card company is likely to be more concerned with sensititivy since they want to reduce their risk. Therefore, they may be more concerned with tuning a model so that their _sensititivy_/_precision_ is improved. 
+
+The receiving operating characteristic (ROC) is a visual measure of classifier performance. Using the proportion of positive data points that are correctly considered as positive and the proportion of negative data points that are mistakenly considered as positive, we generate a graphic that shows the trade off between the rate at which you can correctly predict something with the rate of incorrectly predicting something. Ultimately, we’re concerned about the area under the ROC curve, or AUC. That metric ranges from 0.50 to 1.00, and values above 0.80 indicate that the model does a good job in discriminating between the two categories which comprise our target variable. We can compare the ROC and AUC for model’s 1 and 2, which show a strong difference in performance. We definitely want our ROC plots to look more like model 1’s (left) rather than model 2’s (right)!
+
+```{r}
+library(ROCR)
+
+par(mfrow=c(1, 2))
+
+prediction(test.predicted.m1, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot()
+
+prediction(test.predicted.m2, test$default) %>%
+  performance(measure = "tpr", x.measure = "fpr") %>%
+  plot()
+```
+
+And to compute the AUC numerically we can use the following. Remember, AUC will range from .50 - 1.00. Thus, model 2 is a very poor classifying model while model 1 is a very good classying model.
+
+```{r}
+# model1 AUC
+prediction(test.predicted.m1, test$default) %>% 
+  performance(measure = "auc") %>% 
+  .@y.values
+## [[1]]
+## [1] 0.939932
+
+# model 2 AUC
+prediction(test.predicted.m2, test$default) %>%
+  performance(measure = "auc") %>%
+  .@y.values
+## [[1]]
+## [1] 0.5386955
+```
+
+We can continue to “tune�? our models to improve these classification rates. If you can improve your AUC and ROC curves (which means you are improving the classification accuracy rates) you are creating _“lift”_, meaning you are lifting the classification accuracy.
+
+#### Additional resources
+
+This will get you up and running with logistic regression. Keep in mind that there is a lot more you can dig into so the following resources will help you learn more:
+
+An Introduction to Statistical Learning
+Applied Predictive Modeling
+Elements of Statistical Learning
+
