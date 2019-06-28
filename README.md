@@ -39,7 +39,6 @@ From Sep 2018 - Oct 2018
 Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
 
 📦 Repo: https://github.com/tidymodels/tidymodels
-
 ```{R}
 # Avaiable from CRAN
 install.packages("tidymodels")
@@ -48,6 +47,11 @@ install.packages("tidymodels")
 - rsample:  data resampling 
 - recipes:  pre-processing functions (similar to caret)
 - parsnip:  modeling functions 
+
+Useful blog posts
+recipes: http://www.rebeccabarter.com/blog/2019-06-06_pre_processing/  
+tidymodels: https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/  
+
 
 ## Feature Engineering Resouces 
 ### 📚 Feature Engineering and Selection (FES)  
