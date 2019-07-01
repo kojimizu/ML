@@ -47,7 +47,7 @@ This tutotorial serves as an introduction to exploring and visualizing time seri
 6. [White noise](#TS_WN): Differentiating signal from the noise.
 7. [Exercises](#TS_Exercise): Practice what youÅfve learned.
 
-### Replication Requirements 
+### Replication Requirements{#TS_RR}
 
 This tutorial leverages a variety of data sets to illustrate unique time series features. The data sets are all provided by the `forecast` and `fpp2` packages. Furthermore, these packages provide various functions for computing and visualizing basic time series components.
 
@@ -59,7 +59,7 @@ library(forecast)
 library(fpp2)
 ```
 
-### Creating time series objects 
+### Creating time series objects {#TS_TS}
 
 A time series can be thought of as a vector or matrix numbers, along with some information about what times those numbers were recorded. This information is stored in a `ts` object in R. 
 
@@ -471,7 +471,7 @@ train3 <-  window(ausbeer, start = c(1970, 1), end = c(1995, 4))
 train3 %>% autoplot()
 ```
 
-### Evaluating forecast accuracy
+### Evaluating forecast accuracy {#TS_BM_Eval}
 
 For evaluating predictive performance, several measures are commonly used to assess the predictive accuracy of a forecasting method. In all cases, the _measures are based on the test data set_, which services as a more objective basis than the training period to assess predictive accuracy. Given a forecast and its given errors ($e_t$), the commonly used accuracy measures are listed below.
 
@@ -579,7 +579,7 @@ accuracy(mean_fc, test)
 ## Test set     -0.09479634 0.8164006
 ```
 
-### Time series cross-validation
+### Time series cross-validation {#TS_BM_CV}
 
 A more sophisticted version of training/test sets is cross validation. You can see how CV works for cross-sectional data [here](http://uc-r.github.io/resampling_methods). For time series data, the procedure is similar but the training set consists only of observations that occurred prior to the observation that forms the test set. So in traditional time series partitioning, we select a certain point in time where everything before that point (blue) is the training data and everything after that point (red) is the test data.
 
@@ -906,7 +906,490 @@ qcement.train <- window(qcement, end = c(2012, 4))
 qcement.test <- window(qcement, start = c(2013, 1))
 ```
 
-### Simple exponential smoothing
+### Simple exponential smoothing {#ES_Simple}
+
+The simplest of the exponentially smoothing methods is called "simple exponential smooothing" (SES). The key point to remmember is that SES is suitable for data with no trend or seasonal pattern. This section will illustrate why.
+
+For exponential smoothing, we weight the recent observation more heavily than older observations. The weight of each observation is determined through the use of _smoothing parameter_, which we will denote $\alpha$. For a data set with $T$ observations, we calculate our predicted value $\hat{y}_{t+1}$, which will be based on $y_1$ through $y_t$ as follows.
+
+$$
+\hat{y}_{t+1} = \alpha y_t + \alpha(1-\alpha)y_{t-1}+...
+\alpha(1-\alpha)^{t-1} y_1
+$$
+
+where $0<\alpha<1$. It is also common to come to use the _component form_ of this model, which uses the following set of equations.
+
+$$
+\hat{y}_{t+1} = l_t \\
+l_t = \alpha y_t + (1-\alpha)l_{t-1}
+$$
+
+In both equations, we can see that the most weights is placed on the most recent observation. In practice, $\alpha$ equals to 0.1-0.2 tends to perform quite well but we will demonstrate shortly how to tune this parameter. When $\alpha$ is close to 1 we consider this fast learning because the algorithm gives more historical data more weight. When $\alpha$ is closer to 1, we consider the fast learning because the algorithms give more weight to the most recent observation; therefore, recent changes in the data will have a bigger impact on forecasted values. The following table illustrates how weighting changes based on the $\alpha$ parameters.
+
+LetÅfs go ahead and apply SES to the Google data using the ses function. We manually set the $\alpha=.2$ for our initial model and forecast foward 100 steps with $h=100$. We see that our forecast proejcts a flatlined estimate into the future, which does not capture the positive trend in the data. This is why SES should not be used on data with a trend or seasonal component.
+
+```{r}
+ses.goog <- ses(goog.train, alpha=.2, h=100)
+autoplot(ses.goog)
+```
+
+One approach to correct for this is to difference our data to remove the trend. Now, `goog.dif` represents the change in stock price from the previous day.
+
+```{r}
+goog.dif <- diff(goog.train)
+autoplot(goog.dif)
+```
+
+
+Once we have differenced we have effectively removed the trend from our data and can reapply the SES model.
+
+```{r}
+ses.goog.dif <- ses(goog.dif, alpha = .2, h = 100)
+autoplot(ses.goog.dif)
+```
+
+To understand how well the model predicts we can compare our forecasts to our validation data set. But first we need to create a differenced validation set since our training data was built on differenced data. We see that performance measures are smaller on the test set than the training so we are not overfitting our model.
+
+```{r}
+goog.dif.test <- diff(goog.test)
+
+# accuracy calculation
+forecast::accuracy(ses.goog.dif, goog.dif.test) %>% 
+  broom::tidy()
+```
+
+In our model, we used the standard $/alpha=.2$; however, we can tune our alpha parameter to identify the value that reduces our forecasting error. Here, we loop through alpha values from 0.01-0.99 and identify the level that minimizes our test RMSE. Turns our that $\alpha=.05$ minimize our prediction error.
+
+```{r}
+# identify optimal alpha parameter
+alpha <- seq(.01, .99, by=.01)
+RMSE <- NA
+
+for (i in seq_along(alpha)){
+  fit <- ses(goog.dif, alpha = alpha[i], h=100)
+  RMSE[i] <- accuracy(fit, goog.dif.test)[2,2]
+}
+
+# convert to a data frame and idenitify min alpha value
+alpha.fit <- data_frame(alpha, RMSE)
+alpha.min <- filter(alpha.fit, RMSE == min(RMSE))
+
+# plot RMSE vs. alpha
+ggplot(alpha.fit, aes(alpha, RMSE)) +
+  geom_line() +
+  geom_point(data = alpha.min, aes(alpha, RMSE), size = 2, color = "blue")  
+```
+
+Now we can re-fit our SES with $\alpha=0.05$. Our performance metrics are not significantly different from our model, where $\alpha=0.20$; however, you will notice that the predicted confidence intervals are narrower (left chart). And when we zoom into the predicted versus actuals (right chart) you see that for most observations, our predicted confidence intervals did well.
+
+```{r}
+# refit model with alpha = .05
+ses.goog.opt <- ses(goog.dif, 
+                    alpha = .05,
+                    h = 100)
+
+# performance eval
+accuracy(ses.goog.opt,
+         goog.dif.test)
+
+# plotting results
+p1 <- autoplot(ses.goog.opt)+
+  theme(legend.position = "bottom")
+p2 <- autoplot(goog.dif.test)+
+  autolayer(ses.goog.opt, alpha=.5)+
+  ggtitle("Predicted vs actuals for the test data set")
+
+gridExtra::grid.arrange(p1, p2, nrow=1)
+```
+
+### Holt's Method {#ES_Holt}
+
+As mentionedd and observed in the previous section, SES does not perform well with data that has a long-term trend. In the last section, we will illustrate how you can remove the rend with differencing and then perform SES. An alternative method to apply exponential smoothing while capturing trend in the data is to use _HoltÅfs Method_.
+
+HoltÅfs Method makes predictions for data with a trend using two smoothing parameters, $\alpha$ and $\beta$, which correspond to the level and trend components, respectively. For HoltÅfs method, the prediction will be a line of some non-zero slope that extends from the time step after the last collected data point onwards.
+
+The methodology for predictions using data with a trend (HoltÅfs Method) uses the following equation with $T$ observations. The k-step-ahead forecast is given by combining the level estimate at time t($L_t$) and the trend estimate (which in this example is assumed additive) at time t ($T_t$). 
+
+$$
+\hat{y}_{T+1} = L_t + kT_k
+$$
+
+The level ($L_t$) and trend ($T_t$) are updated through a pair of updating equations, which is where you see the presence of the two smoothing parameters:
+
+$$ 
+L_t = \alpha y_t + \alpha(1-\alpha)(L_t + T_{t-1}) \\
+T_t = \beta(L_t - L_{t-1}) + (1-\beta)T_{t-1}
+$$
+
+In these equations, the first means that the level at time t is a weighted average of the actual value at time t and the level in the previous period, adjusted for trend. The second equation means that the trend at time t is a weighted average of the trend in the previous period and the more recent information on the change in the level. Similar to SES, $\alpha$ and $\beta$ are constrained to 0-1 with higher values giving faster learning and lower values providing slower learning. 
+
+To capture a __multiplicative__ (exponential) trend we make a minor adjustment in the above equations.
+
+$$
+\hat{y}_{T+1} = L_t * kT_k \\
+L_t = \alpha y_t + \alpha(1-\alpha)(L_t * T_{t-1}) \\
+T_t = \beta(L_t / L_{t-1}) + (1-\beta)T_{t-1}
+$$
+
+HoltÅfs method also has the alternative Component Form operations. In this case these represent the additive trend component form:
+
+$$
+\hat{y}_{t+h} = l_t * hb_t \\
+l_t = \alpha y_t + \alpha(1-\alpha)(l_t + b_{t-1}) =
+\beta (l_t - l_{t-1}) + (1-\beta)b_{t-1}
+$$
+
+If we go back to our Google stock data, we can apply Holt's method in the following manner. Her, we will not manually set the $\alpha$ and $\beta$ for our initial model and forecast foward 100 step with h=100. We see that our forecast now does a better job capturing the positive trend in the data.
+
+```{r}
+holt.goog <- holt(goog.train, h = 100)
+autoplot(holt.goog)
+```
+
+Within `holt` you cna manually set the $\alpha$ and $\beta$ parameters; however, if you leave those parameters at NULL, the `holt` function will actually identify the optimal model parameters. It does by ,minimizing AIC and BIC values. We can see the model selected by `holt`. In this case, $\alpha=0.9967$ meaning fast learning in the daty-today movements and $\beta=0.0001$ which means slow learning for the trend.
+
+```{r}
+holt.goog$model
+```
+
+LetÅfs check the predictive accuracy of our model. According to our MAPE we have about a 2% error rate.
+
+```{r}
+accuracy(holt.goog, goog.test)
+```
+
+Similr to SES, we can tune the $\beta$ parameter to see if we can improve our predictive accuracy. The `holt` function identified an optimal $\beta=0.0001$; however, this optimal value is based on minimizing errors on the training set, not minimizing predicton errors on the test set. Let's assess a tradespace of $\beta$ values and see if we gain some predictive accuracy. Here, we loop through a series of $/beta$ values starting at 0.0001 all the way up to 0.5. We see that there is a dip in our RMSE at 0.0601.
+
+```{r}
+# identify optimal alpha parameter
+beta <- seq(.0001, .5, by=0.001)
+RMSE <- NA
+
+for (i in seq_along(beta)){
+  fit <- holt(goog.train, beta = beta[i], h=100)
+  RMSE[i] <- accuracy(fit, goog.test)[2,2]
+}
+
+# convert to a data frame and identify min alpha value
+beta.fit <- data_frame(beta, RMSE)
+beta.min <- filter(beta.fit, RMSE == min(RMSE))
+
+# plot RMSE vs alpha
+ggplot(beta.fit, aes(beta, RMSE))+
+  geom_line()+
+  geom_point(data=beta.min, aes(beta,RMSE), size=2, color="blue")
+
+```
+
+Now let's refit our model with this optimal $\beta$ value and compare our predictive accuracy to our original model. We see that our new model reduces our error rate (MAPE) down to 1.78%.
+
+```{r}
+# new model with optimal beta
+holt.goog.opt <- holt(goog.train, 
+                      h = 100,
+                      beta = 0.0601)
+
+# accuracy of first model
+accuracy(holt.goog, goog.test)
+##                        ME      RMSE       MAE         MPE     MAPE
+## Training set -0.003922069  8.938319  5.974921 -0.01188414 1.004290
+## Test set     -8.945342029 21.099897 16.268344 -1.15371296 2.039945
+##                   MASE       ACF1 Theil's U
+## Training set 0.9997514 0.03746482        NA
+## Test set     2.7220944 0.89540070  2.481272
+
+# accuracy of new optimal model
+accuracy(holt.goog.opt, goog.test)
+##                       ME      RMSE       MAE         MPE     MAPE     MASE
+## Training set -0.01098347  9.109332  6.218278 -0.00502392 1.043517 1.040471
+## Test set     -0.33180592 18.536622 14.287508 -0.09452438 1.780052 2.390652
+##                    ACF1 Theil's U
+## Training set 0.01293146        NA
+## Test set     0.88797970  2.156113
+```
+
+If we plot our original versus more recent optimal model we will notice a couple things. 
+
+- First, our predicted values for the optimal model are more conservative; in other words, they are assuming a more gradual slope.
+- Second, the confidence intervals are much more extreme. So although our predictions were more accuracte, our uncertainty increases. 
+
+The reasons for this is that by increasing our $/beta$ value we are assuming faster learning from more recent observations. And since there some quite a bit of turbulence in the recent time period, this is causing greater variance to be incorporated into our prediction intervals. This requires a more indepth discussion than this tutorial will go into, but the important thing to keep in mind is that although we increase our prediction accuracy with parameter tuning, there are additional side effects that can occur, which may be harder to explain to decision-makers.
+
+```{r}
+
+p1 <- autoplot(holt.goog)+
+  ggtitle("Original Holt's Model")+
+  coord_cartesian(ylim = c(400, 1000))
+
+p2 <- autoplot(holt.goog.opt)+
+  ggtitle("Optimal Holt's Model")+
+  coord_cartesian(ylim = c(400, 1000))
+
+gridExtra::grid.arrange(p1, p2, nrow=1)
+
+```
+
+### Holt-Winters Seasonal Method {#ES_Holt-Winters}
+
+To make predictions using data with a trend and seasonality, we turn to the Holt Winters Seasonal Method. This method can be implemented with an "Additive" structure or "Multiplicative" structure, where the choice of method depends on the data set. The Additive model is best used when the seasonal trend is of the same magnitude throughout the data set, while the multiplicative model is preferred when the magnitude of seasonality changes as time increase. 
+
+Since the Google data does not have seasonality, weÅfll use the `qcement` data that we set up in the Replication section to demonstrate. This data has seasonality and trend; however, it is unclear if seasonality is additive or multiplicative. WeÅfll use the Holt-Winters method to identify the best fit model.
+
+```{r}
+autoplot(decompose(qcement))
+```
+
+#### Additive 
+For the additive model, the regular equation form is:
+
+$$
+\hat{y}_{t+1} = L_t + kT_k + S_{t+k-m}
+$$
+
+The level ($l_t$), trend ($T_t$) and season ($S_t$) are updated through a pair of updating equations, which is where you see the presence of the three smoothing parameters:
+
+$$
+L_t = \alpha(y_t - S_{t-m} + (1-\alpha)(L_{t-1}+T_{t-1})) \\
+T_t = \beta(L_t - L_{t-1}) + (1-\beta)T_{t-1} \\
+S_t = \gamma(y_t - L_t) + (1-\gamma)S_{t-m}
+\\
+$$
+
+where $\alpha, \beta and \gamma$ are the three smoothing parameters to deal with the level pattern, the trend, and the seasonality, respectively. Similar to SES and Holt's method, all three parameters are constrained to 0-1. The component equations are as follows. 
+
+$$
+\hat{y}_{t+1} = l_t + ht_k + s_{t+k-m} \\
+l_t = \alpha(y_t - s_{t-m} + (1-\alpha)(l_{t-1}+b_{t-1})) \\
+b_t = \beta(l_t - l_{t-1}) + (1-\beta)b_{t-1} \\
+s_t = \gamma(y_t - l_t) + (1-\gamma)s_{t-m}
+\\
+$$
+
+To apply the Holt-Winters method weÅfll introduce a new function, `ets` which stands for error, trend, and seasonality. The important thing to understand about the `ets` model is how to select the `model =` parameter. In total you have 36 model options to choose from. The parameter settings in the below code (`model = "AAA"`) stands for a model with additive error, additive trend, and additve seasonality.
+
+```{r}
+qcement.hw <- ets(qcement.train, model="AAA")
+autoplot(forecast(qcement.hw))
+```
+
+So when specificying the model type you always specificy the error, trend, then seasonality (hence ÅgetsÅh). The options you can specify for each component is as follows:
+
+- error: additive (ÅgAÅh), multiplicative (ÅgMÅh), unknown (ÅgZÅh)
+- trend: none (ÅgNÅh), additive (ÅgAÅh), multiplicative (ÅgMÅh), unknown (ÅgZÅh)
+- seasonality: none (ÅgNÅh), additive (ÅgAÅh), multiplicative (ÅgMÅh), unknown (ÅgZÅh)
+
+Consequently, if you wanted to apply a HoltÅfs model where the error and trend were additive and no seasonality exists you would select `model = "AAN"`. If you want to apply a Holt-Winters model where there is additive error, an exponential (multiplicative) trend, and additive seasonality you would select model = "AMA". If you are uncertain of the type of component then you use ÅgZÅh. So if you were uncertain of the components or if you want the model to select the best option, you could use model = "ZZZ" and the ÅgoptimalÅh model will be selected.
+
+If we assess our additive model we can see that $\alpha=0.6208$, $/beta=0.0001$ and $\gamma=0.1913$.
+
+```{r}
+summary(qcement.hw)
+```
+
+If we check our residuals, we see that residuals grow larger over time. This may suggest that a multiplicative error rate may be more appropriate.
+
+```{r}
+checkresiduals(qcement.hw)
+```
+
+If we check the predictive accuracy we see that our prediction accuracy is about 2.9% (according to the MAPE).
+
+```{r}
+#forecast the next 5 quarter
+qcement.f1 <- forecast(qcement.hw, h = 5)
+autoplot(qcement.f1)
+
+# check accuracy
+accuracy(qcement.f1, qcement.test)
+```
+
+#### Multiplicative
+
+As previously stated, we may have multiplicative features for our Holt-Winters method. If we have multiplicative seasonality, then our equation from changes to:
+
+$$
+\hat{y}_{t+1} = (L_t + kT_k) S_{t+k-m}
+$$
+
+The level ($l_t$), trend ($T_t$) and season ($S_t$) are updated through a pair of updating equations, which is where you see the presence of the three smoothing parameters:
+
+$$
+L_t = \alpha y_t / S_{t-m} + (1-\alpha)(L_{t-1}+T_{t-1})) \\
+T_t = \beta(L_t - L_{t-1}) + (1-\beta)T_{t-1} \\
+S_t = \gamma(y_t / L_t) + (1-\gamma)S_{t-m}
+\\
+$$
+
+If we apply a multiplicative seasonality `model` then our model parameter becomes `model = "MAM"` (here, we are actually applying a multiplicative error and seasonality model). We see that are residuals illustrate less change in magnitude over time. We still have an issue with autocorrelation with errors but weÅfll address that in later tutorials.
+
+```{r}
+qcement.hw2 <- ets(qcement.train, model = "MAM")
+checkresiduals(qcement.hw2)
+```
+
+To compare the predictive accuracy of our models letÅfs compare four different models. We see that the first model (additive error, trend and seasonality) results in the lowest RMSE and MAPE on our test data set.
+
+```{r}
+# additive error, trend and seasonality
+qcement.hw1 <- ets(qcement.train, model = "AAA")
+qcement.f1 <- forecast(qcement.hw1, h = 5)
+accuracy(qcement.f1, qcement.test)
+
+# multiplicative error, additive trend and seasonality
+qcement.hw2 <- ets(qcement.train, model = "MAA")
+qcement.f2 <- forecast(qcement.hw2, h=5)
+accuracy(qcement.f2, qcement.test)
+
+# additive error and trend and multiplicative seasonality
+qcement.hw3 <- ets(qcement.train, model = "AAM", restrict = FALSE)
+qcement.f3 <- forecast(qcement.hw3, h = 5)
+accuracy(qcement.f3, qcement.test)
+##                       ME       RMSE       MAE       MPE     MAPE      MASE
+## Training set 0.003403387 0.07762833 0.0558983 0.1487162 3.693408 0.5530085
+## Test set     0.027648352 0.08382395 0.0777908 0.8568631 3.304030 0.7695936
+##                     ACF1 Theil's U
+## Training set -0.02009013        NA
+## Test set     -0.06590551 0.2161475
+
+# multiplicative error, additive trend, and multiplicative seasonality
+qcement.hw4 <- ets(qcement.train, model = "MAM")
+qcement.f4 <- forecast(qcement.hw4, h = 5)
+accuracy(qcement.f4, qcement.test)
+```
+
+If we were to compare this to an unspecified model where we let `ets` select the optimal model, we see that ets selects a model specification of multiplicative error, additive trend, and multiplicative seasonality (ÅgMAMÅh). This is equivalent to our fourth model above. This model is assumed ÅgoptimalÅh because it minimizes RMSE, AIC, and BIC on the training data set, but does not necessarily minimize prediction errors on the test set.
+
+```{r}
+qcement.hw5 <- ets(qcement.train, model = "ZZZ")
+summary(qcement.hw5)
+```
+
+As we did in the SES and HoltÅfs method section, we can optimize the $\gamma$  parameter in our Holt-Winters model. Here, we use the additive error, trend and seasonality model that minimized our prediction errors above and identify the $\gamma$ parameter that minimizes forecast errors. In this case we see that $\gamma=0.21$  minimizes the error rate.
+
+```{r}
+gamma <- seq(0.01, 0.85, 0.01)
+RMSE <- NA
+
+for (i in seq_along(gamma)){
+  hw.expo <- ets(qcement.train, "AAA", gamma = gamma[i])
+  future <- forecast(hw.expo, h = 5)
+  RMSE[i] = accuracy(future, qcement.test)[2,2]
+}
+
+error <- data_frame(gamma, RMSE)
+minimum <- filter(error, RMSE == min(RMSE))
+ggplot(error, aes(gamma, RMSE)) +
+  geom_line() +
+  geom_point(data = minimum, color = "blue", size = 2) +
+  ggtitle("gamma's impact on forecast errors",
+          subtitle = "gamma = 0.21 minimizes RMSE")
+```
+
+If we update our model with this ÅgoptimalÅh $\gamma$ parameter we see that we bring our forecasting error rate down from 2.88% to 2.76%. This is a small improvement, but often small improvements can have large business implications.
+
+```{r}
+# previous model with additive error, trend and seasonality
+accuracy(qcement.f1, qcement.test)
+##                         ME       RMSE        MAE        MPE     MAPE
+## Training set -0.0004297096 0.08375033 0.05912561 -0.1834617 3.830243
+## Test set      0.0307206913 0.07102359 0.06762179  1.0818090 2.882741
+##                   MASE        ACF1 Theil's U
+## Training set 0.5849367  0.04576105        NA
+## Test set     0.6689904 -0.30067586 0.2084824
+
+# new model with optimal gamma parameter
+qcement.hw6 <- ets(qcement.train, model = "AAA", gamma = 0.21)
+qcement.f6 <- forecast(qcement.hw6, h = 5)
+accuracy(qcement.f6, qcement.test)
+##                        ME       RMSE        MAE       MPE     MAPE
+## Training set -0.001206215 0.08425184 0.05975069 -0.154495 3.974104
+## Test set      0.029358296 0.06911376 0.06466821  1.038366 2.761642
+##                   MASE        ACF1 Theil's U
+## Training set 0.5911206  0.03804556        NA
+## Test set     0.6397703 -0.36727559 0.2081361
+```
+
+With this new optimal model we can get our predicted values:
+```{r}
+qcement.f6
+```
+
+and also visualize these predicted values:
+
+```{r}
+autoplot(qcement.f6)
+```
+
+### Damping methods {#ES_Dampled_Trend}
+
+One last item to discuss is the idea of "damping" your forecast. Damped forecasts use a damping coefficients denoted $\phi$ to more conservatively estimate the predicted trend. 
+
+Basically, if you belive that your additive or multiplicative trend is or will be slowing down ("flat-lining) in the near future then you are assuming it will dampen.
+
+The equation form for an additive model with a damping coefficient is 
+
+$$
+\hat{h}_{t+h} = L_t + ( \phi+\phi^2+...+\phi^h)\beta_t \\
++_t = \alpha y_t + \alpha(1-\alpha)(L_{t^1}+\phi\beta_{t-1}), \\
+\beta_t = \beta(L_t - L_{t-1}) + (1-\beta)\phi \beta_{t-1} 
+$$
+
+where, $0<\phi<1$. When $\phi=1$ the method is the same as Holt's additive model. As $\phi$ gets closer to 0, the trend becomes more conservative and flat-lines to a constant in the nearer future. The end result of this method is flat that short-run forecasts are still trendeded while the long-run forecasts are constant. 
+
+To illustrate the effect of damped forecast we will use the `fpp2::ausair` data set. Here, we create several models (additive, additive+damped, multiplicative, multiplicative+damped). In the plot you can see that the dampled models (dashped lines) have more conservative trend lines and if we forecasted these far enough into the future we would see this trend flat-line.
+
+```{r}
+# holt's linear (additive) model
+fit1 <- ets(ausair, model = "ZAN", alpha = 0.8, beta = 0.2)
+pred1 <- forecast(fit1, h = 5)
+
+# holt's linear (additive) model
+fit2 <- ets(ausair, model = "ZAN", damped = TRUE, 
+            alpha = 0.8, beta = 0.2)
+pred2 <- forecast(fit2, h = 5)
+
+# holt's exponential (multiplicative) model
+fit3 <- ets(ausair, model = "ZMN" , alpha = 0.8, beta = 0.2)
+pred3 <- forecast(fit3, h = 5)
+
+# holt's exponential multiplicative model damped
+fit4 <- ets(ausair, model = "ZMN", damped  = TRUE, alpha = 0.8,
+            beta = 0.2)
+pred4 <- forecast(fit4, h = 5)
+
+autoplot(ausair)+
+  autolayer(pred1$mean, color = "blue")+
+  autolayer(pred2$mean, color = "blue", linetype = "dashed")+
+  autolayer(pred3$mean, color = "red")+
+  autolayer(pred4$mean, color = "red", linetype = "dashed")
+
+```
+
+The above models were for illustrative purposes only. You would apply the same process as you saw in earlier sections to identify if a damped model predicts more accurately than a non-dampped model. You can even apply the approaches you saw earlier for tuning this parameter to identify the optimal $\phi$ coefficient.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
