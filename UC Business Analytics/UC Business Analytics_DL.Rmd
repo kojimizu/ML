@@ -3,9 +3,6 @@ title: "UC business Analytics R programming Guide - DL"
 author: "Koji Mizumura"
 date: "`r Sys.Date()`"
 output:
-  word_document:
-    toc: yes
-    toc_depth: '4'
   html_document:
     number_sections: yes
     section_divs: yes
@@ -13,6 +10,9 @@ output:
     toc: yes
     toc_depth: 4
     toc_float: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
 always_allow_html: yes
 ---
 
@@ -53,7 +53,7 @@ This tutorial provides a high level overview of ANNs, an analytical technique th
 
 ANNs are engineered computational models inspited by the brain (human & animal). While some researchers used ANN to study animal brains, most researcheres view neural networks as being inspired by, not models of, neurological systems. Figure 1 shows the basic functional unit of the brain, a biologic neuron.
 
-```{r}
+```{r echo=FALSE}
 knitr::include_graphics("image/Blausen_0657_MultipolarNeuron.png")
 ```
 
@@ -63,12 +63,12 @@ ANN neurons are simple representationsof their biologic counterparts. In thebiol
 2. Neurons receive inputs from many adjacent neurons upstream, and can transmit signals to many adjacent signals downstream (cumulative inputs)
 3. Each neuron has its own threshold for activation (synaptic weight).
 
-### Artificial Neouron 
+### Artificial Neouron {#ANN_Artificial_Neuron}
 
 The artificial analog of the biologic neuron is shown below in figure 2. In the artificial model the inputs correspond to the dendrites, the __transfer function__, __net input__, and __activation function__ correspond to the cell body, and the __activation__ corresponds to the axon and synaptic terminal.
 
 
-```{r}
+```{r echo=FALSE}
 knitr::include_graphics("image/1200px-ArtificialNeuronModel_english.png")
 ```
 
@@ -76,7 +76,7 @@ The inputs to the artificial neuron may correspond to raw data values, or in dee
 
 This basic artificial neuron is combined with multiple other artificial neurons to create an ANN such as the ones shown in figure 3. 
 
-```{r figure.cap="Figure 3: Examples of Multi-Neuron ANNs"}
+```{r echo=FALSE, figure.cap="Figure 3: Examples of Multi-Neuron ANNs"}
 
 knitr::include_graphics("image/Multilayer_Feedforward_Artificial_Neural_Network.png")
 
@@ -94,18 +94,805 @@ Each bias term in a ANN has its own associated weight $w$. In the top-right ANN 
 
 The size and structure of ANN are only limited by the imagination of the analyst.
 
-### Activation Functions
+### Activation Functions {#ANN_Act_Func}
 
 The capability of ANNs to learn _appriximately_ any function(given sufficient training data examples) are dependent on the appropriate selection of the __Activation Function(s)__ present in the network. Activation functions enables the ANN to learn non-linear properties present in the data. 
 
+We represent the activation function here as $\phi()$. The input into the activation function is the weighted sum of the imput features from the preceding layer. Let $o_j$ be the output from the jth neuron in a given layer fro a network for k input vector features.
+
 $$
-o_j = \phi
+o_j = \phi(b_j + \Sigma_{i=1}^p w_i x_i) 
 $$
 
+The output($\sigma_j$) can feed into the output layer of a neural network, or in a deeper architectures may feed into additional hidden layers. The activation function determines if the sum of the weighted inputs plus a bias term is sufficiently large to trigger the firing of the neuron. 
+
+There is not a universal best choice for the activation function. however, researchers have provided ample information regarding what activation functions work well for ANN solutions to many common problems. The choice of the activation function governs the required data scaling necessary for ANN analysis. Below we present activation functions commonly seen in ANNs.
+
+```{r echo=FALSE}
+knitr::include_graphics("image/activations-1.png")
+```
+
+### How ANNs Learn {#ANN_Model_Learning}
+
+We have described the structure of ANNs, however we have not touched on how these networks learn. For the purchases of this discussion, we assume that we have a data set of labeled observations. Data sets in which we have some features ($X$) describing an output ($y$) fall under machine learning techniques called __supervised learning__. To begin training our notional single-layer one-neuron neural network we initially randomly assign weights. We then run the neural netowrk with the random weights and record the outputs generated. This is called a __foward pass__. Output values, in our case called $y$ are a function of the input values ($X$), the random initial weights $w$ and our choice of the threshold function ($T$). 
+
+$$
+y = f(X, w, T)
+$$
+
+Once we have our ANN output values ($y$) we can compare them to the dataset output values ($y$). To do this, we use a performance function $P$. The choice of the performance function is a choice of the analysis, we choose to use the __One-Half Square error Cost Function__, otherwise known as the SSE (Sum of Squared Errors).
+
+$$
+P \frac{1}{2} ||y-\hat{y}||^2_2
+$$
+
+Now that we have our initial performance, we need a method to adjust the weights to improve the peformance. For our performance function $P$, we need to minimize the difference between ANN predicted output values ($\hat{y}$) and the observed data set outputs ($y$). 
+
+Recall that our neural network is simply a function, $y~f(X,w,T)$.Thus, wecan minimize the MSE by differentiating the performance function with respect to the weights ($w$). Recall however, the weights in our ANN is a vector, thus we need to update each weight individually, so we require the use of the partial derivative. Additionally, we need to determine how much we want to improve. So we add a parameter $r$, called the learning rate parameter, which is a scalar value that controls how far we move closer to the optimum weight values. The weight updates are calculated as follows:
+
+$$
+\Delta w = r * (\frac{\partial P}{\partial w_o}, 
+                \frac{\partial P}{\partial w_1},
+                ...,
+                \frac{\partial P}{\partial w_q})
+$$
+
+The previous equation describes how to adjust each of the weights associated with the $q$ input features of $X$ and the bias weight $b_o$. We then update the weight values as prescribed by the above equation. This process is called __Back-Propagation__. Once the weights are updated, we can re-run the neural network with the update weight values. This entire process can be repeated a number of times until either, a set number of iterations occur, or, we reach a pre-specified performance value (minimum error rate).
+
+The back-propagation algorithm (described in the previous paragraphs) is the fundamental process by which an ANN learns. This brief example merely summaries high level details of the procedure. For those math-minded individuals that would like to know more, please visit Patrick H. WinstonÅfs Neural Net Lecture. In addition to providing a good introduction to back-propagation, also provide an excellent overview to neural networks in general.
+
+The back-propagation algorith is the most computationally expensive component to many neural networks. Given a ANN, back-propagation requires $O(l)$ operations for $l$-hidden layers and $O(w^2)$ operations for the number of input weights. We often describe ANNs in terms of depth and width, where the depth refers to the number of total layers, and the width refers to the number of neurons within each layer.
+
+Prior to moving on to ANN application, we must touch on one more topic, neural network __hyperparameters__.
+
+### ANN Hyperparameters {#ANN_Param}
+
+ANN hyperparameters are settings used to control how a neural network performs. We have seen examples of hyperparameters previously, for example the learning rate in back-propagation and the selection of MSE as the performance metric. Hyperparameters dictate how well neural networks are able to learn the underlying functions they approximate. Poor hyperparameter selection can lead to ANNs that fail to converge, exhibit chaotic behavior, or converge too quickly at local, not global, optimums. Hyperparameters are initially selected based on historical knowledge about the data set being analyzed and/or based on the type of analysis being conducted. The optimum values of hyperparameters are dependent on the specific data sets being analyzed, therefore, in a majority of neural network analysis, hyperparameters need to be ÅetunedÅf for the best performance. The No Free Lunch Theorem states that no machine learning algorithm (neural networks included) is always better at predicting new, unobserved, data points universally. When building a ANN, we are looking a building a network that performs reasonably well on a specific data set, not on all possible data sets.
+
+The ultimate goal of an ANN is to train the network on training data, with the expectation that given new data the ANN will be able to predict their outputs with accuracy. The capability to predict new observations is called generalization. Generally, when ANNs are developed they are evaluated against one data set that has been split into a training data set and a test data set. The training data set is used to train the ANN, and the test data set is used to measure the neural networks capacity to generalize to new observations. When testing ANN hyperparameters we generally see multiple ANNs created with different hyperparameters trained on the training data set. Each of the ANNs are tested against the test data set and the ANN with the lowest test data set error is assumed to be the neural network with the best capacity to generalize to new observations.
+
+When testing ANNs we are concerned with two types of error, under-fitting and over-fitting. An ANN exhibiting under-fitting is a neural network in which the error rate of the training data set is very high. An ANN exhibiting over-fitting has a large gap between the error rates on the training data set and the error rates on the test data set. We expect to see a slight performance decrease between the test and training data set error rates, however if this gap is large, over-fitting may be the cause. Researchers can always design a ANN with perfect performance on the training data set by increasing either the width or depth of the neural network. Adjusting these ANN hyperparameters is an adjustment of the neural networks capacity. In much the same way we can fit high-order polynomials in linear regression to perfectly match the output as a function of the regressors, ANNs can be ÅegamedÅf by simply adding depth to the network. An over-capacity ANN is likely to show over-fitting when tested against the test data set. ANNÅfs are function approximators, and as approximators we are looking for a neural network that is no larger or complex than it needs to be for the required performance. Given two ANNs with equal test data set error performance, OccamÅfs razor dictates that the simplest model be selected, given no additional information.
+
+## Regression Artificial Neural Network
+
+Regression ANNs predict an output variable as a function of the inputs. The input features (independent variables) can be categorical or numeric types, however, for regression ANNs, we require a numeric dependent variable. If the output variable is a categorical variable (or vinary) the ANN will function as a classifier.
+
+### til;dr
+
+1. [Replication requirements](#ANN_Re_RR): What youÅfll need to reproduce the analysis in this tutorial.
+2. [Data Preparation](#ANN_Re_DP): Preparing our data.
+3. [1st Regression ANN](#ANN_Re_1st): Constructing a 1-hidden layer ANN with 1 neuron.
+4. [Regression Hyperparameters](#ANN_Re_Parm): Tuning the model.
+5. [Wrapping Up](#ANN_Re_WU): Final comments and some exercises to test your skills.
+
+### Replication requirements {#ANN_Re_RR}
+
+```{r}
+library(tidyverse)
+library(neuralnet)
+library(GGally)
+```
+
+### Data Preparation
+
+Our regression ANN will use the [Yacht Hydrodynamics]  (http://archive.ics.uci.edu/ml/datasets/Yacht+Hydrodynamics) data set from UCI's machine learning repository. The yacht data was provided by Dr. Robert Lopez email. This data set contains data contains results from 308 full-scale experiments performed at the Delft Ship Hydromechanics Laboratory where they test 22 different hull forms. Their experiment tested the effect of variations in the hull geometry and the shipÅfs [Froude number](https://en.wikipedia.org/wiki/Froude_number) on the craftÅfs residuary resistance per unit weight of displacement.
+
+```{r}
+url <- 'http://archive.ics.uci.edu/ml/machine-learning-databases/00243/yacht_hydrodynamics.data'
+
+Yacht_Data <- read_table(file = url,
+                         col_names = c('LongPos_COB', 'Prismatic_Coeff',
+                                       'Len_Disp_Ratio', 'Beam_Draut_Ratio', 
+                                       'Length_Beam
+                                       
+                                       
+                                       
+                                       
+                                       
+                                       
+                                       _Ratio','Froude_Num', 
+                                       'Residuary_Resist')) %>%
+  na.omit()
+```
+
+```{r}
+GGally::ggpairs(Yacht_Data, title = "Scatterplot Matrix of the Features of the Yacht Data Set")
+```
+
+Here, we see an excellent summary of the variation of each feature in our data set. Draw your attention to the buttom-most strip of scatter-plots. This shows the `residuary resitance` as a function of other data set features (independent experimental values). The greatest variation appeas with the `Froude Number` feature. It will be interesting to see how this pattern appears in the subsequent regression ANNs.
+
+Prior to regression ANN construction, we first must split th Yacht data set into test and training datasets. Before we split, first scale each feature to fall in the [0,1] interval.
+
+```{r}
+# Scale the Data
+scale01 <- function(x){
+  (x - min(x)) / (max(x) - min(x))
+}
+
+Yacht_Data <- Yacht_Data %>%
+  mutate_all(scale01)
+
+# Split into test and train sets
+set.seed(12345)
+Yacht_Data_Train <- sample_frac(tbl = Yacht_Data, replace = FALSE, size = 0.80)
+Yacht_Data_Test <- anti_join(Yacht_Data, Yacht_Data_Train)
+```
+
+The `scale1()` function maps each data observation onto the [0,1] interval as called in the `dplyr::mutate_all()` function. We then provided a seed for reproducible results and randomly extracted (without replacement) 80% of the observations to build the `Yacht_Data_Train` data set as our test data set in`Yacht_Data_Test`.
+
+### 1st Regression ANN {#ANN_Re_1st}
+
+#### EDA
+
+```{r}
+Yacht_Data_Train %>%
+  ggplot(aes(x=Residuary_Resist))+
+  geom_histogram(bins = 30)
+
+Yacht_Data_Train %>% dim()
+```
 
 
+To begin we construct a 1-hidden layer ANN with 1 neuron, the simplest of all neural networks.
+
+The similar work can be found [here](https://www.neuraldesigner.com/learning/examples/yacht-hydrodynamics-modeling).
+
+```{r}
+set.seed(12321)
+
+Yacht_NN1 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + 
+                         Len_Disp_Ratio + Beam_Draut_Ratio + Length_Beam_Ratio +
+                         Froude_Num, data = Yacht_Data_Train)
+```
+
+The `Yacht_NN1` is a list containing all parameters of the regression ANN as well as the results of the neural network on the test data set. To view a diagram of the `Yacht_NN1` use the `plot()` function.
+
+```{r}
+plot(Yacht_NN1, rep = "best")
+```
+
+This plot shows the weights learned by the `Yacht_NN1` neural network, and displays the number of iterations before convergence, as well as the SSE of the training dataset. To manually compute the SSE you can use the following:
+
+```{r}
+NN1_Train_SSE <- sum((Yacht_NN1$net.result - Yacht_Data_Train[, 7])^2)/2
+paste("SSE: ", round(NN1_Train_SSE, 4))
+## [1] "SSE:  0.0361"
+```
+
+This SSE is the error associated with the training data set. A superior metric for estimating the generalization of the  ANN would the SSE of the test data set. Recall,  the test data set contains observations not used to train the` Yacht_NN1` ANN. To calculate the test error, we first must run our test observations through the Yacht_NN1 ANN. This is accomplished with the `neuralnet` package `compute()` function, which takes as its first input the desired neural network object created by the `neuralnet()` function, and the second argument the test data set feature (independent variable(s)) values.
+
+```{r}
+Test_NN1_Output <- compute(Yacht_NN1, Yacht_Data_Test[, 1:6])$net.result
+NN1_Test_SSE <- sum((Test_NN1_Output - Yacht_Data_Test[, 7])^2)/2
+NN1_Test_SSE
+## [1] 0.008417631461
+```
 
 
+### Regression hyperparmeters {#ANN_Re_Parm}
+
+We have constructed the most basic of regression ANNs without modifying any of the default hyperparameters associated with the `neuralnet()` function. We should try and improve the network by modifying its basic structure and hyperparameter modificatiin. 
+
+To begin we will add depth to the hidden layer of the network, then we will change the activation function from the logistic to the tangent hyperbolicus (tanh) to determine if these modifications can improve the test data set SSE. When using the tanh activation function, we first must rescale the data from $[0,1]$ to $[-1,1]$ using the `rescale` package. For the purpose of this excersie we will use the same random seed for the reproducible results, generally this is not the best practice.
+
+```{r}
+# 2-Hidden layers, layer-1 4-neurons, layer-2, 1-neuron, logistic activation functio
+
+set.seed(12321)
+Yacht_NN2 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, 
+                       data = Yacht_Data_Train, 
+                       hidden = c(4, 1), 
+                       act.fct = "logistic")
+
+## Training Error
+NN2_Train_SSE <- sum((Yacht_NN2$net.result - Yacht_Data_Train[, 7])^2)/2
+
+## Test Error
+Test_NN2_Output <- compute(Yacht_NN2, Yacht_Data_Test[, 1:6])$net.result
+NN2_Test_SSE <- sum((Test_NN2_Output - Yacht_Data_Test[, 7])^2)/2
+
+# Rescale for tanh activation function
+scale1 <- function(x){
+  (2*((x-min(x))/(max(x) - min(x))))-1
+}
+
+Yacht_Data_Train <- Yacht_Data_Train %>% mutate_all(scale1)
+Yacht_Data_Test <- Yacht_Data_Test %>% mutate_all(scale1)
+
+# 2-Hidden Layers, Layer-1 4-neurons, Layer-2, 1-neuron, tanh activation
+# function
+set.seed(12321)
+Yacht_NN3 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, 
+                       data = Yacht_Data_Train, 
+                       hidden = c(4, 1), 
+                       act.fct = "tanh")
+
+## Training Error
+NN3_Train_SSE <- sum((Yacht_NN3$net.result - Yacht_Data_Train[, 7])^2)/2
+
+## Test Error
+Test_NN3_Output <- compute(Yacht_NN3, Yacht_Data_Test[, 1:6])$net.result
+NN3_Test_SSE <- sum((Test_NN3_Output - Yacht_Data_Test[, 7])^2)/2
+
+# 1-Hidden Layer, 1-neuron, tanh activation function
+set.seed(12321)
+Yacht_NN4 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, 
+                       data = Yacht_Data_Train, 
+                       act.fct = "tanh")
+
+## Training Error
+NN4_Train_SSE <- sum((Yacht_NN4$net.result - Yacht_Data_Train[, 7])^2)/2
+
+## Test Error
+Test_NN4_Output <- compute(Yacht_NN4, Yacht_Data_Test[, 1:6])$net.result
+NN4_Test_SSE <- sum((Test_NN4_Output - Yacht_Data_Test[, 7])^2)/2
+
+# Bar plot of results
+Regression_NN_Errors <- tibble(
+  Network = rep(c("NN1", "NN2", "NN3", "NN4"), each = 2),
+  DataSet = rep(c("Train", "Test"), time = 4),
+  SSE     = c(NN1_Train_SSE, NN1_Test_SSE,
+              NN2_Train_SSE, NN2_Test_SSE,
+              NN3_Train_SSE, NN3_Test_SSE,
+              NN4_Train_SSE, NN4_Test_SSE))
+
+Regression_NN_Errors %>% 
+  ggplot(aes(Network, SSE, fill = DataSet)) + 
+  geom_col(position = "dodge") + 
+  ggtitle("Regression ANN's SSE")
+```
+
+As evident from the plot, we see that the best regression ANN we found was Yacht_NN2 with a training and test SSE of 0.0188 and 0.0057. We make this determination by the value of the training and test SSEs only. `Yacht_NN2`Åfs structure is presented here:
+
+```{r}
+plot(Yacht_NN2, rep = "best")
+```
+
+We havee looked at one ANN for each of the hyperparameter settings. Generally, researchers look at more than one ANN for a given setting of hyperparameters. This capability is built into the `neuralnet` package using the `rep` argument in the `neuralnet()` function. Using the `Yacht_NN2` hyperparameters we construct 10 different ANNs and select the best of the 10.
+
+```{r}
+set.seed(12321)
+Yacht_NN2 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, 
+                       data = Yacht_Data_Train, 
+                       hidden = c(4, 1), 
+                       act.fct = "logistic", 
+                       rep = 10)
+
+plot(Yacht_NN2, rep = "best")
+```
+
+By setting the same seed, prior to running the 10 repetitions of ANNs, we force the software to reproduce the exact same `Yacht_NN2` ANN for the first replication. The subsequent 9 generated ANNs, use a different random set of starting weights. Comparing the ÅebestÅf of the 10 repetitions, to the `Yacht_NN2`, we observe a decrease in training set error indicating we have a superior set of weights.
+
+### Wrapping up {#ANN_Re_WU}
+
+We have briefly covered regression ANNs in this tutorial. In the next tutorial, we will cover classification ANNs. The `neuralnet` package used in this tutorial is one of many tools available for ANN implementation in R. Others include:
+
+- `nnet`
+- `autoencoder`
+- `caret`
+- `RSNNS`
+- `h2o`
+
+Before you move on to the next tutorial, test your new knowledge on the exercises that follow.
+
+1. Why do we split the yacht data into a training and test data sets?
+2. Re-load the Yacht Data from the UCI Machine learning repository yacht data without scaling. Run any regression ANN. What happens? Why do you think this happens?
+3. After completing exercise question 1, re-scale the yacht data. Perform a simple linear regression fitting Residuary_Resist as a function of all other features. Now run a regression neural network (see 1st Regression ANN section). Plot the regression ANN and compare the weights on the features in the ANN to the p-values for the regressors.
+4. Build your own regression ANN using the scaled yacht data modifying one hyperparameter. Use ?neuralnet to see the function options. Plot your ANN.
+
+## Classification 
+
+Classification ANNs seek to classify an observation as belonging to some discrete class as a function of the inputs. The input features (independent variables) can be categorical or numeric types, however, we require a categorical feature as the dependent variable.
+
+### tl;dr
+In this tutorial we introduce a neural network used for numeric predictions and cover:
+
+1. [Replication requirements](#ANN_Cl_RR): What youÅfll need to reproduce the analysis in this tutorial.
+2. [Data Preparation](#ANN_Cl_Data): Preparing our data.
+3. [1st Classification ANN](#ANN_Cl_Model): Constructing a 1-hidden layer ANN with 1 neuron.
+4. [Classification Hyperparameters](#ANN_Cl_Param): Tuning the model.
+5. [Wrapping Up](#ANN_Cl_WU): Final comments and some exercises to test your skills.
+
+### Replication Requirements {#ANN_Cl_RR}
+
+The following packages are required for classification ANN analysis.
+
+```{r}
+library(tidyverse)
+library(neuralnet)
+library(GGally)
+```
+
+### Data Preparation {#ANN_Cl_Data}
+
+Our classification ANN will use [Haberman's Survivial](http://archive.ics.uci.edu/ml/machine-learning-databases/haberman/haberman.data) data set from UCI's Machine Learning Repository. Repository. HabermanÅfs data set was provided by Tjen-Sien Lim email, and contains cases from a 1958 and 1970 study conducted at the University of ChicagoÅfs Billings Hospital on the survival of 306 patients who had undergone surgery for breast cancer. We will use this data set to predict a patientÅfs 5-year survival as a function of their age at date of operation, year of the operation, and the number of positive axillary nodes detected.
+
+
+We first download the data from UCI. When this data is imported, the `Survival` feature is imported as an integer, this needs to be categorical logical value so we will modify this feature using the `mutate()` function in the `dplyr` package. 
+
+A value of 1 in the `Survival` feature indicates that the patient survived for at least 5 years after the operation, and a value of 0 indicates that the patient died within 5 years.
+
+```{r}
+url <- 'http://archive.ics.uci.edu/ml/machine-learning-databases//haberman/haberman.data'
+
+Hab_Data <- read_csv(file = url,
+                     col_names = c('Age', 'Operation_Year', 
+                                   'Number_Pos_Nodes','Survival')) %>%
+  na.omit() %>%
+  mutate(Survival = ifelse(Survival == 2, 0, 1),
+         Survival = factor(Survival))
+```
+
+A brief examination of the data set:
+
+```{r}
+ggpairs(Hab_Data, title = "Scatterplot Matrix of the Features of the Haberman's Survival Data Set")
+```
+
+shows that many more patients survived at least 5 years after the operation. Of the patients that survived (bottom-subplots of the Survival row in the Scatterplot Matrix), we see many of the patients have few numbers of positive axillary nodes detected. Examination of the Age feature shows a few of the most elderly patients died within 5 years, and of the youngest patients we see increased 5-year survivability. We forego any more detailed visual inspection in favor of learning the relationships between the features using our classification ANN.
+
+As in the regression ANN, we must scale our features to fall on the closed $[0,1]$ interval. For classification ANNs using the `neuralnet` package we will not use a training and test set for model evaluation, instead we will use the __Akaike Information Criterion (AIC)__ and __Bayesian Information Criterion (BIC)__ for final model selection. These metrics balance the error as a function of the total number of model parameters, in the ANN case the model parameters correspond to the total number of hidden nodes.
+
+```{r}
+scale01 <- function(x){
+  (x - min(x)) / (max(x) - min(x))
+}
+
+Hab_Data <- Hab_Data %>% 
+  mutate( Age = scale01(Age),
+          Operation_Year = scale01(Operation_Year),
+          Number_Pos_Nodes = scale01(Number_Pos_Nodes),
+          Survival = as.numeric(Survival)-1)
+```
+
+Classification ANN in the `neuralnet` pacakge require that the response feature, in this case `Survival`, be imputed as a Boolean feature. We modify the feature then run the initial classification ANN. 
+
+```{r}
+Hab_Data <- Hab_Data %>% 
+  mutate(
+    Survival = as.integer(Survival) - 1,
+    Survival = ifelse(Survival == 1, TRUE, FALSE)
+  )
+```
+
+
+### 1st Classification ANN {#ANN_Cl_Model}
+
+We construct a 1-hidden layer ANN with 1 neuron. The `neuralnet` package defaults to random initial weight values, for reproducibiity we set a seed and construct the network. 
+
+We have added three arguments for the classification ANN using the `neuralnet` package, `linear.output`, `err.fct`, and `likelihood`. Setting the `linear.output` to `FALSE` and the `err.fct` to "ce" indicates that we are performing a classification and forces the model to output what we may interpret as a probability of each observation belinging to `Survival` class 1. 
+
+For classification ANN the cross-entropy error metric is more appropriate than the SSE used in regression ANNs. The `likelihood` argument set to TRUE indicates to `neuralnet` that we would like to see the AIC and BIC metrics.
+
+```{r}
+set.seed(123)
+Hab_NN1 <- neuralnet(Survival ~ Age + Operation_Year + Number_Pos_Nodes,
+                     data = Hab_Data,
+                     linear.output = FALSE,
+                     err.fct = "ce",
+                     likelihood = TRUE)
+```
+
+
+The `HAb_NN1` is a list containing all parameters of the classification ANN as well as the results of the neural network on the test data set. To view a diagram of the `Hab_NN1` use the `plot()` function.
+
+```{r}
+plot(Hab_NN1, rep = "best")
+```
+
+The error diplayed in this plot is the cross-entropy error, which is a measure of the differences between the predicted and observed output for each of the observations in the `Hab_Data` data set. To view the Hab_NN1 AIC, BIC, and error metrics run the following.
+
+```{r}
+Hab_NN1_Train_Error <- Hab_NN1$result.matrix[1,1]
+paste("CE Error: ", round(Hab_NN1_Train_Error, 3)) 
+## [1] "CE Error:  0.009"
+Hab_NN1_AIC <- Hab_NN1$result.matrix[4,1]
+paste("AIC: ", round(Hab_NN1_AIC,3))
+## [1] "AIC:  12.017"
+Hab_NN2_BIC <- Hab_NN1$result.matrix[5,1]
+paste("BIC: ", round(Hab_NN2_BIC, 3))
+## [1] "BIC:  34.359"
+```
+
+### Classification Hyperparameters {#ANN_Cl_Param}
+
+Classification ANNs within the `neuralnet` package require the use of the ce error. This forces us into using the default `act.fun` hyperparameter value. As a result, we will only change the structure of the classification ANNs using the `hidden` function setting.
+
+```{r}
+set.seed(123)
+
+# 2-Hidden layers, Layer-1 2-neurons, Layer-2, 1-neuron
+Hab_NN2 <- neuralnet(Survival ~ Age + Operation_Year + Number_Pos_Nodes,
+                     data = Hab_Data,
+                     linear.output = FALSE,
+                     err.fct = "ce",
+                     likelihood = TRUE,
+                     hidden = c(2,1))
+
+# 2-Hidden Layers, Layer-1 2-neurons, Layer-2, 2-neurons
+set.seed(123)
+Hab_NN3 <- Hab_NN2 <- neuralnet(Survival ~ Age + Operation_Year + Number_Pos_Nodes, 
+                                data = Hab_Data, 
+                                linear.output = FALSE, 
+                                err.fct = 'ce', 
+                                likelihood = TRUE, 
+                                hidden = c(2,2))
+
+# 2-Hidden Layers, Layer-1 1-neuron, Layer-2, 2-neuron
+set.seed(123)
+Hab_NN4 <- Hab_NN2 <- neuralnet(Survival ~ Age + Operation_Year + Number_Pos_Nodes, 
+                                data = Hab_Data, 
+                                linear.output = FALSE, 
+                                err.fct = 'ce', 
+                                likelihood = TRUE, 
+                                hidden = c(1,2))
+
+# Bar plot of results
+Class_NN_ICs <- tibble('Network' = rep(c("NN1", "NN2", "NN3", "NN4"), each = 3), 
+                       'Metric' = rep(c('AIC', 'BIC', 'ce Error * 100'), length.out = 12),
+                       'Value' = c(Hab_NN1$result.matrix[4,1], Hab_NN1$result.matrix[5,1], 
+                                   100*Hab_NN1$result.matrix[1,1], Hab_NN2$result.matrix[4,1], 
+                                   Hab_NN2$result.matrix[5,1], 100*Hab_NN2$result.matrix[1,1],
+                                   Hab_NN3$result.matrix[4,1], Hab_NN3$result.matrix[5,1], 
+                                   100*Hab_NN3$result.matrix[1,1], Hab_NN4$result.matrix[4,1], 
+                                   Hab_NN4$result.matrix[5,1], 100*Hab_NN4$result.matrix[1,1]))
+
+Class_NN_ICs %>%
+  ggplot(aes(Network, Value, fill = Metric)) +
+  geom_col(position = 'dodge')  +
+  ggtitle("AIC, BIC, and Cross-Entropy Error of the Classification ANNs", "Note: ce Error displayed is 100 times its true value")
+
+```
+
+The plot indicates that as we add hidden layers and nodes within those layers, our AIC and cross-entropy error grows. The BIC appears to remain relatively constant across the designs. Here we have a case where Occam's razor clearly applies, the "best" classification ANN is the simplest.
+
+### Wrapping Up
+
+We have briefly covered classification ANNs in this tutorial. In future tutorials, we will cover more advanced applications of ANNs. Also, keep in mind that the `neuralnet` package used in this tutorial is only one of many tools available for ANN implementation in R. Others include:
+
+- `nnet`
+- `autoencoder`
+- `caret`
+- `RSNNS`
+- `h2o`
+
+Before you move on, test your new knowledge on the exercise that follow. 
+
+1. Build your own classification ANN using the `Hab_Data` data set.
+2. The `iris` data set contains 4 numeric features describing 3 plant species. Think about how we would need to modify the iris data set to prepare it for a classification ANN. Hint, the data set for classification will have 7 total features.
+3. R package `nnet` has the capacity to build classification ANNs. Install and take a look at the documentation of nnet to see how it compares with neuralnet.
+
+## [Feedfoward Deep Neural Network](http://uc-r.github.io/feedforward_DNN) 
+
+Machine learning algorithms typically search for the optimal representation of data using some feedback signal (aka objective/loss function). However, most machine learning algorithms only have the ability to use one or two layers of data transformation to learn the output representation.
+
+As data sets continue to grow in the dimensions of the feature space, finding the optimal output representation with a shallow model is not always possible. Deep learning provides a multi-layer approach to learn data representations, typically performed with a multi-layer _neural network_. Like other machine learning algorithms,  deep neural networks (DNN) perform learning by mapping features to targets through a process of simple data transformations and feedback signals; however, DNNs place an emphasis on learning successive layers of meaningful representations. Although an intimidating subject, the overarching concept is rather simple and has proven highly successful in predicting a wide range of problems (i.e. image classification, speech recognition, autonomous driving). This tutorial will teach you the fundamentals of building a feedfoward deep learning model.
+
+### tl;dr
+
+1. [Replication requirements](FF_DL_RR): What youÅfll need to reproduce the analysis in this tutorial.
+2. [Why deep learning](FF_DL_Why): A closer look at what deep learning is and why it can improve upon shallow learning methods.
+3. [Feedfoward DNNs](#FF_DL_DNNs): The most fundamental of the DNN models.
+4. [Network architecture](#FF_DL_Archtecture): A blue print of layers and nodes.
+5. [Backpropagation](#FF_DL_Backpropagation): The feedback signal to adjust weights.
+6. [Model training](): Finally the fun part!
+7. [Model tuning](): How to tune the many parameters of a DNN.
+8. [Predicting](): Once youÅfve found your optimal model, predict on a new data set.
+9. [Other package implementations](): Implementing DNNs with `h2o` and `caret`.
+10. [Learning more](): Where to go from here.
+
+### Replication {FF_DL_RR}
+
+This tutorial will use a few supporting packages but the main emphasis will be on the `keras` package. For more information on install both CPU and GPU-based Keras and TensorFlow capabilities, visit [keras.rstudio.com](https://keras.rstudio.com/).
+
+```{r}
+library(keras)
+```
+
+To illustrate various DNN concepts we will use the Ames Housing data that has been included in the `AmesHousing` pacakge. Howwever, a few important items need to be pointed out.
+
+1. Feedfoward DNNs require all feature inputs to be numeric. Consequently, we one-hot encode with `model.matrix`.
+2. Due to the data transformation process that DNNs perform, they are highly sensitive to the individual scale of the feature values. Consequently, we standardize our feature sets. Also note, that we are standardizing our test feature sets based on the mean and standard deviation of the training features to minimize data leakage.
+3. When one-hot encoding, some variable levels have little or no variance. We remove these variables.
+
+```{r}
+# one hot encode --> we use model.matrix(...)[, -1] to discard the intercept
+data_onehot <- model.matrix(~., AmesHousing::make_ames())[,-1] %>%
+  as.data.frame()
+
+# Create training and test (70%/30% sets fo the AmesHousing::make_ames() data )
+# USe set.seed for reproducibility
+split <- rsample::initial_split(data_onehot, prop = .7, strata = "Sale_Price")
+train <- rsample::training(split)
+test  <- rsample::testing(split)
+
+# Create & standardize feature sets
+train_x <- train %>% 
+  dplyr::select(-Sale_Price)
+mean <- colMeans(train_x)
+std <- apply(train_x, 2, sd)
+train_x <- scale(train_x, center = mean,
+                 scale = std)
+
+# testing features
+test_x <- test %>% dplyr::select(-Sale_Price)
+test_x <- scale(test_x, center = mean, scale = std)
+
+# Create & transform response sets
+train_y <- log(train$Sale_Price)
+test_y  <- log(test$Sale_Price)
+
+# zero variance variables (after one hot encoded) cause NaN so we need to remove
+zv <- which(colSums(is.na(train_x)) > 0, useNames = FALSE)
+train_x <- train_x[, -zv]
+test_x  <- test_x[, -zv]
+
+# What is the dimension of our feature matrix?
+dim(train_x)
+## [1] 2054  299
+dim(test_x)
+## [1] 876 299
+```
+
+###  Why Deep Learning {FF_DL_Why}
+
+Neural networks originated in the computer science field to answer questions that normal statistical approaches were not designed to answer.  A common example you will find is, assume we wanted to analyze hand-written digits and predict the numbers written. This was a problem presented to AT&T Bell LabÅfs to help build automatic mail-sorting machines for the USPS.1
+
+This problem is quite unique because many different feature of the data can be represented. As humans, we look at these numbers and consider features such as angles, edges, thickness, completeness of circules etc. 
+
+We interpret these different representations of the features and combine them to recognize the digit. In essence, neural networks perform the same task albeit in a far simpler manner than our brains. At their most basic levels, neural networks have an input layer, hidden layer, and output layer. The input layer reads in data values from a user provided input. Within the hidden layer is where a majority of the learning takes place, and the output layer projects the results.
+
+```{r fig.cap="Simple feedfoward neural network}
+knitr::include_graphics("image/fig18_1.png")
+```
+
+Although simple on the surface, historically the magic being performed inside the neural net required lots of data for the neural net to learn and was computationally intense; ultimately making neural nets impractical. However, in the last decade advancements in computer hardware (off the shelf CPUs became faster and GPUs were created) made computation more practical, the growth in data collection made them more relevant, and advancements in the underlying algorithms made the depth (number of hidden layers) of neural nets less of a constraint. These advancements have resulted in the ability to run very deep and highly parameterized neural networks, which have become known as deep neural networks (DNNs).
+
+```{r}
+knitr::include_graphics("image/deep_nn.png")
+```
+
+These DNNs allow for very complex representations of data to be modelded, which has opened the door to analyzing high-dimensional data (i.e., images, videos). In traditional machine learning approaches, features of the data need to be defined prior to modeling. One can only imagine trying to create the features for the digit recognition problem above. However, with DNNs, the hidden layers provide the means to auto-identify features. A simple way to think of this is to go back to our digit recognition problem. The first hidden layer may learn about the angles of the line, the next hidden layer may learn about the thickness of the lines, the next learns the location and completeness of the circles, etc. Aggregating these different attributes together by linking the layers allows the model to predict what digit each image is based on its features.
+
+This is the reason that DNNs are so popular for very complex problems where feature engineering is impossible (i.e. image classification, facial recognition). However, at their core, DNNs perform successive non-linear transformations across each layer, allowing DNNs to model very complex and non-linear relationships. This can make DNNs suitable machine learning approaches for traditional regression and classification problems as well. But it is important to keep in mind that deep learning thrives when dimensions of your data are sufficiently large. As the number of observations (n) and feature inputs (p) decrease, traditional shallow machine learning approaches tend to perform just as well, if not better, and are more efficient.
+
+
+### Feedfoward DNNs {#FF_DL_DNNs}
+
+Multiple DNN models exist and as interest and investment in this area have increased, expansions of DNN models have flurished. For example, convolutional networks (CNN or ConvNet) have wide applications in image and video recognition, recurrent neural networks are used with recurrent neural networks (RNN) are used with speech recognition, and long short-term memory neural networks (LTSM) are advancing automated robotics and machine translation. Howeer, fundamental to all these methods is the feedfoward neural net (aka multilayer perceptron). Feedfoward DNNs are densely connected layers where inputs influence each successive layer which then influences the final output layer.
+
+```{r}
+knitr::include_graphics("image/mlp_network.png")
+```
+
+To build a feedfoward DNN we need 4 key components:
+
+1. input data
+2. a defined network architecture
+3. our feedback mechanisim to help our model learn,
+4. a model training approach
+
+The next few sections will walk you through each of these components to build a feedfoward DNN for our Ames housing data.
+
+### Network architecture {#FF_DL_Archtecture}
+
+When develping the network architecture for a feedfoward DNN, you really only need to worry about two features: (1) layers and nodes, (2) activation.
+
+#### 1. Layers and nodes
+
+The layers and nodes are the building blocks of our model and they decide how complex your network will be. Layers are considered dense (fully connected) where all the nodes in each successive layer are connected. Consequently, the more layers and nodes you add the more opportunities for new features to be learned (commonly referred to as the modelÅfs capacity). Beyond the input layer, which is just our predictor variables, there are two main type of layers to consider: hidden layers and an output layer.
+
+__Hidden layers__
+
+There is no well defined approach for selecting the number of hidden layers and nodes, rather, these are the first of many tuning parameters. Typically, with regular rectangular data (think normal data frames in R), 2-5 hidden layers is sufficient. And the number of nodes you incorporate in these hidden layers is largely determined by the number of features in your data. Often, the number of nodes in each layer is equal to or less than the number of features but this is not a hard requirement. At the end of the day, the number of hidden layers and nodes in your network will drive the computational burden of your model. Consequently, the goal is to find the simplest model with optimal performance.
+
+__Output layers__
+
+The output layer is driven by the type of modeling you are peforming. For regression problems, your output layer will contain one node because that one node will predict a continuous numeric output. classification problems are different. If you are predicting a binary output (TRUE/FALSE, WIN/LOSE), your output layer will still contain only one node and thatnode will predict the probability of success (however, you define success). However, if you are predicting a multinomial output, the output layer will contain the same number of nodes as the number of classes being predicted. For example, in our digit recognition problem we would be predicting 10 classes(0-9); therefore, the output layer would have 10 nodes adn the output would provide the probability of each class.
+
+__implementation__
+
+For our Ames data, to develop our network `keras` applies a layering approach. First, we initiate our sequential feedforward DNN architecture with `keras_model_sequential` and then add our dense layers. This example creates two hidden layers, the first with 10 nodes and the second with 5, followed by our output layer with one node. One thing to point out, the first layer needs the `input_shape` argument to equal the number of features in your data; however, the successive layers are able to dynamically interpret the number of expected inputs based on the previous layer.
+
+```{r}
+library(keras)
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 10, input_shape = ncol(train_x)) %>% 
+  layer_dense(units = 5) %>% 
+  layer_dense(units = 1)
+
+model
+```
+
+#### 2. Activation
+
+A key component with neural networks is what is called _activation_. In the human body, the biologic neuron receives inputs from many adjacent neurons. When these inputs accumulate beyond a certain threshold the neuron is _activated_ suggesting there is a signal. DNNs work in a similar fashion.
+
+__Activation functions__
+
+As stated previously, each node is connected to all the nodes in the previous layer. Each connection gets a weight and then that node adds all the incoming inputs multiplied by its corresponding connection weight (plus an extra bias ($w_0$) but don't sorry about that right now). The summed total of these inputs become an input to an _activation_ function.
+
+```{r fig.cap="Flow of information in an artifical neuron", echo=FALSE}
+knitr::include_graphics("image/perceptron_node.png")
+```
+
+The activation function is simply a mathematical function that determines if there is enough informative input at a node to fire a signal to the next layer. There are multiple [activation functions] to choose from but the ,most common ones include:
+
+$$
+Linear (identity): f(x) = x \\
+Rectified Linear Unit (ReLU): f(x) = 0 (for x<0) \\
+f(x) = x (for x >0) \\
+Sigmoid: f(x) = \frac{1}{1+e^{-x}}
+$$
+
+When using rectangular data such as our `Ames` data, the most common approach is to use ReLU activation functions in the hidden layers. The ReLU activation function is simply taking the summed weighted inputs and transforming them to a 0 (not fire) or 1 (fire) if there is enough signal.
+
+For the output layers, we use the linear activation function for regression problems and the sigmoid activation function for classification problems as this will provide the probability of the class (multinomial classification problems commonly use the softmax activation function).
+
+__Implementation__
+
+To implement activation functions into our layers we simply incorporate the `activation` argument. For the two hidden layers we add the ReLU activation function and for the output layer we do not specify an activation function because the default is a linear activation. Note that if we were doing a classification problem we would incorporate `activation = sigmoid` into the final `layer_dense` function call.
+
+```{r}
+model <- keras_model_sequential() %>% 
+    layer_dense(units = 10, activation = "relu", input_shape =
+                  ncol(train_x)) %>%
+  layer_dense(units = 5, activation = "relu") %>%
+  layer_dense(units = 1)
+```
+
+We have created our basic network architecture -> two hidden layers with 10 and 5 nodes repsectively with both hidden layers using ReLU activation functions. Next, we need to incorporate a feedback mechanism to help our model learn.
+
+### Back Propagation {#FF_DL_Backpropagation}
+
+On the first model run (or foward pass), the DNN will select a batch of observations, randomly assign weights across all the node connections, and predict the output. The engine of neural networks is how it assumes its own accuracy and automatically adjusts the weights across all the node connections to try improve that accuracy. This process is called _back-propagation_. To perform backpropagation we need two things:
+
+1. objective (loss) function
+2. optimizer
+
+First, you need to establish an objective (loss) function to measure performance. For regression problems, this is often the [mean squared error](https://en.wikipedia.org/wiki/Mean_squared_error) and for classification problems it is commonly binary and multi-categorical [cross entropy](https://en.wikipedia.org/wiki/Cross_entropy). DNNs can have multiple loss functions but we will just focus on using one. 
+
+On each forward pass the DNN will measure its performance based on the loss function chosen. The DNN will then work backwards through the layers, compute the gradient2 of the loss with regards to the network weights, adjust the weights a little in the opposite direction of the gradient, grab another batch of observations to run through the model, Åcrinse and repeat until the loss function is minimized. This process is known as _mini-batch stochastic gradient descent_ (mini-batch SGD). There are several variants of mini-natch SGD algorithms; they primarily differ in how fast they go down the gradient descent (known as _learning rate_). This gets more technical than we have time for in this post so I will leave it to you to learn the differences and appropriate sceinarios to adjust this parameter. 
+
+For now, realize that sticking with the default RMSProp optimizer will be sufficient for most normal regression and classification problems. However, in the tuning section I will show you how to adjust the learning rate, which can help you from getting stuck in a local optima of your loss function.
+
+To incorporate the backpropagation pice of our DNN we add `compile` to our code sequence. In addition to the optimizer and loss function arguments, we can also identify one or more metrics in addition to our loss function to track and report.
+
+```{r}
+model <- keras_model_sequential() %>%
+  
+  # network architecture
+  layer_dense(units = 10, activation = "relu", input_shape = ncol(train_x)) %>%
+  layer_dense(units = 5, activation = "relu") %>%
+  layer_dense(units = 1) %>%
+  
+  # backpropagation
+  compile(
+    optimizer = "rmsprop",
+    loss = "mse",
+    metrics = c("mae")
+  )
+```
+
+### Model Training
+
+WeÅfve created a base model, now we just need to train it with our data. To do so we feed our model into a `fit` function along with our training data. We also provide a few other arguments that are worth mentioning:
+
+- `batch_size`: As I mentioned in the last section, the DNN will take a batch of data to run through the mini-batch SGD process. Batch sizes can be between 1 and several hundred. Small values will be more computationally burdensome while large values provide provide less feedback signal. Typically, 32 is a good size to start with and the values are typically provided as a power of two that fit nicely into the memory requirements provided as a power of two that fit nicely into the memory requirements of the GPU and CPU hardware like 32, 64, 128, 256, and so on.
+
+- `epochs`: An epoch describes the number of times the algorithm sees the entire data set. So, each time the algorithm has seen all samples in the dataset, an epoch has completed. In our training set, we have 2054 observations so running batches of 32 will require 64 passes for one epoch. The more complex the features and relationships in your data, the more epochs you will require for your model to learn, adjust the weights, and minimize the loss function.
+
+- `validation_splits`: Allows us to perform cross-validation. The model will hold out XX% of the data so that we can compute a more accurate estimate of an out-of-sample error rate.
+
+- `verbose`:  I set this to `FALSE` for creating this tutorial; however, when TRUE you will see a live update of the loss function in your RStudio IDE.
+
+Plotting our output shows how our loss function (and specified metrics) improve for each epoch. We see that our MSE around the 10th epoch.
+
+```{r}
+model <- keras_model_sequential() %>% 
+  
+  # network architecture
+  layer_dense(units = 10, activation = "relu", input_shape = ncol(train_x)) %>% 
+  layer_dense(units = 5, activation = "relu") %>% 
+  layer_dense(units = 1) %>% 
+  
+  # backpropagation
+  compile(
+    optimizer = "rmsprop",
+    loss = "mse",
+    metrics = c("mae")
+  )
+
+# train our model
+learn <- model %>% fit(
+  x = train_x,
+  y = train_y,
+  epochs = 25,
+  batch_size = 32,
+  validation_split = .2,
+  verbose = FALSE
+)
+
+learn
+plot(learn)
+```
+
+### Model tuning
+
+Now that we have an understanding of producing and running our DNN model, the next task is to find an optimal model by tuning different parameters. There are many ways to tune a DNN. Typically, the tuning process follows these general steps; however, there is often a logt of iterations among these:
+
+1. Adjust model capacity (layers & nodes)
+2. Increase epochs if you do not see a flatlined loss function
+3. Add batch normalization
+4. Add dropout
+5. Add weightregularization
+6. Adjust learning rate
+
+#### Adjust model capacity
+
+Typically, we start with a high capacity model (several layers and nodes) to deliberately overfit the data. When do we know we have overfit? When we start to see our validation metrics deterioate we can be confident we have overfit. For example, here is a highly parameterized model with 3 layers and 500, 250 and 125 nodes per layer respectively. Our output shows high variability in our vzalidation metrics.
+
+```{r}
+model <- keras_model_sequential() %>% 
+  
+  # network architecture
+  layer_dense(units = 500, activation = "relu", input_shape = ncol(train_x)) %>% 
+  layer_dense(units = 250, activation = "relu", input_shape = ncol(train_x)) %>%
+  layer_dense(units = 125, activation = "relu") %>%
+  layer_dense(units = 1) %>%
+  
+  # backpropagation
+  compile(
+    optimizer = "rmsprop",
+    loss = "mse",
+    metrics = c("mae")
+  )
+
+# train our model
+learn <- model %>% fit(
+  x = train_x,
+  y = train_y,
+  epochs = 25,
+  batch_size = 32,
+  validation_split = .2,
+  verbose = FALSE
+)
+
+plot(learn)
+```
+
+Once we have overfit, we can reduce our layers and nodes until we see improvement in our validation metrics. Not onlydo we want to see stable validationmetrics, we also want to find the model capacity that minimizes overfitting. Here, I find that 2 layers with 100 and 50 nodes respectively does a pretty good job of stabilizing our errors and minimizing our metrics and overfitting. 
+
+```{r}
+
+model <- keras_model_sequential() %>% 
+  
+  # network architecture
+  layer_dense(units = 100, activation = "relu", input_shape = ncol(train_x)) %>% 
+  layer_dense(units = 50, activation = "relu") %>% 
+  layer_dense(units = 1) %>% 
+  
+  # backpropagatio
+  compile(
+    optimizer = "rmsprop",
+    loss = "mse",
+    metrics = c("mae")
+  )
+
+# train our model
+learn <- model %>% fit(
+  x = train_x,
+  y = train_y,
+  epochs = 25,
+  batch_size = 32,
+  validation_split = .2,
+  verbose = FALSE
+)
+
+plot(learn)
+
+
+```
 
 
 
