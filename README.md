@@ -117,12 +117,8 @@ by Winston Chang
 Another useful website is Cookbook for R: covering other topics online: http://www.cookbook-r.com/
 
 
-## Time series analysis
-### 📚 Forecasing principles and Practice
-by Rob J Hyndman
-📚 Book: https://otexts.com/fpp2/
-
-
-
-
+## Uni class
+### CS229
+Machine learning course by Andrew Ng from Stanford University
+🎥Video and 📚Material : https://see.stanford.edu/Course/CS229/47
 
