@@ -116,5 +116,5 @@ Another useful website is Cookbook for R: covering other topics online: http://w
 ## Uni class
 ### CS229
 Machine learning course by Andrew Ng from Stanford University  
-🎥Video and 📚Material : https://see.stanford.edu/Course/CS229/47  
+🎥Video and 📚Material : http://cs229.stanford.edu/syllabus.html  
 
