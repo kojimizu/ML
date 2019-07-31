@@ -19,22 +19,19 @@ This material from the below page covers basic R techniques, descrptive analytic
 
 - Predictive analyitics: 
     - ML(Linear, Naive Bayes, Regularized Regression, MARS, Regression Tree, Random Forests, GBM, Discriminant Analysis, SVM)  
-    - Time series analysis  
-    - DL (To be updated)
+    - Time series analysis: Exponential smoothing, MA/AR
+    - DL: Regression DNN, Classification DNN
 
 ## Modeling Resources
 ### 📦 Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
 A package for ML modeling with pre-processing techniques 
+📚 Book: http://topepo.github.io/caret/
+📦 Repo:   https://github.com/topepo/caret
 ```{R}
 # Avaiable from CRAN
 install.packages("caret")
 ```
-From Sep 2018 - Oct 2018  
-
-📚 Book: http://topepo.github.io/caret/
-📦 Repo:   https://github.com/topepo/caret
-
 ### 📦 Tidymodels  
 Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
 
@@ -51,7 +48,6 @@ install.packages("tidymodels")
 Useful blog posts
 recipes: http://www.rebeccabarter.com/blog/2019-06-06_pre_processing/  
 tidymodels: https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/  
-
 
 ## Feature Engineering Resouces 
 ### 📚 Feature Engineering and Selection (FES)  
@@ -97,7 +93,6 @@ https://purrr.tidyverse.org/
 Datacamp
  - 🎥 [Functional progamming with purrr](https://www.datacamp.com/courses/foundations-of-functional-programming-with-purrr)
  
-
 ### Case study of Purrr
 Lessons and Examples by Jenny Brian: 
 📚 Web: https://jennybc.github.io/purrr-tutorial/  
@@ -105,7 +100,7 @@ Lessons and Examples by Jenny Brian:
 - Core purrr lessons
 - Worked examples 
 
-
+=========================================
 ## Visualization
 ### 📚 Data visualition - A practical introduction  
 by Kieran Healy.   
@@ -116,7 +111,7 @@ by Winston Chang
 📚 Book: https://r-graphics.org/  
 Another useful website is Cookbook for R: covering other topics online: http://www.cookbook-r.com/
 
-
+=========================================
 ## Uni class
 ### CS229
 Machine learning course by Andrew Ng from Stanford University  
