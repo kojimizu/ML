@@ -114,7 +114,13 @@ Another useful website is Cookbook for R: covering other topics online: http://w
 
 =========================================
 ## Uni class
-### CS229
+### Stanford CS229
 Machine learning course by Andrew Ng from Stanford University  
 🎥Video and 📚Material : http://cs229.stanford.edu/syllabus.html  
+
+### Statistical Rethinking  
+https://xcelab.net/rm/statistical-rethinking/  
+
+
+
 
