@@ -70,18 +70,7 @@ The excercise solution can be found on Bookdown as well.
 ### 📚 Modern R with Tidyverse  
 Bookdown material is available [here](https://b-rodrigues.github.io/modern_R/), covering:
 
-1. Hello R and RStudio
-2. object, types
-3. Load data (Reading and Writing)
-4. Descriptive statistics and data management
-5. Graphs
-6. Statistical models
-7. Defining your own functions
-8. _Functional programming__
-9. Package development
-10. Further topics
-
-Datacamp:
+### Datacamp courses
 - 🎥 [Machine Learning in the Tidyverse](https://www.datacamp.com/courses/machine-learning-in-the-tidyverse).
 
 ## Purrr material 
@@ -116,7 +105,9 @@ Machine learning course by Andrew Ng from Stanford University
 🎥Video and 📚Material : http://cs229.stanford.edu/syllabus.html  
 
 ### Statistical Rethinking  
-https://xcelab.net/rm/statistical-rethinking/  
+Bayes stats using `brms`, `ggplot2` and `tidyverse`
+- 📚 Bookdown: https://bookdown.org/ajkurz/Statistical_Rethinking_recoded/  
+- HP: https://xcelab.net/rm/statistical-rethinking/    
 
 
 
