@@ -90,10 +90,7 @@ https://purrr.tidyverse.org/
 
 ### Happy Purrrr 
 - 🎥 [A tutorial video](https://resources.rstudio.com/wistia-rstudio-conf-2017/happy-r-users-purrr-tutorial-charlotte-wickham) by Charotte Wickhkm. THe DataCamp courses are useful for code practice.
-
-Datacamp
- - 🎥 [Functional progamming with purrr](https://www.datacamp.com/courses/foundations-of-functional-programming-with-purrr)
- 
+- 🎥 [Functional progamming with purrr](https://www.datacamp.com/courses/foundations-of-functional-programming-with-purrr)  by DataCamp  
 ### Case study of Purrr
 Lessons and Examples by Jenny Brian: 
 📚 Web: https://jennybc.github.io/purrr-tutorial/  
