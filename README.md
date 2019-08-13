@@ -98,8 +98,11 @@ by Winston Chang
 📚 Book: https://r-graphics.org/  
 Another useful website is Cookbook for R: covering other topics online: http://www.cookbook-r.com/
 
+### Geo-visualization
+- Site: https://www.jasondavies.com/  
+
 =========================================
-## Uni class
+## Stats by Uni Class
 ### Stanford CS229
 Machine learning course by Andrew Ng from Stanford University  
 🎥Video and 📚Material : http://cs229.stanford.edu/syllabus.html  
