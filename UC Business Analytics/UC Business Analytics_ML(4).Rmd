@@ -1,0 +1,1863 @@
+---
+title: "UC business Analytics R programming Guide 4"
+author: "Koji Mizumura"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  rmdformats::readthedown:
+    number_sections: yes
+    fig_height: 10
+    fig_width: 14
+    highlight: kate
+    toc_depth: 3
+    css: style.css
+  html_document:
+    number_sections: yes
+    section_divs: yes
+    theme: readable
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+always_allow_html: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  # fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+
+# Unsupervised learning - Dimensionality Reduction
+## [Principal component analysis](http://uc-r.github.io/pca)
+
+Principal component analysis (PCA) involves the process by which principal components are computed and their role in understanding the data. PCA is an unsupervised approach, which means that it is performed on a set of variables $X_1, X_2, ..., X_p$ with no associated response $Y$. PCA reduces the dimensionality of the data set, allowing most of the variability to be explained using fewer variables. PCA is commonly used as one step in a series of analysis. 
+
+You can use PCA to reduce the number of variables and avoid multicollinearity, or when you have too many predictors relative to the number of observations.
+
+### tl;dr
+
+This tutorial servies as an introduction to Principal Component Analysis (PCA).
+
+1. [Replication Requirements](#PCA_RR): What you’ll need to reproduce the analysis in this tutorial
+2. [Preparing Our Data](#PCA_Data): Cleaning up the data set to make it easy to work with
+3. [What are Principal Components](#PCA_Principle): Understanding and computing Principal Components for $X_1, X_2,...,X_p$.
+4. [Selecting the Number of Principal Components](#PCA_Comp_Number): Using Proportion of Variance Explained (PVE) to decide how many principal components to use
+5. [Built-in PCA Functions](): Using built-in R functions to perform PCA
+6. [Other Uses for Principal Components](): Application of PCA to other statistical techniques such as regression, classification, and clustering
+
+### Replication requirements {#PCA_RR}
+
+This tutorial primarily leverages the `USArrests` data set that is built into R. This is a set that contains four variables that represent the number of arrests per 100,000 residents for `Assualt, Murder and Rape` in each of the fifty US states in 1973. The data set also contains the percentage of the population living in urban area, `UrbanPop`
+
+```{r}
+library(tidyverse)  # data manipulation and visualization
+library(gridExtra)  # plot arrangement
+```
+
+```{r ech=FALSE}
+data("USArrests")
+USArrests %>% str()
+USArrests %>% DT::datatable()
+```
+
+```{r}
+data <-  USArrests %>% 
+  rownames_to_column() %>% 
+  rename(State = rowname) %>% 
+  select(State, Murder, Assault, Rape, UrbanPop) %>% 
+  gather(`Murder`:`Rape`, key = "crime", value = "number")
+
+p <- data %>% 
+  ggplot(aes(x = UrbanPop, y = number, col=crime, label=State))+
+  geom_point()+
+  facet_wrap(~crime)
+
+p + hrbrthemes::theme_ipsum_ps()
+
+```
+
+### Preparing our data {#PCA_Data}
+
+It is usually beneficial for each variable to be centered at zero for PCA, due to the fact that it makes comparing each principla component to the mean straightfoward. This also eliminates potential problems with the scale of each variable. 
+
+For example, the variance of Assault is 6945, while the variance of Murder is only 18.97. The _Assult_ data isn't necessarily more variable, it is simply on a different scale relative to _Murder_. 
+
+```{r}
+# compute variance of each variable
+# apply(USArrests, 2, var)
+
+var <- USArrests %>% 
+  map(., stats::var) %>% 
+  as.tibble()
+
+var %>% 
+  gather(`Murder`:`Rape`, key ="Type", value = "var") %>% 
+  ggplot()+
+  geom_col(aes(Type, var))+
+  hrbrthemes::theme_ipsum_ps()
+```
+
+Standardizing each variable will fix this issue.
+
+```{r}
+# create new data frame with centered variables
+scaled_df <- apply(USArrests, 2, scale)
+head(scaled_df)
+
+# pre-processing by recipes package
+library(recipes)
+US_Arrests_rec <- recipe(
+  Murder ~ ., data = USArrests) %>% 
+  recipes::step_center(all_predictors()) %>% 
+  recipes::step_scale(all_predictors())
+
+USArrests %>% DT::datatable()
+
+(USArrests_pre <- US_Arrests_rec %>% 
+  prep() %>% 
+  bake(new_data = USArrests)) %>% DT::datatable()
+
+```
+
+However, keep in mid that there maybe instances where scaling is not desirable. An example would be if every variable in the data set had the same units and the analyst wished to capture this difference in variance for his or her results. 
+
+Since _Murder, Assault and Rape_ are all measured on occurences per 100,000 people this may be reasonable depending on how youwant to interpret the results. But since _Urban Pop_ is measured as a percentage of total population, it wouldn't make sense to compare the variability of _URbanPop to Murder, Assault and Rape_. 
+
+The important thing to remember is PCA is influenced by the magnitude of each varaible; therefore, the results obtained when we perform PCA wil lalso depend on whether the variables have benn individually scaled. 
+
+### What are Principal Components? {#PCA_Principle} 
+
+The goal of PCA is to exaplin of the variability in the data with a smaller number of variables than the oroginal data set. For a large data set with `p` variables, we could examine parwise plots of each variable against every other variable, but even for moderate `p`, the number of these plots becomes excessive and not useful. 
+
+For example, when `p =10` there are $p(p-1)/2 = 45$ scatterplots that could be analyzed !  Clearly, a better method is required to visualize the `n` observations when `p` is large. In particular, we would like to find a low-dimensional representation of the data that captures as much of the information as possible. For instance, if we can obtain a two-dimensional representation of the data that captures most of the information, then we can plot the observation in this low dimensional space. 
+
+PCA provides a tool to do just this. It finds a low-dimensional representation of a data set that contains as much of the variation as possible. The idea is that each of the `n` observations lives in `p`-dimensional space, but not all of these dimensions are equally interesting. PCA seeks a small number of dimensions that are as interesting as possible, where the concept of interesting is measured by the mount that observations vary along each dimension. Each of the dimensions found by PCA is a linear combination of the `p` features and we can take these linear combinations of the measurements and reduce the number of plots necessary for visual analysis while retaining most of the information present in the data.
+
+We now explain the manner in which these dimenstions, or principal components are found.
+
+The _first principal components_ of a data set $X_1, X_2, ..., X_p$ is the linear combination of the features.
+
+$$
+Z_1 = \phi_{11}X_1 + \phi_{21}X_2 + ... + \phi_{p1}X_p
+$$
+
+that has the largest variance and where $\phi_1$ is the first principal component loading vector, with elements $\phi_{12}, \phi_{22}, ..., \phi_{p2}$. The $\phi$ are normalized, which means that $\Sigma_{j=1}^p=1$. After the first component $Z_1$ of the features has been determined, we can find the second principal component $Z_2$. The second principal component is the linear combination of $X_1.,,,.X_p$ that has maximal variance out of all linear combinations that are __uncorrelated__ with _Z_1_. The second principal component scores $z_{12}, z_{22},...z_{n2}$ take the form
+
+$$
+Z_2 = \phi_{12}X_1 + \phi_{22}X_2 + ... + \phi_{p2}X_p
+$$
+
+This proceeds until all principal components are computed. The elements $\phi_{11},...,\phi_{p1}$ in Eq.1 are the _loadings_ of the first principal component. To calculate these loadings, we must find the $/phi$ vector that maximizes the variance.
+
+It can be shown using techniques from linear algebra that the eigen vector corresponding to the largest eigenvalue of the covariance matrix is the set of loadings that explains the greatest proportion of the variability.
+
+Therefore, to calculate principal components, we start by using the `cov()` function to calculate the covariance matrix, followed by the `eigen` command to calculate the eigenvalues of the matrix. `eigen` produces an object that contains both the ordered eigenvalues(`$values`)  and the corresponding eigenvector matrix (`vectors`).
+
+```{r}
+# Calculate eigen values & eigen vectors
+arrests.cov <- cov(scaled_df)
+arrests.eigen <- eigen(arrests.cov)
+str(arrests.eigen)
+
+arrests.eigen$values %>% tibble()
+```
+
+For our example, we will take the first two sets of loadings and store them in the matrix `phi`.
+
+```{r}
+# Extract the loadings
+(phi <- arrests.eigen$vectors[,1:2])
+##            [,1]       [,2]
+## [1,] -0.5358995  0.4181809
+## [2,] -0.5831836  0.1879856
+## [3,] -0.2781909 -0.8728062
+## [4,] -0.5434321 -0.1673186
+```
+
+Eigenvectors that are calculated in any software package are unique up to a sign flip. By default, eigenvectors in R point in the negative direction. For this example, we would prefer the eigenvectors point in the positive direction because it leads to more logical interpretation of graphical results as we will see shortly.
+
+To use the positive-pointing vector, we must multiply the default loadings by -1. The set of loadings for the first principal component (`PC1`) and second component (`PC2`) are shown below.
+
+```{r}
+phi <- phi
+row.names(phi) <- c("Murder", "Assault", "UrbanPop", "Rape")
+colnames(phi) <- c("PC1", "PC2")
+
+phi
+```
+
+Each principal component vector defines a direction in feature space. Because eigenvectors are orthogonal to every other eigenvector, loadings and, therefore, principal components are uncorrelated with one another, and form a basis of the new space. This holds true no matter how many dimensions are being used.
+
+By examining the principal component vectors above, we can infer the the first principal component (`PC1`) roughly corresponds to an overall rate of serious crimes since _Murder_, _Assault_, and _Rape_ have the largest values. The second component (`PC2`) is affected by _UrbanPop_ more than the other three variables, so it roughly corresponds to the level of urbanization of the state, with some opposite, smaller influence by murder rate.
+
+If we project the `n` data points $x_1, ..., x_n$ onto the first eigenvector, the projected values are called the `Wprincial component scores` for each observation.
+
+```{r}
+# Calculate Principal components scores
+PC1 <- as.matrix(scaled_df) %*% phi[,1]
+PC2 <- as.matrix(scaled_df) %*% phi[,2]
+
+# Create data frame with Principal Components scores
+PC <- data.frame(State = row.names(USArrests), PC1, PC2)
+head(PC)
+##        State        PC1        PC2
+## 1    Alabama  0.9756604 -1.1220012
+## 2     Alaska  1.9305379 -1.0624269
+## 3    Arizona  1.7454429  0.7384595
+## 4   Arkansas -0.1399989 -1.1085423
+## 5 California  2.4986128  1.5274267
+## 6   Colorado  1.4993407  0.9776297
+```
+
+Now that we have calculated the first and second principal components for each US state, we can plot them against each other and produce a two-dimensional view of the data. 
+
+The first principal component (x-axis) roughly corresponds to the rate of serious crimes. States such as California, Florida, and Nevada have high rates of serious crimes, while states such as North Dakota and Vermont have far lower rates. The second component (y-axis) is roughly explained as urbanization, which implies that states such as Hawaii and California are highly urbanized, while Mississippi and the Carolinas are far less so. A state close to the origin, such as Indiana or Virginia, is close to average in both categories.
+
+```{r}
+# Plot Principal Components for each State
+ggplot(PC, aes(PC1, PC2)) + 
+  modelr::geom_ref_line(h = 0) +
+  modelr::geom_ref_line(v = 0) +
+  geom_text(aes(label = State), size = 3) +
+  xlab("First Principal Component") + 
+  ylab("Second Principal Component") + 
+  ggtitle("First Two Principal Components of USArrests Data")
+```
+
+
+### Selecting the Number of Principal Components {#PCA_Comp_Number}
+
+Note that in the above analysis, we only looked at two of the four principal components. How did we know to use two principal components? And how well is the data explained by these two principal components compared to using the full data set?
+
+#### The Proportion of variance explained
+
+We mentioned previously that PCA reduces the dimensionalty while explaining most of the variability, but there is a more technical method for measuring exactly what percentage of the variance was retained in these principal components.
+
+By performing some algebra, the proportion of variance explained (PVE) by the `m`th principal component is calculated using the equatiin:
+
+$$
+PVE = \frac{\Sigma_{i=1}^n (\Sigma_{j=1}^p \phi_{jm} x_{ij})^2}
+{\Sigma_{j=1}^p \Sigma {i=1}^n x_{ij}^2}
+$$
+
+It can be shown that the PVE of the `m`th principal component can be more simply calculated by taking the `m`th eigenvalue and dividing it by the number of principal components, `p`. A vector of PVE for each principal component is calculated. 
+
+```{r}
+PVE <- arrests.eigen$values / sum(arrests.eigen$values)
+round(PVE,2)
+```
+
+The first principal component in our example therefore explains 62% of the variability, and the second principal component explains 25%. Together, the first two principal components explain 87% of the variability.
+
+It is often advantageous to plot the PVE and cumulative PVE, for reasons explained in the following section of this tutorial. The plot of each is shown below:
+
+```{r}
+# PVE (aka scree) plot
+PVEplot <- qplot(c(1:4), PVE) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab("PVE") +
+  ggtitle("Scree Plot") +
+  ylim(0, 1)+
+  hrbrthemes::theme_ipsum_ps()
+
+# Cumulative PVE plot
+cumPVE <- qplot(c(1:4), cumsum(PVE)) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab(NULL) + 
+  ggtitle("Cumulative Scree Plot") +
+  ylim(0,1)+
+  hrbrthemes::theme_ipsum_ps()
+
+grid.arrange(PVEplot, cumPVE, ncol = 2)
+  
+```
+
+#### Deciding how many principal components to use
+
+For a general `n x p` data matrix `X`, there are up to min$(n-1, p)$ principal components that can be calculated. However, because the point of PCA is to significantly reduce the number of variables, we want to use the smallest number of principal components possible to explain most of the variability.
+
+The frank answer is that there is no robust method for determining how many components to use. As the number of observations, the number of variables, and the application vary, a different level of accuracy and variable reduction are desireble.
+
+The most common technique for determining how many principal components to keep is eyeballing the scree plot, which is the left-hand plot shown above and stored in the ggplot object `PVEplot`. To determine the number of components, we look for the “elbow point”, where the PVE significantly drops off.
+
+In our example, because we only have 4 variables to begin with, reduction to 2 variables while still explaining 87% of the variability is a good improvement.
+
+### Built-in PCA Functions
+
+In the sections above, we manually computed many of the attributes of PCA (i.e., eigenvalues eigenvectors, principal components scores). This was meant to help you learn about PCA by understanding what manipulations are occuring with the data; however, using this process to repeatedly perfrom PCA maybe a bit tedious. Fortunately, R has several built-in functions (along with numerous add-on packages) that simplifies performing PCA.
+
+One of these built-in functions is `prcomp`. With `prcomp` we can perform many of the previous calculations quickly. By default, the `prcomp` function centers the variables to have mean zero. By using the option `scale=TRUE`, we scale the variables to have standard deviation one. The output from `prcomp` contains a number of useful quantities.
+
+```{r}
+pca_result <- prcomp(USArrests, scale=TRUE)
+names(pca_result)
+```
+
+The `center` and `scale` components correspond to the means and standard deviations of the variables that were used for scaling prior to implementing PCA.
+
+```{r}
+# mean
+pca_result$center
+
+# standard devisions
+pca_result$scale
+```
+
+The `rotation matrix` provides the principal component loadings: each column of `pca_result$rotation` contains the corresponding principal component loading vector.
+
+```{r}
+pca_result$rotation %>% 
+  table
+```
+
+We see that there are four distinct principal components. This is to be expected because there are in general $min(n-1,p)$ informative principal componets in a data set with `n` observations and `p` variables. Also, notice that `PCA1` and `PCA2` Are opposite signs from what we computed earlier. Recall that by default, eigenvectors in R point in the negative direction. we can adjust this with a simple change.
+
+```{r}
+pca_result$rotation <- pca_result$rotation
+pca_result$rotation %>% as.data.frame()
+```
+
+Now our `PC1` and `PC2` match what we computed ealier. We can also obtain the principal components scores from our results, as these are stored in the `x` list item of our results. However, we also want to make a slight sign adjustment to our scores to point them in the positive direction.
+
+```{r}
+pca_result$x <- pca_result$x
+head(pca_result$x) %>% as.data.frame()
+```
+
+We can plot the 
+
+```{r}
+biplot(pca_result, scale = 0)
+
+p <- pca_result$x %>% 
+  as.data.frame() %>% 
+  mutate(state = rownames(.))%>% 
+  ggplot(aes(x=PC1, y = PC2))+
+  geom_point()+
+  ggrepel::geom_text_repel(aes(label = state), size=1)
+  
+p + geom_segment(data = pca_result$rotation %>% data.frame(), aes(x=0, y=0, xend = PC1, yend = PC2))+
+    hrbrthemes::theme_ipsum_rc()
+```
+
+The `prcomp` function also outputs the standard deviation of each principal component.
+
+```{r}
+pca_result$sdev
+```
+
+The variance explained by each principal component is obtained by squaring these values:
+
+```{r}
+(VE <- pca_result$sdev^2)
+```
+
+To compute the proportion of variance explained by each principal component, we simply divide the variance explained by each principal component by the total variance explained by all four principal components:
+
+```{r}
+PVE <- VE / sum(VE)
+round(PVE, 2)
+## [1] 0.62 0.25 0.09 0.04
+```
+
+As before, we see that that the first principal component explains 62% of the variance in the data, the next principal component explains 25% of the variance, and so forth. And we could proceed to plot the PVE and cumulative PVE to provide us our scree plots as we did earlier.
+
+### Other uses for principal components 
+
+Other Uses for Principal Components
+This tutorial gets you started with using PCA. Many statistical techniques, including regression, classification, and clustering can be easily adapted to using principal components. These techniques will not be outlined in this tutorial but will be presented in future tutorials and much of the procedures remain similar to what you learned here. In addition to our future tutorials on these other uses you can learn more about them by reading:
+
+- An Introduction to Statistical Learning
+- Applied Predictive Modeling
+- Elements of Statistical Learning
+
+## Generalized Low rank Models
+[Link](https://bradleyboehmke.github.io/HOML/GLRM.html)
+
+The PCs constructed in PCA are linear in nature, which can cause dificiencies in its performance. This is much like the deficiency that linear regression has in capturing nonlinear relationships. Alternative approaches, known as matrix factorization methods have helped address this issue. More recently, however, a generalization of PCA and matrix factorization, called _generalized low rank models(GLRMs)_ (Udell et al. 2016), has become a popular approach to dimension reduction.
+
+### Prerequisites
+This chapter leverages the following packages.
+
+```{r}
+# Helper packages
+library(dplyr)    # for data manipulation
+library(ggplot2)  # for data visualization
+library(tidyr)    # for data reshaping
+
+# Modeling packages
+library(h2o)  # for fitting GLRMs
+```
+
+### The idea
+
+GLRMS reduce the dimension of a data set by producing a condensed vector representation for every row and column in the original data. Specifically, given a data set `A` with `m` rows and `n` columns, a GLRM consists of a decomposition of `A` into numeric matrices `X` and `Y`. The matrix `X` has the same number of rows as `A`, but only a small, user-specified number of columns `k`. The matrix `Y` has `k` rows and `n` columns, where `n` is equal to the total dimension of the embedded features in `A`. For example, if `A` has 4 numeric columns and 1 categorical column with 3 distinct levels (e.g., red, blue, and green), then `Y` will have 7 columns (due to one-hot encoding). When `A` contains only numeric features, the number of columns in `A` and `Y` are identical, as shown Eq. (18.1).
+
+```{r echo=FALSE}
+knitr::include_graphics("image/GLRM_matrix_factorization.png")
+```
+
+Both `X` and `Y` have prctical imterpretations. Each row of `Y` is an archetypal feature formed from the columns of `A`, and each row of `X` corresponds to a row of `A` projected onto this smaller dimensional feature space. We can approximately reconstruct `A` from the matrix product $X * Y$, which has rank `k`. The number k is chosen to be much less than both m and n (e.g., for 1 million rows and 2,000 columns of numeric data, k could equal 15). The smaller `k` is, the more compression we gain from our low rank representation.
+
+To make this more concrete, lets look at an example using the mtcars data set (available from the built-in datasets package) where we have 32 rows and 11 features (see ?datasets::mtcars for details):
+
+```{r fig.cap="Table 18.1: First 10 rows of the built-in `mtcars` data set."}
+DT::datatable(mtcars)
+```
+
+`mtcars` represents our original matrix `A`. If we want to reduce matrix `A` to a rank of  $k=3$  then our objective is to produce two matrices X and Y that when we multiply them together produce a near approximation to the original values in `A`.
+
+```{r}
+knitr::include_graphics("image/glrm-example.png")
+```
+
+We call the condensed columns and rows in matrices X and X, respectively, “archetypes” because they are a representation of the original features and observations. The archetypes in X represent each observation projected onto the smaller dimensional space, and the archetypes in Y represent each feature projeced onto the smaller dimensional space.
+
+The resulting archetypes are similar in spirit to the PCs in PCA; as they are a reduced feature set that represents our original features. In fact, if our features truly behave in a linear and orthogonal manner than our archetypes produced by a GLRM will produce the same reduced feature set as PCA. However, if they are not linear, then GLRM will provide archetypes that are not necessarily orthoganol.
+
+Howeve,r a few questions remain:
+
+1. How does GLRM produce the archetype values?
+2. How do you select the appropriate value for `k`
+
+We wll address these questions next.
+
+### Finding the lower ranks
+#### Alternating minimization
+
+There are a number of methods available to identify the optimal archetype values for each element in X and Y; however, the most common is baded on _alternating minimization_. Alternating minimization simply alternates between minimizing some loss function for each feature in X and Y. In essence, random values are initially set for the archetype values in X and Y. The loss function is computed (more on this shortly), and then the archetype values in X are slightly adjusted via gradient descent (Section 12.2.2) and the improvement in the loss function is recorded. The archetype values in Y are then slightly adjusted and the improvement in the loss function is recorded. This process is continued until the loss function is optimized or some suitable stopping condition is reached.
+
+#### Loss functions
+
+As stated above, the optimal achetype values are selected based on minimizing some loss function. The loss function should reflect the intuitive notion of what it means to "fit the data well". The most common loss function is the quadratic loss. The quadratic loss is very similar to the SSE criterion (Section 2.6) for supervised learning models where we seek to minimize the squared difference between the actual value in our original data (matrix A) and the predicted value based on our achetypal matrices ($X, Y$) (i.e., minimizing the squared residuals).
+
+$$
+quadratic \ loss = minimize{{\Sigma\Sigma(A_{ij-X_iX_j})^2}}
+$$
+
+However, note that some loss functions are preferred over others in certain scenarios. For example, quadratic loss, similar to SSE, can be heavily influenced by outliers. If you do not want to emphasizde outliers in your dataset, or if you just want to try minimize errors for lower values inadditiona to higher values (e.g., trying to treat low-cost  equally as important as high-cost products) then you can use the Huber loss function. For brevity we do not show the Huber loss equation but it essentially applies quadratic loss to small errors and uses the absolute value for errors with larger values. Figure 18.2 illustrates how the quadratic and Huber loss functions differ.
+
+```{r fig.cap="Figure 18.2: Huber loss (green) compared to quadratic loss (blue). The  $x$-axis represents a particular value at $A_{i,j}$ and the $y$-axis represents the predicted value produced by $X_iY_j$. Note how the Huber loss produces a linear loss while the quadratic loss produces much larger loss values as the residual value increases"}
+
+knitr::include_graphics("image/quadratic-huber-loss.png")
+
+```
+
+#### Regularization
+
+Another important component to fitting GLRMs that you, the analyst, should consider is regularization. Much like the regularization discussed in Chapter 6, regularization applied to GLRMs can be used to constrain the size of the archetypal values in $X$ (with $r_x(X)$ in the equation below) and/or $Y$(with $r_y(Y)$ in the equation below). This can help to create sparse $X$ and/or $Y$ matrices to mitigate the effect of negative features in the data e.g., multicollinearity or excessive noise) which can help prevent overfitting.
+
+If you’re using GLRMs to merely describe your data and gain a better understanding of how observations and/or features are similar then you do not need to use regularization. If you are creating a model that will be used to assign new observations and/or features to these dimensions, or you want to use GLRMs for imputation then you should use regularization as it can make your model generalize better to unseen data.
+
+$$
+regularization = minimize{\Sigma_{i=1}^m (A_{ij}-X_iY_j)^2 + r_x(X)+r_y(Y))}
+$$
+
+As the above equation illustrates, we can regularize both matrices $X$ and $Y$. However, when performing dimension reduction, we are mainly concerned with finding a condensed representation of the features, or columns. Consequently, we will be more concerned with regularizating the $Y$ matrix($r_y(Y)$). This regularizer encourages the $Y$ matrix to be column-sparse so that many of the columns are all zero. Columns in $Y$ that are zero, means that those features are likely uninformative in reproducing the original matrix $A$.
+
+Even when we are focusing on dimension reduction, applying regularization to the X matrix can still improve performance. Consequently, it is good practice to compare different approaches.
+
+There are serveral regularizers to choose from. You can use a ridge regularizer to retain all columns but force many of the values to be near zero. You can also use a LASSO regularizer which will help zero out many of the columns; the LASSO helps you to perfrom automated feature selection. The non-negative regularizer can be used when your feature values should always bet zero or positive (e.g., when performing market basket analysis).
+
+#### Selecting k
+
+Lastly, how do we select the appropriate value for $k$? There are two main approaches, botth of which will be illustrated in the section that follows. First, if you are using GLRMs to describe your data, and then you can use many of the same approaches we discussed in Section 17.5 where we assess how different values of `k` minimize our loss function. If you are using GLRMs to produces a model that will be used to assign future observations to the reduced dimensions then you should use some form of CV.
+
+### Fitting GLRMs in R
+
+__h2o__ is the preffered package for fitting GLRMs in R. In fact, a few of the key researches that developed the GLRM methodology helped develop the __h2o__ implementation as well. Let's go ahead and start up __h2o__.
+
+```{r}
+library(h2o)
+h2o.no_progress() # turn off progress bars
+h2o.init(max_mem_size = "5g") # connect
+```
+
+#### Basic GLRM model 
+
+First, we convert our `my_basket` data frame to an appropriate `h2o` object before calling `h2o.glrm()`. The following performs a basic GLRM analysis with a quadratic loss function. A few arguments that h2o.glrm() provides includes:
+
+- `k`: rank size desired, which declares the desired reduced dimension size of the features. This is specified by you, the analysts, but is worth tuning to see which size k performs best.
+- `loss`: there are multiple loss functions to apply. The default is “quadratic”.
+- `regularization_x`: type of regularizer to apply to the X matrix.
+- `regularization_y`: type of regularizer to apply to the Y matrix.
+- `transform`: if your data are not already standardized this will automate this process for you. You can also normalize, demean, and descale.
+- `max_iterations`: number of iterations to apply for the loss function to converge. Your goal should be to increase max_iterations until your loss function plot flatlines.
+- `seed`: allows for reproducibility.
+- `max_runtime_secs`: when working with large data sets this will limit the runtime for model training.
+
+There are additional arguments that are worth exploring as you become more comfortable with `h2o.glrm()`. Some of the more useful ones include the magnitude of the regularizer applied (`gamma_x`, `gamma_y`). If you’re working with ordinal features then multi_loss = “Ordinal” may be more appropriate. If you’re working with very large data sets than `min_step_size` can be adjusted to speed up the learning process.
+
+```{r eval=FALSE}
+# convert data to h2o object
+my_basket <- readr::read_csv("data/my_basket.csv", col_names = TRUE)
+my_basket
+
+my_basket.h2o <- as.h2o(my_basket)
+
+# run basic GLRM
+basic_glrm <- h2o.glrm(
+  training_frame = my_basket.h2o,
+  k = 20,
+  loss = "Quadratic", 
+  regularization_x = "None", 
+  regularization_y = "None", 
+  transform = "STANDARDIZE", 
+  max_iterations = 2000,
+  seed = 123
+)
+
+```
+
+
+We can check the results with `summary()`. Here, we see that our model converged at 901 iterations and the final quadratic loss value (SSE) is 31,004.59. We can also see how many iterations it took for our loss function to converge to its minimum:
+
+```{r eval=FALSE}
+# get top level summary information on our model
+summary(basic_glrm)
+## Model Details:
+## ==============
+## 
+## H2ODimReductionModel: glrm
+## Model Key:  GLRM_model_R_1538746363268_1 
+## Model Summary: 
+##   number_of_iterations final_step_size final_objective_value
+## 1                  901         0.36373           31004.59190
+## 
+## H2ODimReductionMetrics: glrm
+## ** Reported on training data. **
+## 
+## Sum of Squared Error (Numeric):  31004.59
+## Misclassification Error (Categorical):  0
+## Number of Numeric Entries:  84000
+## Number of Categorical Entries:  0
+## 
+## 
+## 
+## Scoring History: 
+##             timestamp   duration iterations step_size   objective
+## 1 2018-10-05 09:32:54  1.106 sec          0   0.66667 67533.03413
+## 2 2018-10-05 09:32:54  1.149 sec          1   0.70000 49462.95972
+## 3 2018-10-05 09:32:55  1.226 sec          2   0.46667 49462.95972
+## 4 2018-10-05 09:32:55  1.257 sec          3   0.31111 49462.95972
+## 5 2018-10-05 09:32:55  1.289 sec          4   0.32667 41215.38164
+## 
+## ---
+##               timestamp   duration iterations step_size   objective
+## 896 2018-10-05 09:33:22 28.535 sec        895   0.28499 31004.59207
+## 897 2018-10-05 09:33:22 28.566 sec        896   0.29924 31004.59202
+## 898 2018-10-05 09:33:22 28.597 sec        897   0.31421 31004.59197
+## 899 2018-10-05 09:33:22 28.626 sec        898   0.32992 31004.59193
+## 900 2018-10-05 09:33:22 28.655 sec        899   0.34641 31004.59190
+## 901 2018-10-05 09:33:22 28.685 sec        900   0.36373 31004.59190
+
+# Create plot to see if results converged - if it did not converge, 
+# consider increasing iterations or using different algorithm
+plot(basic_glrm)
+```
+
+Our model object(`basic_glrm`) contains a lot of information (see everything it contains with str(`basic_glrm`). Similar to `h2o.pca()`, we can see how much variance each archetype (aka principal component) explains by looking at the `model$importance` component.
+
+```{r eval=FALSE}
+# amount of variance explained by each archetype (aka "pc")
+basic_glrm@model$importance
+## Importance of components: 
+##                             pc1      pc2      pc3      pc4      pc5      pc6      pc7
+## Standard deviation     1.513919 1.473768 1.459114 1.440635 1.435279 1.411544 1.253307
+## Proportion of Variance 0.054570 0.051714 0.050691 0.049415 0.049048 0.047439 0.037400
+## Cumulative Proportion  0.054570 0.106284 0.156975 0.206390 0.255438 0.302878 0.340277
+##                             pc8      pc9     pc10     pc11     pc12     pc13     pc14
+## Standard deviation     1.026387 1.010238 1.007253 0.988724 0.985320 0.970453 0.964303
+## Proportion of Variance 0.025083 0.024300 0.024156 0.023276 0.023116 0.022423 0.022140
+## Cumulative Proportion  0.365360 0.389659 0.413816 0.437091 0.460207 0.482630 0.504770
+##                            pc15     pc16     pc17     pc18     pc19     pc20
+## Standard deviation     0.951610 0.947978 0.944826 0.932943 0.931745 0.924206
+## Proportion of Variance 0.021561 0.021397 0.021255 0.020723 0.020670 0.020337
+## Cumulative Proportion  0.526331 0.547728 0.568982 0.589706 0.610376 0.630713
+```
+
+Consequently, we can use this information just like we did in the PCA chapter to determine how many components to keep (aka how large should our k be). For example, the following provides nearly the same results as we saw in Section 17.5.2.
+
+When your data aligns to the linearity and orthogonal assumptions made by PCA, the default GLRM model will produce nearly the exact same results regarding variance explained. However, how features align to the archetypes will be different than how features align to the PCs in PCA.
+
+```{r fig.cap="Figure 18.4: Variance explained by the first 20 archetypes in our GLRM model.", eval=FALSE}
+data.frame(
+    PC  = basic_glrm@model$importance %>% seq_along(),
+    PVE = basic_glrm@model$importance %>% .[2,] %>% unlist(),
+    CVE = basic_glrm@model$importance %>% .[3,] %>% unlist()
+) %>%
+    gather(metric, variance_explained, -PC) %>%
+    ggplot(aes(PC, variance_explained)) +
+    geom_point() +
+    facet_wrap(~ metric, ncol = 1, scales = "free")
+```
+
+We can also extract how each feature aligns to the different archetypes by looking at the `model$archetypes` component.
+
+```{r eval=FALSE}
+t(basic_glrm@model$archetypes)[1:5, 1:5]
+##              Arch1      Arch2      Arch3      Arch4       Arch5
+## 7up     -0.5783538 -1.5705325  0.9906612 -0.9306704  0.17552643
+## lasagna  0.2196728  0.1213954 -0.7068851  0.8436524  3.56206178
+## pepsi   -0.2504310 -0.8156136 -0.7669562 -1.2551630 -0.47632696
+## yop     -0.1856632  0.4000083 -0.4855958  1.1598919 -0.26142763
+## redwine -0.1372589 -0.1059148 -0.9579530  0.4641668 -0.08539977
+```
+
+We can use this information to see how the different features contribute to Archetype 1 or compare how features map to multiple Archetypes (similar to how we did this in the PCA chapter). The following shows that many liquid refreshments (e.g., instant coffee, tea, horlics, and milk) contribute positively to archetype 1. We also see that some candy bars contribute strongly to archetype 2 but minimally, or negatively, to archetype 1. The results are displayed in Figure 18.5.
+
+```{r eval=FALSE}
+p1 <- t(basic_glrm@model$archetypes) %>% 
+  as.data.frame() %>% 
+  mutate(feature = row.names(.)) %>%
+  ggplot(aes(Arch1, reorder(feature, Arch1))) +
+  geom_point()
+
+p2 <- t(basic_glrm@model$archetypes) %>% 
+  as.data.frame() %>% 
+  mutate(feature = row.names(.)) %>%
+  ggplot(aes(Arch1, Arch2, label = feature)) +
+  geom_text()
+
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+
+If we were to use the scree plot approach (Section 17.5.3) to determin $k$, we would decide on $k=8$. Consequently, we would want to re-run our model with `k=8`. We could then use `h2o.reconstruct()` and apply our model to a data set to see the predicted values. 
+
+Below we see that our predicted values include negative numbers and non-integers. Considering our original data measures the counts of each product purchased would need to apply some additional rounding logic to convert values to integers:
+
+```{r eval=FALSE}
+# Re-run model with k = 8
+k8_glrm <- h2o.glrm(
+  training_frame = my_basket.h2o,
+  k = 8, 
+  loss = "Quadratic",
+  regularization_x = "None", 
+  regularization_y = "None", 
+  transform = "STANDARDIZE", 
+  max_iterations = 2000,
+  seed = 123
+)
+
+# Reconstruct to see how well the model did
+my_reconstruction <- h2o.reconstruct(k8_glrm, my_basket.h2o, reverse_transform = TRUE)
+
+# Raw predicted values
+my_reconstruction[1:5, 1:5]
+##   reconstr_7up reconstr_lasagna reconstr_pepsi reconstr_yop reconstr_red-wine
+## 1  0.025595726      -0.06657864    -0.03813350 -0.012225807        0.03814142
+## 2 -0.041778553       0.02401056    -0.05225379 -0.052248809       -0.05487031
+## 3  0.012373600       0.04849545     0.05760424 -0.009878976        0.02492625
+## 4  0.338875544       0.00577020     0.48763580  0.187669229        0.53358405
+## 5  0.003869531       0.05394523     0.07655745 -0.010977765        0.51779314
+## 
+## [5 rows x 5 columns]
+
+# Round values to whole integers
+my_reconstruction[1:5, 1:5] %>% round(0)
+##   reconstr_7up reconstr_lasagna reconstr_pepsi reconstr_yop reconstr_red-wine
+## 1            0                0              0            0                 0
+## 2            0                0              0            0                 0
+## 3            0                0              0            0                 0
+## 4            0                0              0            0                 1
+## 5            0                0              0            0                 1
+## 
+## [5 rows x 5 columns]
+```
+
+#### Turning to optimize for unseen data
+
+A more sophisticated use of GLRMs is to create a model where the reduced archetypes will be used on future, unseen data. The preferred approach to decicing on a final model when you are going to use a GLRM to score future observations, is to perform a validation process to select the optimaly tuned model. This will help your final model generalize better to unseen data.
+
+As previously mentioned, when applying a GLRM model to unseen data, using a regularizer can help to reduce overfitting and help the model generalize better. Since our data represents all positive values (items purchases which can be 0 or any positive integer), we apply the non-negative regularizer. This will force all predicted values to at least be non-negative. We see this when we use `predict()` on the results.
+
+If we compare the non-regularized GLRM model (`k8_glrm`) to our regularized model (`k8_glrm_regularized`), you will notice that the non-regularized model wil lalmost always have a lower loss value. However, this is because the regularized model is being generalized more and is not overfitting to our training data, which should help improve on unseen data.
+
+```{r eval=FALSE}
+# Use non-negative regularization
+k8_glrm_regularized <- h2o.glrm(
+  training_frame = my_basket.h2o,
+  k = 8, 
+  loss = "Quadratic",
+  regularization_x = "NonNegative", 
+  regularization_y = "NonNegative",
+  gamma_x = 0.5,
+  gamma_y = 0.5,
+  transform = "STANDARDIZE", 
+  max_iterations = 2000,
+  seed = 123
+)
+
+# Show predicted values
+predict(k8_glrm_regularized, my_basket.h2o)[1:5, 1:5]
+##   reconstr_7up reconstr_lasagna reconstr_pepsi reconstr_yop reconstr_red-wine
+## 1     0.000000                0      0.0000000    0.0000000         0.0000000
+## 2     0.000000                0      0.0000000    0.0000000         0.0000000
+## 3     0.000000                0      0.0000000    0.0000000         0.0000000
+## 4     0.609656                0      0.6311428    0.4565658         0.6697422
+## 5     0.000000                0      0.0000000    0.0000000         0.8257210
+## 
+## [5 rows x 5 columns]
+
+# Compare regularized versus non-regularized loss
+par(mfrow = c(1, 2))
+plot(k8_glrm)
+plot(k8_glrm_regularized)
+```
+
+GLRM models behave much like supervised models where there are several hyperparameters that can be tuned to optimize performance. For example, we can choose from a combination of multiple regularizers, we can adjust the magnitude of the regularization (i.e., the gamma_* parameters), and we can even tune the rank $k$.
+
+Unfortunately, `h2o` does not currently provide an automated tuning grid option, such as `h2o.grid()` which can be applied to supervised learning models. To perform a grid search with GLRMs, we need to create our own custom process.
+
+First, we create training and validation sets so that we can use the validation data to see how well each hyperparameter setting does on unseen data. Next, we create a tuning grid that contains 225 combinations of hyperparameters. For this example, we are going to assume we want to $k=8$ and we only want to tune the type and magnitude of the regularizers. Lastly, we create a `for` loop to go through each hyperparameter combination, apply the given model, assess on the model's performance on the hold out validation set, and extract the error metric.
+
+The squared error loss ranges from as high as 58,908 down to 13,371. This is a significant reduction in error. We see that the best models all have errors in the 13,700+ range and the majority of them have a large (signaled by `gamma_x`) L1 (`LASSO`) regularizer on the X matrix and also a non-negative regularizer on the Y matrix. However, the magnitude of the Y matrix regularizers (signaled by gamma_y) has little to no impact.
+
+```{r eval=FALSE}
+# Split data into train & validation
+split <- h2o.splitFrame(my_basket.h2o, ratios = 0.75, seed = 123)
+train <- split[[1]]
+valid <- split[[2]]
+
+# Create hyperparameter search grid
+params <- expand.grid(
+  regularization_x = c("None", "NonNegative", "L1"),
+  regularization_y = c("None", "NonNegative", "L1"),
+  gamma_x = seq(0, 1, by = .25),
+  gamma_y = seq(0, 1, by = .25),
+  error = 0,
+  stringsAsFactors = FALSE
+  )
+
+# Perform grid search
+for(i in seq_len(nrow(params))) {
+  
+  # Create model
+  glrm_model <- h2o.glrm(
+    training_frame = train,
+    k = 8, 
+    loss = "Quadratic",
+    regularization_x = params$regularization_x[i], 
+    regularization_y = params$regularization_y[i],
+    gamma_x = params$gamma_x[i],
+    gamma_y = params$gamma_y[i],
+    transform = "STANDARDIZE", 
+    max_runtime_secs = 1000,
+    seed = 123
+  )
+  
+  # Predict on validation set and extract error
+  validate <- h2o.performance(glrm_model, valid)
+  params$error[i] <- validate@metrics$numerr
+}
+
+# Look at the top 10 models with the lowest error rate
+params %>%
+  arrange(error) %>%
+  head(10)
+##    regularization_x regularization_y gamma_x gamma_y    error
+## 1                L1      NonNegative    1.00    0.25 13731.81
+## 2                L1      NonNegative    1.00    0.50 13731.81
+## 3                L1      NonNegative    1.00    0.75 13731.81
+## 4                L1      NonNegative    1.00    1.00 13731.81
+## 5                L1      NonNegative    0.75    0.25 13746.77
+## 6                L1      NonNegative    0.75    0.50 13746.77
+## 7                L1      NonNegative    0.75    0.75 13746.77
+## 8                L1      NonNegative    0.75    1.00 13746.77
+## 9                L1             None    0.75    0.00 13750.79
+## 10               L1               L1    0.75    0.00 13750.79
+```
+
+Once we identify the optimal model, we’ll want to re-run this on the entire training data set. We can then score new unseen observations with this model, which tells us based on their buying behavior and how this behavior aligns to the $k=8$O
+ dimensions in our model, what products are they’re likely to buy and would be good opportunities to market to them.
+ 
+```{r eval=FALSE}
+# Apply final model with optimal hyperparamters
+final_glrm_model <- h2o.glrm(
+  training_frame = my_basket.h2o,
+  k = 8, 
+  loss = "Quadratic",
+  regularization_x = "L1", 
+  regularization_y = "NonNegative",
+  gamma_x = 1,
+  gamma_y = 0.25,
+  transform = "STANDARDIZE", 
+  max_iterations = 2000,
+  seed = 123
+)
+
+# New observations to score
+new_observations <- as.h2o(sample_n(my_basket, 2))
+
+# Basic scoring
+predict(final_glrm_model, new_observations) %>% round(0)
+##   reconstr_7up reconstr_lasagna reconstr_pepsi reconstr_yop reconstr_red-wine reconstr_cheese reconstr_bbq reconstr_bulmers reconstr_mayonnaise reconstr_horlics reconstr_chicken-tikka reconstr_milk reconstr_mars reconstr_coke
+## 1            0                0              0            0                 0               0            0                0                   0                0                      0             0             0             0
+## 2            0               -1              1            0                 0               0            0                0                   0                1                      0             1             0             1
+##   reconstr_lottery reconstr_bread reconstr_pizza reconstr_sunny-delight reconstr_ham reconstr_lettuce reconstr_kronenbourg reconstr_leeks reconstr_fanta reconstr_tea reconstr_whiskey reconstr_peas reconstr_newspaper
+## 1                0              0              0                      0            0                0                    0              0              0            0                0             0                  0
+## 2                0              0             -1                      0            0                0                    0              0              0            1                0             0                  0
+##   reconstr_muesli reconstr_white-wine reconstr_carrots reconstr_spinach reconstr_pate reconstr_instant-coffee reconstr_twix reconstr_potatoes reconstr_fosters reconstr_soup reconstr_toad-in-hole reconstr_coco-pops
+## 1               0                   0                0                0             0                       0             0                 0                0             0                     0                  0
+## 2               1                   0                0                0             0                       1             0                 0                0             0                     0                  1
+##   reconstr_kitkat reconstr_broccoli reconstr_cigarettes
+## 1               0                 0                   0
+## 2               0                 0                   0
+```
+ 
+### Final thoughts
+GLRMs are an extension of the well-known matrix factorization methods such as PCA. While PCA is limited to numeric data, GLRMs can handle mixed numeric, categorical, ordinal, and boolean data with an arbitrary number of missing values. It allows the user to apply regularization to $X$ and $Y$,  imposing restrictions like non-negativity appropriate to a particular data science context. Thus, it is an extremely flexible approach for analyzing and interpreting heterogeneous data sets. Although this chapter focused on using GLRMs for dimension/feature reduction, GLRMs can also be used for clustering, missing data imputation, compute memory reduction, and speed improvements.
+
+### References
+Udell, Madeleine, Corinne Horn, Reza Zadeh, Stephen Boyd, and others. 2016. “Generalized Low Rank Models.” Foundations and Trends in Machine Learning 9 (1). Now Publishers, Inc.: 1–118.
+
+## Autoencoders
+
+An autoencoder is a neural network that is trained to learn efficient representations of the input data (i.e., the features). Although a simple concept, these representations, called codings, can be used for a variety of dimension reduction needs, along with additional uses such as anomaly detection and generative modeling. Moreover, since autoencoders are, fundamentally, feedforward deep learning models (Chapter 13), they come with all the benefits and flexibility that deep learning models provide. Autoencoders have been around for decades (e.g., LeCun (1987); Bourlard and Kamp (1988); Hinton and Zemel (1994)) and this chapter will discuss the most popular autoencoder architectures; however, this domain continues to expand quickly so we conclude the chapter by highlighting alternative autoencoder architectures that are worth exploring on your own.
+
+### Prerequisites
+For this chapter, we will use the following packages:
+
+```{r}
+# Helper packages
+library(dplyr)    # for data manipulation
+library(ggplot2)  # for data visualization
+
+# Modeling packages
+library(h2o)  # for fitting autoencoders
+```
+
+To illustrate utoencoder concepts we’ll continue with the mnist data set from previous chapters:
+
+```{r}
+mnist <- dslabs::read_mnist()
+names(mnist)
+## [1] "train" "test"
+```
+
+Since we will be using __h2o__ we will also go ahead and initialize our H20 session:
+
+```{r}
+h2o.no_progress() # turn off progress bars
+h2o.init(max_mem_size = "5g") # initialize H20 instance
+```
+
+### Undercomplete autoencoderds
+
+An autoencoder has a structure very similar to a feedfoward neural network (aka multi-layer perceptron - MLP); however, the primary difference when using in an unsupervised context is that the number of neurons in the output layer are equal to the number of inputs.
+
+Consequently, in its simplest form, an autoencoder is using hidden layers to try to re-create the inputs. We can describe this algorithm in two parts: (1) an encoder function ($Z=f(X)$) that converts $X$ inputs to $Z$ codings and (2) a decoder function ($X'=g(Z)$) that produces a reconstruction of the inputs ($X'$)
+
+For dimension reduction purposes, the goal is to create a reduced set of codings that adequately represents $X$. Consequently, we constrain he hidden layers so that the number of neurons is less than the number of inputs. An autoencoder whose internal representation has a smaller dimensionality than the input data is known as an _undercomplete autoencoder_, represented in Figure 19.1. This compression of the hidden layers forces the autoencoder to capture the most dominant features of the input data and the representation of these signals are captured in the codings.
+
+```{r fig.cap="Figure 19.1: Schematic structure of an undercomplete autoencoder with three fully connected hidden layers (Wikipedia contributors, n.d.)."}
+knitr::include_graphics("image/Autoencoder_structure.png")
+```
+
+To learn the neuron weights and, thus the codings, the autoencoder seeks to minimize some loss function, such as mean squared error (MSE) that penalizes $X'$ for being dissimilar from $X$:
+
+$$
+minimize \ L = f(X, X')
+$$
+
+### Comparing PCA to an autoencoder 
+
+When the autoencoder uses only linear activation functions (reference Section DL Section) and the loss function is MSE, then it can be shown that the autoencoder reduces to PCA. When nonlinear activation functions are used, autoencoders provide nonlinear generalization of PCA.
+
+The following demonstrates our first implementation of a basic autoencoder. When using __h2o__ you use the same `h2o.deeplearning()` function that your would use to train a neutral network; however, you need to set 
+
+# Clustering 
+## K-means cluster analysis
+
+Clustering is a broad set of techniques for finding subgroups of observations within a dataset. When we cluster observations, we want observations in the sme group to be similar and observations in different groups to be dissimilar. Because there is not a response variable, this is an unsupervised method, which implies 
+
+### tl;dr
+
+This tutorial serves and introudciton to the k-means clustering method.
+
+1. [Replication requrements](#KMC_RR):
+2. [Data Preparation](#KMC_Data): Preparing our data for cluster analysis
+3. [Clustering Distance Measures](#KMC_Clustering_Distance): Understanding how to measure differences in observations
+4. [K-Means Clustering](#KMC_Clustering): Calculations and methods for creating K subgroups of the data
+5. [Determining Optimal Clusters](#KMC_determine_ClustNo): Identifying the right number of clusters to group your data
+
+### Replication Requirements
+
+To replicate this tutorial's analysis, you will need to load the following packages.
+
+```{r}
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+```
+
+
+### Data preparation {#KMC_Data}
+
+To perform a cluster analysis in R, generally, the data should be prepared as follows.
+
+1. Rows are observations (individuals) and columns are variables
+2. Any missing value in the data must be removed or estimated.
+3. The data must be standardized (i.e., scaled) to make variables comparable. Recall that standardization consists of transforming the variables such that they have mean zero and standardize deviation one.
+
+Here, we will use the built-in R dataset `USArrests`, which contains statistics in arrests per 100,000 residents for assualt, murder and rape in each of the 50 US states in 1973. It includes also the percent of the population living in urban areas.
+
+```{r}
+data("USArrests")
+df <- USArrests
+USArrests
+```
+
+To remove any missing value that might be presented in the data, type this or we could impute the missing data by using `recipes`.
+
+```{r}
+df %>% 
+  Amelia::missmap()
+```
+
+To remove any missing value that might be present in the data, type this:
+
+```{r}
+df <- na.omit(df)
+```
+
+As we don't want the clustering algorithm to depend to an arbitrary variable unit, we start by scaling/standardizing the  data using the R function `scale()`:
+
+```{r}
+df <- scale(df)
+head(df)
+
+# OR use `recipes` pacakge
+# USArrests <- USArrests %>% 
+#   rownames_to_column()
+
+# predictor name
+pred <- setdiff(names(USArrests), "rowname")
+
+US_Arrests_rec <- recipe(
+  Murder ~ ., data = USArrests) %>% 
+  recipes::step_center(pred) %>% 
+  recipes::step_scale(pred)
+
+(USArrests_pre <- US_Arrests_rec %>% 
+  prep() %>% 
+  bake(new_data = USArrests))
+```
+
+### Clustering {#KMC_Clustering_Distance}
+
+The classification of observation into groups requires some methods for computing the distance or the (dis) similarity between each pair of observations. The result of this computation is known as dissimilarity or distance matrix. There are methods to calculate this distance information; the choice of distance measures is a critical step in clustering. It defines the similarty between two elements `(x, y)` is calculated and it will influence the shape of the culsters.
+
+The choice of distance  measures is a critical step in clustering. It defines how the similarity of two elements (x, y) is calculated and it will influence the shape of the clusters. The classical methods for distance measures are Euclidean and Manhattan distances, which are defined as follow:
+
+__Euclidian distance__
+$$
+d_{euc}(x,y) = \sqrt{\Sigma_{i=1}^n(x_i-y_i)^2} 
+$$
+
+__Manhattan distance__
+$$
+d_{man}(x,y) = \Sigma_{i=1}^n|(x_i-y_i)| 
+$$
+
+where, $x$ and $y$ are two vectors of length `n`.
+
+Other dissimilarity measures exist such as correlation-based distances, which is widely used for gene expression data analyses. Correlation-based distance is defined by subtracting the correlation coefficient from 1. Different types of correlation methods can be used such as:
+
+__Pearson correlation distance:__
+
+$$
+d_{cor}(x,y) = 1 - \frac{\Sigma{_{i=1}^n(x_i-\bar{x})(y_i - \bar{y})}}
+{\sqrt{\Sigma{_{i=1}^n(x_i-\bar{x})^2} \Sigma{_{i=1}^n (y_i - \bar{y})^2}}}
+$$
+
+__Spearman correlation distance]__
+
+The spearman correlation method computes the correlation between the rank of x and the rank of y variables.
+
+$$
+d_{spear}(x,u) = 1 - \frac{\Sigma_{i=1}^n(x'_i - \bar{x'})(y'_i - \bar{y'})}
+{\sqrt{\Sigma_{i=1}^n(x'_i - \bar{x'})^2(y'_i - \bar{y'})^2}}
+$$
+
+
+
+__Kendall correlation distance:__
+
+Kendall correlation method measures the correspondence between the ranking of x and y variables. The total number of possible pairings of x with y observations is n(n − 1)/2, where n is the size of x and y. Begin by ordering the pairs by the x values. If x and y are correlated, then they would have the same relative rank orders. Now, for each $y_{i}$, count the number of $y_j > y_i$ (concordant pairs (c)) and the number of $y_j < y_i (discordant pairs (d))$.
+
+Kendall correlation distance is defined as follow:
+
+$$
+d_{kend}(x,y) = 1 - \frac{n_c-n_d}{\frac{1}{2} n(n-1)}
+$$
+
+Within R it is simple to compute and visualize the distance matrix using the functions `get_dist` and `fviz_dist` from the `factoextra` R package. This starts to illustrate which states have large dissimilarities (red) versus those that appear to be fairly similar (teal).
+
+- `get_dist`: for computing a distance matrix between the rows of a data matrix. The default distance computed is the Euclidean; however, `get_dist` also supports distanced described in equations 2-5 above plus others.
+- `fviz_dist`:for visualizing a distance matrix
+
+```{r}
+distance <- get_dist(df)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+
+### K-Means clustering {#KMC_Clustering}
+
+K-means clustering is the most commonly used unsupervised machine learning algorithm for partitioning a given data set into a set of `k` groups (i.e.,`k` clusters), where `k` represents the number of groups  pre-specified by the analyst. It classifies objects in multiple groups (i.e., clusters), such that objects within the same cluster are as similar as possible (i.e., high intra-class similarity), whereas objects from different clusters are as dissimilar as possible (i.e., low inter-class similarity). In k-means clustering, each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster.
+
+#### The Basic idea
+
+The basic idea behind k-means clustering consists of defining clusters so that the total intra-cluster variation (known as total within-cluster variation) is minimized. 
+
+There are several k-means algorithm available. The standard algorithm is the Hartigan-Wong alogrithm (1979), which defines the total within-cluster variation as the sum of squared distance Euclidian distances between items and the correspond centroid.
+
+$$
+W(C_k) = \Sigma _{xi} (x_i - \mu_k)^2...(6)
+$$
+
+where:
+
+- $x_i$ is a data point belonging to the cluster $C_k$
+- $\mu_k$ is the mean value of the points assigned to the cluster $C_k$
+
+Each observation ($x_i$) is assigned to a given cluster such that the sum of squares (SS) distance of the observation to their assigned cluster centers ($\mu_k$) is minimized.
+
+We define the total within-cluster variation as follows:
+
+$$
+total.withinness = \Sigma_{k=1}^k W(C_k) = \Sigma_{k=1}^k \Sigma_{x_i}(x_i - \mu_k)^2...(7)
+$$
+
+The total within-cluster sum of square measures the compactness (i.e., goodness) of the clustering and we want it to be as small as possible.
+
+#### K-means algorithm
+
+The first step when using k-means clustering is to indicate the number of clusters (k) that will be generated in the final solution. The algorithm starts by randomly selecting k objects from the data set to serve as the initial centers for the clusters. The selected objects are also known as cluster means or centroids. Next, each of the remaining objects is assigned to it’s closest centroid, where closest is defined using the Euclidean distance (Eq. 1) between the object and the cluster mean. This step is called “cluster assignment step”. After the assignment step, the algorithm computes the new mean value of each cluster. The term cluster “centroid update” is used to design this step. Now that the centers have been recalculated, every observation is checked again to see if it might be closer to a different cluster. All the objects are reassigned again using the updated cluster means. The cluster assignment and centroid update steps are iteratively repeated until the cluster assignments stop changing (i.e until convergence is achieved). That is, the clusters formed in the current iteration are the same as those obtained in the previous iteration.
+
+
+K-means algorithm can be summarized as follows:
+
+1. Specify the number of clusters (`K`) to be created (by the analyst)
+2. Select randomly `k` objects from the data set as the initial cluster centers or means
+3. Assigns each observation to their closest centroid, based on the Euclidean distance between the object and the centroid
+4. For each of the `k` clusters update the cluster centroid by calculating the new mean values of all the data points in the cluster. The centroid of a `K`th cluster is a vector of length `p` containing the means of all variables for the observations in the kth cluster; `p` is the number of variables.
+5. Iteratively minimize the total within sum of square (Eq. 7). That is, iterate steps 3 and 4 until the cluster assignments stop changing or the maximum number of iterations is reached. By default, the R software uses 10 as the default value for the maximum number of iterations.
+
+#### Computing k-means clustering in R
+
+We can compute k-means in R with the `kmeans` function. Here will group the data into two clusters (`centers = 2`). The `kmeans` function also has an `nstart` option that attemps multiple initial configurations and reports on the best one. For example, adding `nstart = 25` will generate 25 initial configuration. This approach is often recommended.
+
+```{r}
+k2 <- kmeans(df, centers = 2, nstart = 25)
+str(k2)
+```
+
+The output of `kmeans` is a list with several bits of information. The most important being:
+
+- `cluster`: A vector of integers (from `1:k`) indicating the cluster to which each point is allocated
+- `centers`: A matrix of cluster centers
+- `totss`: The total sum of squares
+- `withinss`: Vector of within-cluster sum of squares, one component per cluster
+- `tot.withinss`: Total within-cluster sum of squares, i.e. sum(withinss).
+- `betweenss`: The between-cluster sum of squares, i.e. `$totss-tot.withinss$`.
+- `size`: The number of points in each cluster.
+
+If we print the results, we will see that our groupings resulted in 2 cluster sizes of 30 and 20. We see the cluster centers (means) for the two groups across the four variables (`Murder`, `Assault`, `UrbanPop`, `Rape`). We also get the cluster assignment fro each observation (i.e., Alabama was assigned to cluster 2, Arkansas was assigned to cluster 1, etc.).
+
+```{r}
+k2 %>% broom::tidy()
+```
+
+We can also view our results by using `fviz_cluster`. This provides a nice illustration of the 
+
+```{r warning=FALSE}
+fviz_cluster(k2, data = df)+
+  hrbrthemes::theme_ipsum_rc()
+```
+
+Alternatively, you can use standard pairwise scatter plots to illustrate the clusters compard to the original variables:
+
+```{r warning=FALSE}
+df %>% 
+  as.tibble() %>% 
+  mutate(
+    cluster = k2$cluster,
+    state = row.names(USArrests)) %>% 
+  ggplot(aes(UrbanPop, Murder, color = factor(cluster), label = state))+
+  geom_text()+
+  hrbrthemes::theme_ipsum_rc()
+```
+
+Because the number of cluster (`k`) must be set before we start the algorithm, it is often advantageous to use several different values of `k` and examine the differences in the results. 
+
+We can execute the same process for 3,4, and 5 clusters, and the results are shown in the figure:
+
+```{r warning=FALSE}
+k3 <- kmeans(df, centers = 3, nstart = 25)
+k4 <- kmeans(df, centers = 4, nstart = 25)
+k5 <- kmeans(df, centers = 5, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = df) + ggtitle("k = 2")+hrbrthemes::theme_ipsum_ps()
+p2 <- fviz_cluster(k3, geom = "point",  data = df) + ggtitle("k = 3")+hrbrthemes::theme_ipsum_ps()
+p3 <- fviz_cluster(k4, geom = "point",  data = df) + ggtitle("k = 4")+hrbrthemes::theme_ipsum_ps()
+p4 <- fviz_cluster(k5, geom = "point",  data = df) + ggtitle("k = 5")+hrbrthemes::theme_ipsum_ps()
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+
+```
+
+Although this visual assessment tells us where true dilineations occur (or do not occur such as clusters `2` & `4` in the `k = 5` graph) between clusters, it does not tell us what the optimal number of clusters is.
+
+### Determining optimal clusters {#KMC_determine_ClustNo}
+
+As you may recall the analyst specifies the number of clusters to use; preferably the analyst would like to use the optimal number of clusters. To aid the analysis, the following explains the three most popular methods for determining the optimal clusters, which includes:
+
+1. Elbow method
+2. Silhouette method
+3. Gap statistic
+
+#### Elbow method
+
+Recall that, the basic idea behind cluster partitioning methods, such as k-means clustering is to define clusters such that the total intra-cluster variation (known as total within-cluster or total within cluster sum of square)
+
+$$
+minimize(\Sigma_{k=1}^k W(C_k))
+$$
+
+where $C_k$ is the $k^{th}$ cluster and $W(C_k)$ is the within-cluster variation. The total within-cluster sum of squares (wss) measures the compactness of the clustering and we want it to be as small as possible. Thus, we can use the following algorithm to define the optimal clusters.
+
+1. Compute clustering algorithm (e.g., k-means clustering) for different values of k. For instance, by varying k from 1 to 10 clusters
+2. For each k, calculate the total within-cluster sum of square (wss)
+3. Plot the curve of wss according to the number of clusters k.
+4. The location of a bend (knee) in the plot is generally considered as an indicator of the appropriate number of clusters.
+
+We can implemenet this in R with the following code. The results suggest that `4` is the optimal number of clusters as it appears to be the bend in the knee (or elbow)
+
+```{r}
+set.seed(123)
+
+# function to compute total within-cluster sum of squares
+wss <- function(k) {
+  kmeans(df, k, nstart = 10 )$tot.withinss
+}
+
+# compute and plot wss for k=1 to k=15
+k.values <- 1:15
+
+# extract wss for 2:15 clusters
+wss_values <- map_dbl(k.values, wss)
+
+tibble(
+  cluster = k.values,
+  wss     = wss_values
+) %>% 
+  ggplot(aes(cluster, wss))+
+  geom_point()+
+  geom_line()+
+  labs(x = "Number of clusters K",
+       y = "Total Within-Clusters sum of squares")+
+  hrbrthemes::theme_ipsum_ps()
+```
+
+Fortunately, this process to compute the "Elbow method" has been wrapped up in a single function (`fviz_nbclust`).
+
+```{r}
+set.seed(123)
+fviz_nbclust(df, kmeans, method = "wss")
+```
+
+#### Average Silhouette Method
+
+In short, the average silhouette approach measures the quality of clustering. That is, it determines how well each object lies within its cluster. A high average silhouette width indicates a good clustering. The average silhouette method computes the average silhouette of observations for different values of `k`. The optimal number of clusters k is the one that maximizes the average silhouette over a range of possible values for `k`.
+
+we can use `silhouette` function in the `cluster` package to compute the average silhouette width. The following code computes this approach for 1-15 clusters. The results show that 2 clusters maximize the average silhouette values with 4 clusters coming in as second optimal number of clusters.
+
+```{r}
+# function to compute average silhouette for k clusters
+avg_sil <- function(k) {
+  km.res <- kmeans(df, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(df))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 15
+k.values <- 2:15
+
+# extract avg silhouette for 2-15 clusters
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+plot(k.values, avg_sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters K",
+       ylab = "Average Silhouettes")
+```
+
+Similar to the elbow method, this process to comute the "average sihoutte method" has been wrapped up in a single function (`fviz_nbclust`).
+
+```{r}
+fviz_nbclust(df, kmeans, method ="silhouette")
+```
+
+#### 
+
+```{r}
+
+```
+
+#### Gap Statustic Method
+
+The gap statistic has been published by  [R. Tibshirani, G. Walther, and T. Hastie (Standford University, 2001)](http://web.stanford.edu/~hastie/Papers/gap.pdf). The approach can be applied to any clustering method (i.e. K-means clustering, hierarchical clustering). The gap statistic compares the total intracluster variation for different values of `k` with their expected values under null reference distribution of the data (i.e. a distribution with no obvious clustering). The reference dataset is generated using Monte Carlo simulations of the sampling process. That is, for each variable ($x_i$) in the data set we compute its range [$min(x_i)$, $max(x_j)$]
+
+For the observed data and the reference data, the total intra cluster variation is computed using different value of `k`. The _gap statistic_ for a given `k` is defined as follows:
+
+$$
+Gap_n(k) = E_{n}^* log(W_k) - log(W_k)...(9)
+$$
+
+where $E_n^*$ denotes the expectation under a sample size `n` from the reference distribution. $E_n^*$ is defined via bootstrapping (B) by generating B copies of the reference datasets and by computing the average $log(W_k^*)$. The gap statistic measures thedeviation of the observed $W_k$ value from its expected value under the null hypothesis.
+
+The estimate of the optimal cluster ($\hat{k}$) will be the value that maximizes $Gap_n(k)$. This means that the clustering structure is far away from the uniform distribution of points.
+
+In short, the algorithm involves the following steps:
+
+1. Cluster the observed data, varying the number of clusters from $k = 1, ..., k_{max}$ and compute the corresponding $W_k$
+2. Generate  reference data sets and cluster each of them with varying number of clusters $k = 1, ..., k_{max}$. Compute the estimated gap statistics presented in eq.9.
+3. Let $w=\frac{1}{B} \Sigma_blog(W_{kb}^*)$, compute the standard deviation $sd(k) = \sqrt{\frac{1}{b}\Sigma_b (log(W_{kb}^*)-\bar{w})^2}$ and defines the $s_k = sd_k * \sqrt{1+\frac{1}{B}}$. 
+4. Choose the number of clusters as the smallest $k$ such that 
+
+To compute the gap statistic method we can use the `clusGap` function which provides the gap statistic and standard error for an output.
+
+```{r}
+# compute gap statistic
+set.seed(123)
+gap_stat <- clusGap(df, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+# Print the result
+print(gap_stat, method = "firstmax")
+```
+
+We can visualize the results with `fviz_gap_stat` which suggests four clusters as the optimal number of clusters.
+
+```{r}
+fviz_gap_stat(gap_stat)
+```
+
+In addition to these commonly used approaches, the `NbClust` package, published by Charrad et al., 2014, provides 30 indices for determining the relevant number of clusters and proposes to users the best clustering scheme from the different results obtained by varying all combinations of number of clusters, distance measures, and clustering methods.
+
+#### Extracting Results
+
+With most of these approaches suggesting 4 as the number of optimal clusters, we can perform the final analysis and extract the results using 4 clusters.
+
+```{r}
+# Compute k-means clustering with k=4
+set.seed(123)
+final <- kmeans(df, 4, nstart = 25)
+print(final)
+
+```
+
+We can visualize the results using `fviz_cluster`:
+
+```{r}
+fviz_cluster(final, data = df)
+```
+
+And we can extract the clusters and add to our initial data to do some descriptive statistics at the cluster level:
+
+```{r}
+(US_arrest_sum <- USArrests %>% 
+  mutate(cluster = final$cluster) %>% 
+  group_by(cluster) %>% 
+  summarise_all("mean"))
+
+
+US_arrest_sum %>%
+  gather(Murder:Rape, key="crime", value = "figure") %>% 
+  ggplot(data=., aes(x = cluster, y = figure, col=as.factor(cluster)))+
+  geom_point(size=3)+
+  facet_wrap( ~ crime)+
+  hrbrthemes::theme_ipsum_ps()
+
+```
+
+### Additional Comments
+
+K-means clustering is a very simple and fast algorithm. Furthermore, it can efficiently deal with very large data sets. However, there are some weaknesses of the k-means approach.
+
+One potential disadvantage of K-means clustering is that it requires us to pre-specify the number of clusters. Hierarchical clustering is an alternative approach which does not require that we commit to a particular choice of clusters. Hierarchical clustering has an added advantage over K-means clustering in that it results in an attractive tree-based representation of the observations, called a dendrogram. A future tutorial will illustrate the hierarchical clustering approach.
+
+An additional disadvantage of K-means is that it’s sensitive to outliers and different results can occur if you change the ordering of your data. The Partitioning Around Medoids (PAM) clustering approach is less sensititive to outliers and provides a robust alternative to k-means to deal with these situations. A future tutorial will illustrate the PAM clustering approach.
+
+For now, you can learn more about clustering methods with:
+
+- An Introduction to Statistical Learning
+- Applied Predictive Modeling
+- Elements of Statistical Learning
+- A Practical Guide to Cluster Analysis in R
+
+## Hierarchical cluster analysis
+
+In the k-means cluster analysis tutorial I provided a solid introduction to one of the most popular clustering methods. Hierarchical clustering is an alternative approach to k-means clustering for identifying groups in the dataset. It does not require us to pre-specify the number of clusters to be generated as is required by the k-means approach. Furthermore, hierarchical clustering has an added advantage over K-means clustering in that it results in an attractive tree-based representation of the observations, called a `dendrogram`.
+
+### tl;dr
+
+This tutorial serves as an introduction to the hierarchical clustering method.
+
+1. [R Package Requirements](#HC_PR): Packages you’ll need to reproduce the analysis in this tutorial
+2. [Hierarchical Clustering Algorithms](#HC_Alogrithm): A description of the different types of hierarchical clustering algorithms
+3. [Data Preparation](#HC_Data): Preparing our data for hierarchical cluster analysis
+4. [Hierarchical Clustering with R](#HC_Example): Computing hierarchical clustering with R
+5. [Working with Dendrograms](#HC_Dendrogram): Understanding and managing dendrograms
+6. [Determining Optimal Clusters](#HC_Cluster_No): Identifying the right number of clusters to group your data
+
+### Package requirements {#HC_PR}
+
+Th required packages for this tutorial are:
+
+```{r}
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering visualization
+library(dendextend) # for comparing two dendrograms
+```
+
+### Hierarchical clustering algorithms {#HC_Alogrithm}
+
+Hierarchical clustering can be divided into two main types: _agglomerative_ and _divisive_
+
+1. __Agglomerative clustering__:
+It's also known as AGNES (Agglomerative Nesting). It works in a bottom-up manner. That is, each object is initially considered as a single-element cluster (leaf). At each step of the algorithm, the two clusters that are the most similar are combined into a new bigger cluster (nodes). This procedure is iterated until all points are member of just one single big cluster (root) (see figure below). The result is a tree which can be plotted as a dendrogram.
+
+2. __Divisive hierarchical clustering__: 
+It's also known as DIANA (Divise Analysis) and it works in a top-down manner. The algorithm is an inverse order of AGNES. It begins with the root, in which all objects are included in a single cluster. At each step of iteration, the most heterogeneous cluster is divided into two. The process is iterated until all objects are in their own cluster (see figure below).
+
+Note that the agglomerative clustering is good at identifying small clusters. Divisive hierarchical clustering is good at identifying large clusters.
+
+```{r echo=FALSE}
+knitr::include_graphics("image/hierarchical-clustering-agnes-diana.png")
+```
+
+As we learned in the [k-means clustering](http://uc-r.github.io/kmeans_clustering), we measure the (dis)similarity of observations using [distance measures](http://uc-r.github.io/kmeans_clustering#distance) (i.e., Euclidean distance, Manhattan distance, etc.). In R, the Euclidean distance is used by default to measure the dissimilarity between each pair of observations. As we already know, it is easy to compute the disimilarity measure between two pairs of observations with the `get_dist` function.
+
+However, a bigger question is: _How doe we measure the dissimilarity between two cluster of observations?_. A number of different cluster agglomeration methods (i.e., linkage methods) have been developed to answer to this question. The most common type methods are:
+
+- __Maximum or complete linkage clustering__:  It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the largest value (i.e., maximum value) of these dissimilarities as the distance between the two clusters. It tends to produce more compact clusters.
+- __Minimum or single linkage clustering__: It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the smallest of these dissimilarities as a linkage criterion. It tends to produce long, “loose” clusters.
+- __Mean or average linkage clustering__: It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the average of these dissimilarities as the distance between the two clusters.
+- __Centroid linkage clustering__: It computes the dissimilarity between the centroid for cluster 1 (a mean vector of length p variables) and the centroid for cluster 2.
+- __Ward's minimum variance method__: It minimizes the total within-cluster variance. At each step the pair of clusters with minimum between-cluster distance are merged.
+
+```{r echo=FALSE}
+knitr::include_graphics("image/unnamed-chunk-2-1.png")
+```
+
+### Data Preparation {#HC_Data}
+
+To perform a cluster analysis in R, generally the data should be prepared as follows:
+
+1. Rows are observations (individuals) and columns are variables
+2. Any missing value in the data must be removed or estimated.
+3. The data must be standardized (i.e., scaled) to make variables comparable. Recall that, standardization consists of transforming the variables such that they have mean zero and standard deviation one.
+
+Here, we will use the built-in R dataset `USArrests`, which cntains statistics in arrests per 100,000 residents for assault, murder, and rape in each of the 50 US states in 1973. It includes also the percent of the population living in urban areas
+
+```{r}
+df <- USArrests
+```
+
+To remove any missing value that might be present in the data, type this:
+
+```{r}
+df <- na.omit(df)
+```
+
+As we don't want the clustering algorithm to depend to an arbitrary variable unit, we start by scaling/standardizing the data using the R function `scale`:
+
+```{r}
+df <- scale(df)
+head(df)
+```
+
+
+### Hierarchical clustering with R {#HC_Example}
+
+There are different functions available in R for computing hierarchical clustering. The commonly used functions are:
+
+- `hclust` (in `stats` package) and `agnes` (`cluster` package) for agglomerative hierarchical clustering (HC)
+- `diana` (in `cluster` package) for divisive HC
+
+#### Agglomerative hierarchical clustering
+
+We can perform agglomerative HC with `hclust`. First, we compute the dissimilarity values with `dist` and then feed these values into `hclust` and specify the agglomeration method to be used (i.e., "complete", "average", "single", "Ward.D"). We can then plot the `dendrogram`.
+
+```{r}
+#Dissimilarity matrix
+d <- dist(df, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete" )
+
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+```
+
+Alternatively, we can use the `agnes` function. These functions behave very similarly; however, with the `agnes` function you can also get the agglomerative coefficient, which measures the amount of clustering structure found (values close to 1 suggest strong clustering structure).
+
+```{r}
+# Compute width agnes
+hc2 <- agnes(df, method = "complete")
+
+# agglomerative coefficient
+hc2$ac
+```
+
+This allows us to find certain hierarchical clustering methods that can identify stronger clustering structures. Here we see that Ward's method identifies the strongest clustering structure of the four methods assessed.
+
+```{r}
+# methods to assess
+m <- c("average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+# function to compute coefficient
+ac <- function(x){
+  agnes(df, method = x)$ac
+}
+
+map_dbl(m, ac)
+```
+
+Similar to before we can visualize the dendrogram.
+
+```{r}
+hc3 <- agnes(df, method = "ward")
+pltree(hc3, cex = 0.6, hang = -1, main = "Dendrogram of agnes")
+```
+
+#### Divisive Hierarchical clustering
+
+The R function `diana` provided by the cluster package allows us to perform divisive hierarchical clustering. `diana` works similar to `agnes`; however, there is no method to provide.
+
+```{r}
+# compute divisive hierarchical clustering
+hc4 <- diana(df)
+
+# divise coefficient: amount of clustering structure found
+hc4$dc
+
+# plot dendrogram
+pltree(hc4, cex = 0.6, hang = -1, main = "Dendrogram of diana")
+```
+
+### Working with dendrograms {#HC_Dendrogram}
+
+In the dendrogram displayed above, each leaf corresponds to one observation. As we move up the tree, observations that are similar to each other are combined into branches, which are themselves fused at a higher height.
+
+The height of the fusion, provided no the vertical axis, indicates the (dis)similarity between two observations. The higher the height of the fusuino, the less similar the observations are.
+
+Note that, conclusions about the proximity of two observations can be drawn only based on the height where branches containing those two observations first are fused. We cannot use the proximity of two observations along the horizontal axis as a criteria of their similarity.
+
+The height of the cut to the dendrogram controls the number of clusters obtained. It plays the same role as the k in k-means clustering. In order to identify sub-groups (i.e. clusters), we can cut the dendrogram with `cutree`:
+
+```{r}
+# Ward's method
+hc5 <- hclust(d, method = "ward.D2" )
+
+# Cut tree into 4 groups
+sub_grp <- cutree(hc5, k = 4)
+
+# Number of members in each cluster
+table(sub_grp)
+## sub_grp
+##  1  2  3  4 
+##  7 12 19 12
+```
+
+It is also possible to draw the dendrogram with a border around the 4 clusters. The argument border is used to specify the border colors for the rectangles.
+
+```{r}
+plot(hc5, cex = 0.6)
+rect.hclust(hc5, k = 4, border = 2:5)
+```
+
+As we saw in the k-means tutorial, we can also use the `fviz_cluster` function from the `factoextra` package to visualize the result in a scatter plot.
+
+```{r}
+# Cut agnes() tree into 4 groups
+hc_a <- agnes(df, method = "ward")
+cutree(as.hclust(hc_a), k =4)
+
+# Cut diana() tree into 4 groups
+hc_d <- diana(df)
+cutree(as.hclust(hc_d), k =4)
+```
+
+Lastly, we can also compare two dendrograms. Here, we compare hierarchical clustering with complete linkage versus Ward's method. The function `tanglegram` plots two dendrograms, side by side, with their labels connected by lines.
+
+```{r}
+# Compute distance matrix
+res.dist <- dist(df, method = "euclidean")
+
+# Compute 2 hierarchical clusterings
+hc1 <- hclust(res.dist, method = "complete")
+hc2 <- hclust(res.dist, method = "ward.D2")
+
+# Create two dendrograms
+dend1 <- as.dendrogram (hc1)
+dend2 <- as.dendrogram (hc2)
+
+tanglegram(dend1, dend2)
+```
+
+The output displayes "unique" nodes, with a combination of labels/items not present in the other tree, highlighted with dashed lines. The quality of the alignment of the two trees can be measured using the function `entanglement`. 
+
+Entanglement is a measure between 1 (full entanglement) and 0 (no entanglement). A lower entanglement coefficient corresponds to a good alignment. The output of `tanglegram` can be customized using many other options as follows:
+
+```{r}
+dend_list <- dendlist(dend1, dend2)
+
+tanglegram(dend1, dend2,
+  highlight_distinct_edges = FALSE, # Turn-off dashed lines
+  common_subtrees_color_lines = FALSE, # Turn-off line colors
+  common_subtrees_color_branches = TRUE, # Color common branches 
+  main = paste("entanglement =", round(entanglement(dend_list), 2))
+  )
+```
+
+
+### Determining optimal clusters {#HC_Cluster_No}
+
+Similar to hwo we determined optimal clusters with k means clustering, we can execute similar approaches for hierarchical clustering:
+
+#### Elbow method
+To perform the elbow method we just need to change the second argument in `fviz_nbclust` to `FUN = hcut`.
+
+```{r}
+fviz_nbclust(df, FUN = hcut, method = "wss")
+```
+
+#### Average Silhouette method
+To perform the average silhouette method we follow a similar process.
+
+```{r}
+fviz_nbclust(df, FUN = hcut, method = "silhouette")
+```
+
+#### Gap Statistic Method
+And the process is quite similar to perform the gap statistic method.
+
+```{r}
+gap_stat <- clusGap(df, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+
+### Additional comments
+
+Clustering can be a very useful tool for data analysis in the unsupervised setting. However, there are a number that arise in performing clustering. In the case of hierarchical clustering, we need to be concerned about:
+
+- What dissimilarity measure should be used?
+- What type of linkage should used?
+- Where should we cut the dendrogram in order to obtain clusters?
+
+Each of these decisions can have a strong impact on the results obtained. In practice, we try several different choices, and look for the one with the most useful or interpretable solution. With these methods, there is no single right answer - any solution that exposes some interesting aspects of the data should be considered.
+
+So, keep in mind that although hierarchical clustering can be performed quickly in R, there are many important variables to consider. However, this tutorial gets you started performing the hierarchical clustering approach and you can learn more with:
+
+- An Introduction to Statistical Learning
+- Applied Predictive Modeling
+- Elements of Statistical Learning
+- A Practical Guide to Cluster Analysis in R
+
+## Model-based clustering 
+
+This is from [the chapter 22 of the hands-on ML by R](https://bradleyboehmke.github.io/HOML/model-clustering.html). 
+
+Traditional clustering algorithms such as k-means and hierarchical clustering are heuristic-based algorithms that derive clusters directly based on thedata ratherthan incorporating a measure of probabilityor uncertainty to the cluster assignments. 
+
+Model-based clustering attempts to address this concern and provide soft assignment where observations have a probability of belonging to each cluster. Moreover, model-based clustering provides the added benefit of automatically identifying the optimal number of clusters. This chapter covers Gaussian mixture models, which are one of the most popular model-based clustering approaches available.
+
+### Tl;dr
+
+- [Prerequisites]()
+- [Covariance types]()
+
+### Prerequisites
+
+We wil luse the following packages with the emphasis on `mclust` (Scrucca et al. 2016).
+
+```{r}
+# Helper packages
+library(dplyr)
+library(ggplot2)
+
+# Modeling packages
+library(mclust)
+```
+
+To illustrate the main concepts of model-based clustering we will use the `geyser` data provided by the MASS package along with the `my_basket` data.
+
+```{r}
+data(geyser, package = 'MASS')
+# my_basket <- readr::read_csv("data/my_basket.csv")
+```
+
+## Measuring probability and uncertainty
+
+The key idea behind mode-based clustering is that the data are considered as coming from a mixture of underlying probability distributions. The most popular approach is the Gaussian mixture model (GMM) (Banfield and Raftery 1993) where each observation is assumed to be distributed as one of `k` multivariate normal distributions, where `k` is the number of clusters (commonly referred to as _components_ in model-based clustering). For comprehensive review of model-based clustering, see Fraley and Raftery(2002).
+
+GMMs are found on the multivariate normal (Gaussian) distribution where `p` variables ($X_1, X_2, ..., X_p$) are assumed to have means $\mu = (\mu_1, ..., \mu_p)$ and a covariance matrix $\Sigma$ which describes the join variability (i.e., covariance) between each pair of variables:
+
+$$
+
+
+\Sigma = 
+\left|
+\begin{array}{rr}
+\sigma_1^2 & \sigma_{1,2} &  ... & \sigma_{1,p} \\
+\sigma_{2,1} & \sigma_{2}^2 & ... & \sigma_{2,p} \\
+\vdots & & & \vdots \\
+\sigma_{p,1} & \sigma_{p,2} & ... & \sigma_{p}^2
+\end{array}
+\right|
+
+...(22.1)
+$$
+
+Note that $\Sigma$ contains `p` variances ($\sigma_1^2,\sigma_2^2,...,\sigma_p^2$) and $p(p-1)\2$ unique covariances $\sigma_{i,j}(i=j)$; note that $\sigma_{i,j}= \sigma_{j,i}$. A multivariate-normal distribution with mean $\mu$ and covariance $\Sigma$ is notationally represented by Equation (22.2):
+
+$$
+(X_1, X_2,...,X_p) - N_p(\mu, \Sigma) 
+$$
+
+This distribution has the property that every subset of variables(say, $X_1, X_5 and X_9$) also have a multivariate normal distribtuion (albeit with a different mean and covariance structure). GMMs assume the clusters can be created using `k` Gaussian distributions. For example, if there are two variables (say, $X$ and $Y$),then each observation $(X_i, Y_i)$ is modeled has having been sampled from one of $k$ distributions $N_1(\mu_1, \Sigma_1),...,N_p(\mu_1, \Sigma_1)$. This is illustrated in Figure 22.1 which suggests variables $X$ and $Y$ come from three multivariate distributions. However, as the data points deviate from the center of one of the three clusters, the probability that they align to a particular cluster decreases as indicated by the fading elliptical rings around each cluster center.
+
+```{r echo=FALSE, fig.cap="Figure 22.1: Data points across two features (X & Y) appear to come from three multivariate normal distributions."}
+knitr::include_graphics("image/multivariate-density-plot-1.png")
+```
+
+We can illustrate this concretely by applying a GMM model to the `geyser` data, which is the data illustrated in Figure 22.1. To do so we apply `Mclust()` and specify three components. Plotting the output provides a density plot (density) just like we saw in Figure 22.1 and the cluster assignment of each observation to the component for which it has the largest probability of belonging to (right). 
+
+In the uncertainty plot (right), you’ll notice the observations near the center of the densities are small, indicating small uncertainty (or high probability) of being from that respective component; however, the observations that are large represent observations with high uncertainty (or low probability) regarding the component they are aligned to.
+
+```{r fig.cap="Figure 22.2: Multivariate denisty plot (left) highlighting three clusters in the geyser data and an uncertainty plot (right) highlighting observations with high uncertainty of which cluster they are a member of."}
+# Apply GMM model with 3 components
+geyser_mc <- Mclust(geyser, G = 3)
+
+# Plot results
+plot(geyser_mc, what = "density")
+plot(geyser_mc, what = "uncertainty")
+```
+
+This idea of a probabilistic cluster assignment can be quite useful. As it allows you to identify observations with high or low cluster uncertainty and, potentiall, target them uniquely or provide alternative solutions. 
+
+For example, the following six observations all have nearly 50% probability of being assigned to two different clusters. If this were an advertising data set and you were marketing to these observations you may want to provide them with a combination of marketing solutions for the two clusters, they are nearest to. 
+
+Or you may want to perform additiona A/B testing on them to try gain additional confidence regarding which cluster they align to most.
+
+```{r}
+# Observations with high uncertainty
+sort(geyser_mc$uncertainty, decreasing = TRUE) %>% head()
+##       187       211        85       285        28       206 
+## 0.4689087 0.4542588 0.4355496 0.4355496 0.4312406 0.4168440
+```
+
+### Covariance types
+
+The covariance matrix in Equation (22.1) describes the geometry of the clusters, namely the volume, shape and orientation of the clusters. Looking at Figure 22.2 , the clusters and their densities appear approximately proportional in size and shape. However, this is not a reuirement of GMMs. In fact, GMMs allow for far more flexible clustering structures.
+
+This is done by adding constraints to the covariance matrix $\Sigma$. These constrains can be one or more of the following. 
+1. __volume__: each cluster has approximately the same number of observations: 
+2. __shape__: each cluster has approximately the same variance so that the distribution is spherical;
+3. __orientation__: each cluster is forced to be axis-aligned
+
+The various combinations of the above constraints have been classified into three main families of models: spherical, diagonal, and general (also referred to as ellipsoidal) families (Celeux and Govaert 1995). These combinations are listed in Table 22.1. See Fraley et al. (2012) regarding the technical implementation of these covariance parameters.
+
+Table 221.1: Parameterizations of the covariance matrix
+
+|**Model**|**Family**|**Volume**|**Shape**|**Orientation**|**Identifier**|
+|:-------|:----------|:---------|:--------|:--------------|:------------|
+|1  |Spherical |Equal    |Equal   |NA      |EII|
+|2  |Spherical |Variable |Equal   |NA      |VII|
+|3  |Diagonal  |Equal    |Equal   |Axes    |EEI|
+|4  |Diagonal  |Variable |Equal   |Axes    |VEI|
+|5  |Diagonal  |Equal    |Variable|Axes    |EVI|
+|6  |Diagonal  |Variable |Variable|Axes    |VVI|
+|7  |General   |Equal    |Equal   |Equal   |EEE|
+|8  |General   |Equal    |Variable|NEqual  |EVE|
+|9  |General   |Variable |Equal   |Equal   |VEE|
+|10 |General   |Variable |Variable|Equal   |VVE|
+|11 |General   |Equal    |Equal   |Vriable |EEV|
+|12 |General   |Variable |Equal   |Vriable |VEV|
+|13 |General   |Equal    |Variable|Vriable |EVV|
+|14 |General   |Variable |Variable|Vriable |VVV|
+
+
+These various covariance parameters allow GMMs to capture unique clustering structures in data, as illustrated below.
+
+```{r}
+knitr::include_graphics("image/visualize-different-covariance-models-1.png")
+```
+
+### Model selection
+
+If we assess the summary of our `geyser_mc` model we see that, behind the scenes, `Mclust()` applied the EEI model.
+
+```{r}
+summary(geyser_mc)
+```
+
+However, `Mclust()` will apply all 14 models from Table 22.3 and identify the one that best characterizes the data. To select the optimal model, any model selection procedure can be applied (e.g., AIC, liklihood ratio, etc.); however, BIC has been shown to work well in model-based clustering (Dasgupta and Raftery 1998; Fraley and Raftery 1998) and is typicallly the default. Mclust() implements BIC as represented in Equation (22.3)
+$$
+BIC = -2log(L) + m \ log(n)
+$$
+
+where $log(n)$ is the maximized loglikelihood for the model and data, $m$ is the number of free parameter to be estimated in the given model, and $n$ is the number observations in the data. This penalizes large models with many clusters.
+
+Not only can we use BIC to identify the optimal covariance parameters, but we can also use it to identify the optimal number of clusters. Rather than specifiy `G = 3` in `Mclust()`, leaving `G = NULL` forces `Mclust()` to evaluate 1–9 clusters and select the optimal number of components based on BIC. Alternatively, you can specify certain values to evaluate for G. The following performs a hyperparameter search across all 14 covariance models for 1–9 clusters on the geyser data. The left plot in Figure 22.4 shows that the EEI and VII models perform particularly poor while the rest of the models perform much better and have little differentiation. The optimal model uses the VVI covariance parameters, which identified four clusters and has a BIC of -2767.568.
+
+```{r fig.cap = "Figure 22.4: Identifying the optimal GMM model and number of clusters for the geyser data (left). The classification (center) and uncertainty (right) plots illustrate which observations are assigned to each cluster and their level of assignment uncertainty."}
+geyser_optimal_mc <- Mclust(geyser)
+summary(geyser_optimal_mc)
+
+plot(geyser_optimal_mc, what = 'BIC', legendArgs = list(x = "bottomright", ncol = 5))
+plot(geyser_optimal_mc, what = 'classification')
+plot(geyser_optimal_mc, what = 'uncertainty')
+```
+
+### My basket example
+
+Let's turn to our `my_basket` data to demonstrate GMMs on a more modern sized data set. The following performs a search across all 14 GMM models and across 1-20 clusters. If you are following along and running the code you will notice that GMMs are computationally slow, especially since they are assessing 14 models for each cluster size instance. 
+
+This GMM hyperparameter search took a little over a minute. Figure 22.5 illustrates the BIC scores and we see that the optimal GMM method is EEV with six clusters.
+
+```{r eval=FALSE}
+my_basket_mc <- Mclust(my_basket, 1:20)
+
+summary(my_basket_mc)
+## ---------------------------------------------------- 
+## Gaussian finite mixture model fitted by EM algorithm 
+## ---------------------------------------------------- 
+## 
+## Mclust EEV (ellipsoidal, equal volume and shape) model with 6 components: 
+## 
+##  log-likelihood    n   df      BIC       ICL
+##        8308.915 2000 5465 -24921.1 -25038.38
+## 
+## Clustering table:
+##   1   2   3   4   5   6 
+## 391 403  75 315 365 451
+
+plot(my_basket_mc, what = 'BIC', legendArgs = list(x = "bottomright", ncol = 5))
+```
+
+We can look across our six clusters and assess the probabilities of cluster membership. Figure 22.6 illustrates very bimodal distributions of probabilities. Observations with greater than 0.50 probability will be aligned to a given cluster so this bimodality is preferred as it illustrates that observations have either a very high probability of the cluster they are aligned to or a very low probability, which means they would not be aligned to that cluster.
+
+Looking at cluster `C3`, we see that there are vary little, if any, observations in the middle of probability range. `C3` also has far less observations with high probability. This means that `C3` is the smallest of the clusters (confirmed using `summary(my_basket_mc)`) above, and the `C3` is a more compact cluster.  As clusters have more observations with middling levels of probability (i.e., 0.25–0.75), their clusters are usually less compact. Therefore, cluster `C2` is less compact than cluster `C3`.
+
+```{r eval=FALSE}
+probabilities <- my_basket_mc$z 
+colnames(probabilities) <- paste0('C', 1:6)
+
+probabilities <- probabilities %>%
+  as.data.frame() %>%
+  mutate(id = row_number()) %>%
+  tidyr::gather(cluster, probability, -id)
+
+ggplot(probabilities, aes(probability)) +
+  geom_histogram() +
+  facet_wrap(~ cluster, nrow = 2)
+```
+
+the cluster membership for each observation with my_basket_mc$classification. In Figure 22.7 we find the observations that are aligned to each cluster but the uncertainty of their membership to that particular cluster is 0.25 or greater. You may notice that cluster three is not represented. Recall from Figure 22.6 that cluster three’s observations all had very strong membership probabilities so they have no observations with uncertainty greater than 0.25.
+
+```{r eval=FALSE}
+uncertainty <- data.frame(
+  id = 1:nrow(my_basket),
+  cluster = my_basket_mc$classification,
+  uncertainty = my_basket_mc$uncertainty
+)
+
+uncertainty %>%
+  group_by(cluster) %>%
+  filter(uncertainty > 0.25) %>%
+  ggplot(aes(uncertainty, reorder(id, uncertainty))) +
+  geom_point() +
+  facet_wrap(~ cluster, scales = 'free_y', nrow = 1)
+```
+
+When doing cluster analysis, our goal is to find those observations that are most similar to others. What defines this similarity becomes difficult as our data sets become larger. Let’s take a look at cluster two. The following standardizes the count of each product across all baskets and then looks at consumption for cluster two. Figure 22.8 illustrates the results and shows that cluster two baskets have above average consumption for candy bars, lottery tickets, cigarettes, and alcohol.
+
+Needless to say, this group may include our more unhealthy baskets—or maybe they’re the recreational baskets made on the weekends when people just want to sit on the deck and relax with a drink in one hand and a candy bar in the other! Regardless, this group is likely to receive marketing ads for candy bars, alcohol, and the like rather than the items we see at the bottom of Figure 22.8, which represent the items this group consumes less than the average observations.
+
+```{r eval=FALSE}
+cluster2 <- my_basket %>%
+  scale() %>%
+  as.data.frame() %>%
+  mutate(cluster = my_basket_mc$classification) %>%
+  filter(cluster == 2) %>%
+  select(-cluster)
+
+cluster2 %>%
+  tidyr::gather(product, std_count) %>%
+  group_by(product) %>%
+  summarize(avg = mean(std_count)) %>%
+  ggplot(aes(avg, reorder(product, avg))) +
+  geom_point() +
+  labs(x = "Average standardized consumption", y = NULL)
+```
+
+### Final thoughts
+
+Model-based clustering techniques do have their limitations. The methods require an underlying model for the data (e.g., GMMs assume multivariate normality), and the cluster results are heavily dependent on this assumption. Although there have been many advancements to limit this constraint (Lee and McLachlan 2013), software implementations are still lacking.
+
+A more significant limitation is the computational demands. Classical model-based clustering show disappointing computational performance in high-dimensional spaces (Bouveyron and Brunet-Saumard 2014). This is mainly due to the fact that model-based clustering methods are dramatically over-parametrized. The primary approach for dealing with this is to perform dimension reduction prior to clustering. Although this often improves computational performance, reducing the dimension without taking into consideration the clustering goal may be dangerous. Indeed, dimension reduction may yield a loss of information which could have been useful for discriminating the groups. There have been alternative solutions proposed, such as high-dimensional GMMs (Bouveyron, Girard, and Schmid 2007), which has been implemented in the HDclassif package (Bergé, Bouveyron, and Girard 2012).
+
+
+### Reference
+Banfield, Jeffrey D, and Adrian E Raftery. 1993. “Model-Based Gaussian and Non-Gaussian Clustering.” Biometrics. JSTOR, 803–21.
+
+Bergé, Laurent, Charles Bouveyron, and Stéphane Girard. 2012. “HDclassif: An R Package for Model-Based Clustering and Discriminant Analysis of High-Dimensional Data.” Journal of Statistical Software 46 (6): 1–29. http://www.jstatsoft.org/v46/i06/.
+
+Bouveyron, Charles, and Camille Brunet-Saumard. 2014. “Model-Based Clustering of High-Dimensional Data: A Review.” Computational Statistics & Data Analysis 71. Elsevier: 52–78.
+
+Bouveyron, Charles, Stéphane Girard, and Cordelia Schmid. 2007. “High-Dimensional Data Clustering.” Computational Statistics & Data Analysis 52 (1). Elsevier: 502–19.
+
+Celeux, Gilles, and Gérard Govaert. 1995. “Gaussian Parsimonious Clustering Models.” Pattern Recognition 28 (5). Elsevier: 781–93.
+
+Dasgupta, Abhijit, and Adrian E Raftery. 1998. “Detecting Features in Spatial Point Processes with Clutter via Model-Based Clustering.” Journal of the American Statistical Association 93 (441). Taylor & Francis: 294–302.
+
+Fraley, Chris, and Adrian E Raftery. 1998. “How Many Clusters? Which Clustering Method? Answers via Model-Based Cluster Analysis.” The Computer Journal 41 (8). Oxford University Press: 578–88.
+
+Fraley, Chris, and Adrian E Raftery. 2002. “Model-Based Clustering, Discriminant Analysis, and Density Estimation.” Journal of the American Statistical Association 97 (458). Taylor & Francis: 611–31.
+
+Fraley, Chris, Adrian E Raftery, T Brendan Murphy, and Luca Scrucca. 2012. “Mclust Version 4 for R: Normal Mixture Modeling for Model-Based Clustering, Classification, and Density Estimation.” Technical report.
+
+Lee, Sharon X, and Geoffrey J McLachlan. 2013. “Model-Based Clustering and Classification with Non-Normal Mixture Distributions.” Statistical Methods & Applications 22 (4). Springer: 427–54.
+
+Scrucca, Luca, Michael Fop, Thomas Brendan Murphy, and Adrian E. Raftery. 2016. “mclust 5: Clustering, Classification and Density Estimation Using Gaussian Finite Mixture Models.” The R Journal 8 (1): 205–33. https://journal.r-project.org/archive/2016-1/scrucca-fop-murphy-etal.pdf.
+
+
+
+
+
+
+
+
+
+
