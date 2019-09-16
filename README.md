@@ -1,3 +1,4 @@
+
 # Machine Learning Archive  
 The below is an simple introduction of useful books for statistical modeling and proeprocessing/feature engineering.
 
@@ -101,6 +102,9 @@ Another useful website is Cookbook for R: covering other topics online: http://w
 ### Geo-visualization
 - Site: https://www.jasondavies.com/  
 
+### ggplot tutorial  
+https://cedricscherer.netlify.com/2019/08/05/a-ggplot2-tutorial-for-beautiful-plotting-in-r/#toc  
+
 =========================================
 ## Stats by Uni Class
 ### Stanford CS229
@@ -111,7 +115,6 @@ Machine learning course by Andrew Ng from Stanford University
 Bayes stats using `brms`, `ggplot2` and `tidyverse`
 - 📚 Bookdown: https://bookdown.org/ajkurz/Statistical_Rethinking_recoded/  
 - HP: https://xcelab.net/rm/statistical-rethinking/    
-
 
 
 
