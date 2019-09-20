@@ -50,6 +50,7 @@ install.packages("tidymodels")
 Useful blog posts
 recipes: http://www.rebeccabarter.com/blog/2019-06-06_pre_processing/  
 tidymodels: https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/  
+Tutorial by RStudio: https://github.com/tidymodels/aml-training
 
 ## Feature Engineering Resouces 
 ### 📚 Feature Engineering and Selection (FES)  
