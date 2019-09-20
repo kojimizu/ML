@@ -105,6 +105,14 @@ Another useful website is Cookbook for R: covering other topics online: http://w
 ### ggplot tutorial  
 https://cedricscherer.netlify.com/2019/08/05/a-ggplot2-tutorial-for-beautiful-plotting-in-r/#toc  
 
+### Packages
+#### Rayshader: 
+3D plot even ggplot viz: https://www.tylermw.com/  
+#### Uber's H3
+Hexigon-shaped viz:  http://estrellita.hatenablog.com/entry/2019/05/01/235406
+#### Mapdeck
+Blogpost: http://estrellita.hatenablog.com/entry/2018/09/25/230000_3    
+
 =========================================
 ## Stats by Uni Class
 ### Stanford CS229
