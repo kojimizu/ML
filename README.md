@@ -28,24 +28,28 @@ This material from the below page covers basic R techniques, descrptive analytic
 ### 📦 Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
 A package for ML modeling with pre-processing techniques 
-📚 Book: http://topepo.github.io/caret/
-📦 Repo:   https://github.com/topepo/caret
+📚 Book: http://topepo.github.io/caret/  
+📦 Repo:   https://github.com/topepo/caret  
+
 ```{R}
 # Avaiable from CRAN
 install.packages("caret")
 ```
+
 ### 📦 Tidymodels  
 Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
 
 📦 Repo: https://github.com/tidymodels/tidymodels
+
 ```{R}
 # Avaiable from CRAN
 install.packages("tidymodels")
 ```
-- broom:  tidy, augment, glance for model interpretation support
-- rsample:  data resampling 
-- recipes:  pre-processing functions (similar to caret)
-- parsnip:  modeling functions 
+
+- **broom**:  tidy, augment, glance for model interpretation support
+- **rsample**:  data resampling 
+- **recipes**:  pre-processing functions (similar to caret)
+- **parsnip**:  modeling functions 
 
 Useful blog posts
 recipes: http://www.rebeccabarter.com/blog/2019-06-06_pre_processing/  
@@ -106,16 +110,24 @@ Another useful website is Cookbook for R: covering other topics online: http://w
 ### ggplot tutorial  
 https://cedricscherer.netlify.com/2019/08/05/a-ggplot2-tutorial-for-beautiful-plotting-in-r/#toc  
 
-### Packages
+### Data viz packages
+
 #### Rayshader: 
-3D plot even ggplot viz: https://www.tylermw.com/  
+3D plot including `ggplot2` viz: https://www.tylermw.com/  
+
 #### Uber's H3
-Hexigon-shaped viz:  http://estrellita.hatenablog.com/entry/2019/05/01/235406
+Hexigon-shaped viz:  
+site: http://estrellita.hatenablog.com/entry/2019/05/01/235406  
+
 #### Mapdeck
 Blogpost: http://estrellita.hatenablog.com/entry/2018/09/25/230000_3    
 
 =========================================
 ## Stats by Uni Class
+
+### Stat 
+Lecture by Jenny Brian:  
+
 ### Stanford CS229
 Machine learning course by Andrew Ng from Stanford University  
 🎥Video and 📚Material : http://cs229.stanford.edu/syllabus.html  
