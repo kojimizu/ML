@@ -2,7 +2,10 @@
 # Machine Learning Archive  
 The below is an simple introduction of useful books for statistical modeling and proeprocessing/feature engineering.
 All codes are based on tidyverse-principle, and for users not used to tidyverse, the 5-day workshop for tidyverse is 
-recommended (the materials are [here](https://tidy-ds.wjakethompson.com/)).   
+recommended.  
+<Tidyverse training materials>
+- Tidy data science workshop :https://tidy-ds.wjakethompson.com/  
+- Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
 
 ## ML Overview
 ### 1. Applied Machine Learning
