@@ -6,6 +6,9 @@ recommended.
 <Tidyverse training materials>
 - Tidy data science workshop :https://tidy-ds.wjakethompson.com/  
 - Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
+    
+For latest papers, browse the state-of-the art is useful for finding the paper and code on GitHub.  
+https://paperswithcode.com/sota  
 
 ## ML Overview
 ### 1. Applied Machine Learning
