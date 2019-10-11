@@ -1398,6 +1398,91 @@ Decision trees provide a very intuitive modeling approach that have several, fle
 - The Elements of Statistical Learning
 - [Bagging Predictors](https://link.springer.com/article/10.1023%2FA%3A1018054314350)
 
+### Bagging
+
+We learned about botstrapping as a resampling procedure,  which creates b new bootstrap samples by drawing samples with replacement of the original training data. This chapter illustrates how we can use bootstrapping to create an ensemble of predictions. Bootstrap aggregating, also called bagging, is one of the first ensemble algorithms28 machine learning practitioners learn and is designed to improve the stability and accuracy of regression and classification algorithms. By model averaging, bagging helps to reduce variance and minimize overfitting. Although it is usually applied to decision tree methods, it can be used with any type of method.
+
+#### Prerequisites
+
+```{r}
+# Helper packages
+library(dplyr)       # for data wrangling
+library(ggplot2)     # for awesome plotting
+library(doParallel)  # for parallel backend to foreach
+library(foreach)     # for parallel processing with for loops
+
+# Modeling packages
+library(caret)       # for general model fitting
+library(rpart)       # for fitting decision trees
+library(ipred)       # for fitting bagged decision trees
+```
+
+We will continue to illustrate the main concepts with the `ames_train` data set created in Section 2.7.
+
+#### Why and when bagging works
+
+_Bootstrap aggregating_ (bagging) prediction models is a general method for fitting multiple versions of a prediction model and then combining (or ensembling) them into an aggregated prediction (Breiman 1996a). Bagging is a fairly straight forward algorithm in which b bootstrap copies of the original training data are created, the regression or classification algorithm (commonly referred to as the base learner) is applied to each bootstrap sample and, in the regression context, new predictions are made by averaging the predictions together from the individual base learners. When dealing with a classification problem, the base learner predictions are combined using plurality vote or by averaging the estimated class probabilities together.
+
+This is represented in Equation (10.1) where $X$ is the recored for which we want to generate a prediction $\hat{f_{bag}}$ is the bagged prediction, and $\hat{f_b(X)}$ are the prediction from the individual base learners.
+
+$$
+\hat{f_{bag}} = \hat{f_1(X)}+...+\hat{f_b(X)}...(10.1)
+$$
+
+Because of the aggregation process, bagging effectively reduces the variance of an individual base learner (i.e., averaging reduces variance); however, bagging does not always improve upon an individual base learner. As discussed in Section 2.5, some models have larger variance than others. Bagging works especially well for unstable, high variance base learners—algorithms whose predicted output undergoes major changes in response to small changes in the training data (Dietterich 2000b, 2000a). This includes algorithms such as decision trees and KNN (when k is sufficiently small). However, for algorithms that are more stable or have high bias, bagging offers less improvement on predicted outputs since there is less variability (e.g., bagging a linear regression model will effectively just return the original predictions for large enough $b$).
+
+The general idea behind bagging is referred to as the “wisdom of the crowd” effect and was popularized by Surowiecki (2005). It essentially means that the aggregation of information in large diverse groups results in decisions that are often better than could have been made by any single member of the group. The more diverse the group members are then the more diverse their perspectives and predictions will be, which often leads to better aggregated information. Think of estimating the number of jelly beans in a jar at a carinival. While any individual guess is likely to be way off, you’ll often find that the averaged guesses tends to be a lot closer to the true number.
+
+This is illustrated in Figure 10.1, which compares bagging $b=100$ polynomial regression moels, MARS models and CART decision trees. You can see that the low variance base learner (polynomial regression) gains very little from bagging while the higher variance learner (decision trees) gains significantly more. Not only does bagging help minimize the high variability (instability) of single trees, but it also helps to smooth out the prediction surface.
+
+```{r echo=FALSE, fig.cap="Figure 10.1: The effect of bagging 100 base learners. High variance models such as decision trees (C) benefit the most from the aggregation effect in bagging, whereas low variance models such as polynomial regression (A) show little improvement."}
+knitr::ininclude_graphics("image/bagging-multiple-models-1.png")
+```
+
+Optimal performance is often found by bagging 50–500 trees. Data sets that have a few strong predictors typically require less trees; whereas data sets with lots of noise or multiple strong predictors may need more. Using too many trees will not lead to overfitting. However, it’s important to realize that since multiple models are being run, the more iterations you perform the more computational and time requirements you will have. As these demands increase, performing k-fold CV can become computationally burdensome.
+
+A benefit to creating ensembles via bagging, which is based on resampling with replacement, is that it can provide its own internal estimate of predictive performance with the out-of-bag (OOB) sample (see Section 2.4.2). The OOB sample can be used to test predictive performance and the results usually compare well compared to k-fold CV assuming your data is sufficiently large (say $n>1000$). Consequently, as your data sets become larger and your bagging iterations increase, it is common to use the OOB error estimate as a proxy for predictive performance. 
+
+### Implementation
+
+ Chapter 9, we saw how decision trees performed in predicting the sales price for the Ames housing data. Performance was subpar compared to the MARS (Chapter 7) and KNN (Chapter 8) models we fit, even after tuning to find the optimal pruned tree. Rather than use a single pruned decision tree, we can use, say, 100 bagged unpruned trees (by not pruning the trees we’re keeping bias low and variance high which is when bagging will have the biggest effect). As the below code chunk illustrates, we gain significant improvement over our individual (pruned) decision tree (RMSE of 26,462 for bagged trees vs. 41,019 for the single decision tree).
+
+The` bagging()` function comes from the ipred package and we use nbagg to control how many iterations to include in the bagged model and coob = TRUE indicates to use the OOB error rate. By default, `bagging()` uses `rpart::rpart()` for decision tree base learners but other base learners are available. Since bagging just aggregates a base learner, we can tune the base learner parameters as normal. Here, we pass parameters to rpart() with the control parameter and we build deep trees (no pruning) that require just two observations in a node to split.
+
+```{r}
+# make bootstrapping reproducible
+set.seed(123)
+
+# train bagged model
+ames_bag1 <- bagging(
+  formula = Sale_Price ~ .,
+  data = ames_train,
+  nbagg = 100,  
+  coob = TRUE,
+  control = rpart.control(minsplit = 2, cp = 0)
+)
+
+ames_bag1
+## 
+## Bagging regression trees with 100 bootstrap replications 
+## 
+## Call: bagging.data.frame(formula = Sale_Price ~ ., data = ames_train, 
+##     nbagg = 100, coob = TRUE, control = rpart.control(minsplit = 2, 
+##         cp = 0))
+## 
+## Out-of-bag estimate of root mean squared error:  25528.78
+```
+One thing to note is that tyipically, the more trees the better. As we add more trees we’re averaging over more high variance decision trees. Early on, we see a dramatic reduction in variance (and hence our error) but eventually the error will typically flatline and stabilize signaling that a suitable number of trees has been reached. Often, we need only 50–100 trees to stabilize the error (in other cases we may need 500 or more). For the Ames data we see that the error is stabilizing with just over 100 trees so we’ll likely not gain much improvement by simply bagging more trees.
+
+Unfortunately, `bagging()` does not provide the RMSE by tree so to produce this error curve we iterated over nbagg values of 1–200 and applied the same `bagging()` function above.
+
+```{r fig.cap="Figure 10.2: Error curve for bagging 1-200 deep, unpruned decision trees. The benefit of bagging is optimized at 187 trees although the majority of error reduction occurred within the first 100 trees."}
+knitr::include_graphics("image/n-bags-plot-1.png")
+```
+
+
+
+
 ### Random forests 
 
 [Bagging (bootstrap aggregating) regression trees](http://uc-r.github.io/regression_trees) is a technique that can turn a single tree model with high variance and poor preditive power into a fairly accurate prediction function.
@@ -1415,7 +1500,7 @@ This tutorial serves as an introduction to the random forests. This tutorial wil
 - [Basic implementation](#RF_BI): Implementing regression trees in R.
 - [Tuning](#RF_Tune): Understanding the hyperparameters we can tune and performing grid search with ranger & h2o.
 - [Predicting](#RF_Pred): Apply your final model to a new data set to make predictions.
-- [Learning more](#RF_LM): Where you can learn more
+- [Larning more](#RF_LM): Where you can learn more
 
 #### Replication Requirements {#RF_RR}
 
@@ -1434,7 +1519,6 @@ library(h2o)          # an extremely fast java-based platform
 To illustrate various regularization concepts we will use the Ames Housing data that has been included in the `AmesHousing` package.
 
 ```{r}
-
 # Create training (70%) and test (30%) sets for the AmesHousing::make_ames() data.
 # Use set.seed for reproducibility
 set.seed(123)
@@ -1442,7 +1526,6 @@ set.seed(123)
 amessplit <- initial_split(AmesHousing::make_ames(), prop=.7)
 ames_train <- training(ames_split)
 ames_test <- testing(ames_split)
-
 ```
 
 #### The idea {#RF_Idea}
@@ -1978,7 +2061,6 @@ head(pred_ranger$predictions)
 ## 5 211334.3
 ## 6 202046.5
 ```
-
 
 #### Learning more {#RF_LM}
 
