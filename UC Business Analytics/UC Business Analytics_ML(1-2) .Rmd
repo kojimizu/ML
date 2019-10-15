@@ -3,9 +3,8 @@ title: "UC business Analytics R programming Guide 1(2)"
 author: "Koji Mizumura"
 date: "`r Sys.Date()`"
 output:
-  word_document:
-    toc: yes
-    toc_depth: '4'
+   rmdformats::readthedown:
+    highlight: kate
   html_document:
     number_sections: yes
     section_divs: yes
@@ -13,11 +12,16 @@ output:
     toc: yes
     toc_depth: 4
     toc_float: yes
-always_allow_html: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+ always_allow_html: yes
 ---
 
 ```{r setup4, include=FALSE}
 # Set global knitr chunk options
+library(rmdformats)
+
 knitr::opts_chunk$set(
   fig.align = "center",
   fig.height = 4.5,
@@ -1273,7 +1277,7 @@ Bagging combines and averages multiple models. Averaging across multiple trees r
 2. For each boostrap sample train a single, unpruned regression tree.
 3. Average individual predictions from each tree to create an overall average predicted value.
 
-```{r}
+```{r eval=FALSE}
 knitr::include_graphics("C:/Protected/Data Science/UC Business Analytics/image/bagging3.png")
 ```
 
@@ -1435,15 +1439,17 @@ The general idea behind bagging is referred to as the “wisdom of the crowd” 
 
 This is illustrated in Figure 10.1, which compares bagging $b=100$ polynomial regression moels, MARS models and CART decision trees. You can see that the low variance base learner (polynomial regression) gains very little from bagging while the higher variance learner (decision trees) gains significantly more. Not only does bagging help minimize the high variability (instability) of single trees, but it also helps to smooth out the prediction surface.
 
-```{r echo=FALSE, fig.cap="Figure 10.1: The effect of bagging 100 base learners. High variance models such as decision trees (C) benefit the most from the aggregation effect in bagging, whereas low variance models such as polynomial regression (A) show little improvement."}
-knitr::ininclude_graphics("image/bagging-multiple-models-1.png")
+```{r echo=FALSE, eval=FALSE, fig.cap="Figure 10.1: The effect of bagging 100 base learners. High variance models such as decision trees (C) benefit the most from the aggregation effect in bagging, whereas low variance models such as polynomial regression (A) show little improvement."}
+
+knitr::include_graphics("bagging-multiple-models-1.png")
+
 ```
 
 Optimal performance is often found by bagging 50–500 trees. Data sets that have a few strong predictors typically require less trees; whereas data sets with lots of noise or multiple strong predictors may need more. Using too many trees will not lead to overfitting. However, it’s important to realize that since multiple models are being run, the more iterations you perform the more computational and time requirements you will have. As these demands increase, performing k-fold CV can become computationally burdensome.
 
 A benefit to creating ensembles via bagging, which is based on resampling with replacement, is that it can provide its own internal estimate of predictive performance with the out-of-bag (OOB) sample (see Section 2.4.2). The OOB sample can be used to test predictive performance and the results usually compare well compared to k-fold CV assuming your data is sufficiently large (say $n>1000$). Consequently, as your data sets become larger and your bagging iterations increase, it is common to use the OOB error estimate as a proxy for predictive performance. 
 
-### Implementation
+#### Implementation
 
  Chapter 9, we saw how decision trees performed in predicting the sales price for the Ames housing data. Performance was subpar compared to the MARS (Chapter 7) and KNN (Chapter 8) models we fit, even after tuning to find the optimal pruned tree. Rather than use a single pruned decision tree, we can use, say, 100 bagged unpruned trees (by not pruning the trees we’re keeping bias low and variance high which is when bagging will have the biggest effect). As the below code chunk illustrates, we gain significant improvement over our individual (pruned) decision tree (RMSE of 26,462 for bagged trees vs. 41,019 for the single decision tree).
 
@@ -1476,10 +1482,17 @@ One thing to note is that tyipically, the more trees the better. As we add more 
 
 Unfortunately, `bagging()` does not provide the RMSE by tree so to produce this error curve we iterated over nbagg values of 1–200 and applied the same `bagging()` function above.
 
-```{r fig.cap="Figure 10.2: Error curve for bagging 1-200 deep, unpruned decision trees. The benefit of bagging is optimized at 187 trees although the majority of error reduction occurred within the first 100 trees."}
+```{r echo=FALSE, eval=FALSE, fig.cap="Figure 10.2: Error curve for bagging 1-200 deep, unpruned decision trees. The benefit of bagging is optimized at 187 trees although the majority of error reduction occurred within the first 100 trees."}
+
 knitr::include_graphics("image/n-bags-plot-1.png")
+
 ```
 
+We can also apply bagging within __caret__ and use 10-fold CV to see how well our ensemble will generalize. We see that the cross-validated RMSE for 200 trees is similar to the OOB estimate (difference of 495). However, using the OOB error took 58 seconds to compute wheres performing the following 10 fold CV took 26 minutes on our machine!
+
+```{r}
+
+```
 
 
 
