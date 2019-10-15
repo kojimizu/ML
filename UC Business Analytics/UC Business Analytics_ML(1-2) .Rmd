@@ -1402,11 +1402,11 @@ Decision trees provide a very intuitive modeling approach that have several, fle
 - The Elements of Statistical Learning
 - [Bagging Predictors](https://link.springer.com/article/10.1023%2FA%3A1018054314350)
 
-### Bagging
+## Bagging
 
 We learned about botstrapping as a resampling procedure,  which creates b new bootstrap samples by drawing samples with replacement of the original training data. This chapter illustrates how we can use bootstrapping to create an ensemble of predictions. Bootstrap aggregating, also called bagging, is one of the first ensemble algorithms28 machine learning practitioners learn and is designed to improve the stability and accuracy of regression and classification algorithms. By model averaging, bagging helps to reduce variance and minimize overfitting. Although it is usually applied to decision tree methods, it can be used with any type of method.
 
-#### Prerequisites
+### Prerequisites
 
 ```{r}
 # Helper packages
@@ -1423,7 +1423,7 @@ library(ipred)       # for fitting bagged decision trees
 
 We will continue to illustrate the main concepts with the `ames_train` data set created in Section 2.7.
 
-#### Why and when bagging works
+### Why and when bagging works
 
 _Bootstrap aggregating_ (bagging) prediction models is a general method for fitting multiple versions of a prediction model and then combining (or ensembling) them into an aggregated prediction (Breiman 1996a). Bagging is a fairly straight forward algorithm in which b bootstrap copies of the original training data are created, the regression or classification algorithm (commonly referred to as the base learner) is applied to each bootstrap sample and, in the regression context, new predictions are made by averaging the predictions together from the individual base learners. When dealing with a classification problem, the base learner predictions are combined using plurality vote or by averaging the estimated class probabilities together.
 
@@ -1449,7 +1449,7 @@ Optimal performance is often found by bagging 50–500 trees. Data sets that hav
 
 A benefit to creating ensembles via bagging, which is based on resampling with replacement, is that it can provide its own internal estimate of predictive performance with the out-of-bag (OOB) sample (see Section 2.4.2). The OOB sample can be used to test predictive performance and the results usually compare well compared to k-fold CV assuming your data is sufficiently large (say $n>1000$). Consequently, as your data sets become larger and your bagging iterations increase, it is common to use the OOB error estimate as a proxy for predictive performance. 
 
-#### Implementation
+### Implementation
 
  Chapter 9, we saw how decision trees performed in predicting the sales price for the Ames housing data. Performance was subpar compared to the MARS (Chapter 7) and KNN (Chapter 8) models we fit, even after tuning to find the optimal pruned tree. Rather than use a single pruned decision tree, we can use, say, 100 bagged unpruned trees (by not pruning the trees we’re keeping bias low and variance high which is when bagging will have the biggest effect). As the below code chunk illustrates, we gain significant improvement over our individual (pruned) decision tree (RMSE of 26,462 for bagged trees vs. 41,019 for the single decision tree).
 
@@ -1491,12 +1491,23 @@ knitr::include_graphics("image/n-bags-plot-1.png")
 We can also apply bagging within __caret__ and use 10-fold CV to see how well our ensemble will generalize. We see that the cross-validated RMSE for 200 trees is similar to the OOB estimate (difference of 495). However, using the OOB error took 58 seconds to compute wheres performing the following 10 fold CV took 26 minutes on our machine!
 
 ```{r}
+ames_bag2 <- train(
+  Sale_Price ~., 
+  data = ames_train,
+  meth0d = "treebag",
+  trControl = trainControl(method = "cv", number = 10),
+  nbagg = 200,
+  control = rpart.control(minsplit = 2, cp = 0)
+)
 
+ames_bag2
 ```
 
+### Easily Parallelize
 
+As stated in Section 10,2, bagging can become computationally 
 
-### Random forests 
+## Random forests 
 
 [Bagging (bootstrap aggregating) regression trees](http://uc-r.github.io/regression_trees) is a technique that can turn a single tree model with high variance and poor preditive power into a fairly accurate prediction function.
 
