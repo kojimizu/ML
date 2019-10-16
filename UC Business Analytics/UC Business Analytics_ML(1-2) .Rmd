@@ -1419,6 +1419,12 @@ library(foreach)     # for parallel processing with for loops
 library(caret)       # for general model fitting
 library(rpart)       # for fitting decision trees
 library(ipred)       # for fitting bagged decision trees
+
+set.seed(123)
+
+amessplit <- initial_split(AmesHousing::make_ames(), prop=.7)
+ames_train <- training(ames_split)
+ames_test <- testing(ames_split)
 ```
 
 We will continue to illustrate the main concepts with the `ames_train` data set created in Section 2.7.
@@ -1486,6 +1492,8 @@ Unfortunately, `bagging()` does not provide the RMSE by tree so to produce this 
 
 knitr::include_graphics("image/n-bags-plot-1.png")
 
+ames_bag1$mtrees
+
 ```
 
 We can also apply bagging within __caret__ and use 10-fold CV to see how well our ensemble will generalize. We see that the cross-validated RMSE for 200 trees is similar to the OOB estimate (difference of 495). However, using the OOB error took 58 seconds to compute wheres performing the following 10 fold CV took 26 minutes on our machine!
@@ -1505,7 +1513,120 @@ ames_bag2
 
 ### Easily Parallelize
 
-As stated in Section 10,2, bagging can become computationally 
+As stated in Section 10,2, bagging can become computationally intense as the number of iterations increases. Fortunately, the process of bagging involves fitting models to each of the bootstrap samples which are completely independent of one another. This means that each model can be trained in parallel and the results aggregated in the end for the final model. Consequently, if you have access to a large cluster or number of cores, you can quickly create bagged ensembles on large data sets.
+
+The following illustrates parallelizing the bagging algorithm (with $b=160$ decision trees) on the Ames housing data using eight cores and returning the predictions for the test data for each of the trees.
+
+```{r}
+# create a parallel socket cluster
+cl <- makeCluster(8) # use 8 workers
+registerDoParallel(cl) # register the parallel backend
+
+# Fit trees in parallel and compute predictions on the test set
+predictions <- foreach(
+  icount(160), 
+  .packages = "rpart", 
+  .combine = cbind
+  ) %dopar% {
+    # bootstrap copy of training data
+    index <- sample(nrow(ames_train), replace = TRUE)
+    ames_train_boot <- ames_train[index, ]  
+  
+    # fit tree to bootstrap copy
+    bagged_tree <- rpart(
+      Sale_Price ~ ., 
+      control = rpart.control(minsplit = 2, cp = 0),
+      data = ames_train_boot
+      ) 
+    
+    predict(bagged_tree, newdata = ames_test)
+}
+
+predictions[1:5, 1:7]
+##   result.1 result.2 result.3 result.4 result.5 result.6 result.7
+## 1   176500   187000   179900   187500   187500   187500   187500
+## 2   180000   254000   251000   240000   180000   180000   221000
+## 3   175000   174000   192000   192000   185000   178900   163990
+## 4   197900   157000   217500   215000   180000   210000   218500
+## 5   120000   129000   130000   143000   136500   153600   148500
+```
+
+We can then do some data wrangling to compute and plot the RMSES as additional trees are added. Our results, illustrated in Figure 10.3, closely resemble the results obtained in Figure 10.2. This also illustrates how the OOB error closely approximates the test error.
+
+```{r fig.cap="Figure 10.3: Error curve for custom parallel bagging of 1-160 deep, unpruned decision trees."}
+ppredictions %>%
+  as.data.frame() %>%
+  mutate(
+    observation = 1:n(),
+    actual = ames_test$Sale_Price) %>%
+  tidyr::gather(tree, predicted, -c(observation, actual)) %>%
+  group_by(observation) %>%
+  mutate(tree = stringr::str_extract(tree, '\\d+') %>% as.numeric()) %>%
+  ungroup() %>%
+  arrange(observation, tree) %>%
+  group_by(observation) %>%
+  mutate(avg_prediction = cummean(predicted)) %>%
+  group_by(tree) %>%
+  summarize(RMSE = RMSE(avg_prediction, actual)) %>%
+  ggplot(aes(tree, RMSE)) +
+  geom_line() +
+  xlab('Number of trees')
+```
+
+### Feature interpretation
+
+Unfortunately, doe to the bagging process, models that are normally perceived as interpretable are no longer so. However, we can still make inferences about how features are influencing our model.  Recall in Section 9.6 that we measure feature importance based on the sum of the reduction in the loss function (e.g., SSE) attributed to each variable at each split in a given tree.
+
+For bagged decision trees, this process is similar. For each tree, we compute the sum of the reduction of the loss function across all splits. We then aggregate this measure across all trees for each feature. The features with the largest average decrease in SSE (for regression) are considered most important. Unfortunately, the __ipred__ package does not capture the required information for computing variable importance but the __caret__ package does. In the code chunk below, we use vip to construct a variable importance plot (VIP) of the top 40 features in the `ames_bag2` model.
+
+With a single decision tree, we saw that many non-informative features were not used in the tree. However, with bagging, since we use many trees built on bootstrapped samples, we are likely to see many more features used for splits. Consequently, we tend to have many more features involved but with lower levels of importance.
+
+```{r fig.cap="Figure 10.4: Variable importance for 200 bagged trees for the Ames Housing data."}
+vip::vip(ames_bag2, num_features = 40, bar = FALSE)
+```
+
+Understanding the relationship between a feature and predicted response for bagged models follows the same procedure we’ve seen in previous chapters. PDPs tell us visually how each feature influences the predicted output, on average. Although the averaging effect of bagging diminishes the ability to interpret the final ensemble, PDPs and other interpretability methods (Chapter 16) help us to interpret any “black box” model. Figure 10.5 highlights the unique, and sometimes non-linear, non-monotonic relationships that may exist between a feature and response.
+
+```{r fig.cap="Figure 10.5: Partial dependence plots to understand the relationship between sales price and the lot area and frontage size features."}
+# Construc partial depdence plots
+p1 <- pdp::partial(
+  ames_bag2,
+  pred.var = "Lot_Area",
+  grid.resolution = 20
+  ) %>% 
+  autoplot()
+
+p2 <- pdp::partial(
+  ames_bag2, 
+  pred.var = "Lot_Frontage", 
+  grid.resolution = 20
+  ) %>% 
+  autoplot()
+
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+### Final thoughts
+
+Bagging improves the prediction accuracy for high variance (and low bias) models at the expense of interpretability and computational speed. However, using various interpretability algorithms such as VIPs and PDPs, we can still make inferences about how our bagged model leverages feature information. Also, since bagging consists of independent processes, the algorithm is easily parallelizable.
+
+However, when bagging trees, a problem still exists. Although the model building steps are independent, the trees in bagging are not completely independent of each other since all the original features are considered at every split of every tree. Rather, trees from different bootstrap samples typically have similar structure to each other (especially at the top of the tree) due to any underlying strong relationships.
+
+For example, if we create six decision trees with different bootstrapped samples of the Boston housing data (Harrison Jr and Rubinfeld 1978), we see a similar structure as the top of the trees. Although there are 15 predictor variables to split on, all six trees have both `lstat` and `rm` variables driving the first few splits.
+
+We use the Boston housing data in this example because it has fewer features and shorter names than the Ames housing data. Consequently, it is easier to compare multiple trees side-by-side; however, the same tree correlation problem exists in the Ames bagged model.
+
+This characteristic is known as tree correlation and prevents bagging from further reducing the variance of the base learner. In the next chapter, we discuss how random forests extend and improve upon bagged decision trees by reducing this correlation and thereby improving the accuracy of the overall ensemble.
+
+### References
+Breiman, Leo. 1996a. “Bagging Predictors.” Machine Learning 24 (2). Springer: 123–40.
+
+Dietterich, Thomas G. 2000a. “An Experimental Comparison of Three Methods for Constructing Ensembles of Decision Trees: Bagging, Boosting, and Randomization.” Machine Learning 40 (2). Springer: 139–57.
+
+Dietterich, Thomas G. 2000b. “Ensemble Methods in Machine Learning.” In International Workshop on Multiple Classifier Systems, 1–15. Springer.
+
+Harrison Jr, David, and Daniel L Rubinfeld. 1978. “Hedonic Housing Prices and the Demand for Clean Air.” Journal of Environmental Economics and Management 5 (1). Elsevier: 81–102.
+
+Surowiecki, James. 2005. The Wisdom of Crowds. Anchor.
 
 ## Random forests 
 
