@@ -2482,8 +2482,223 @@ __h2o__ provides an open source implementation of AutoML with the `h2o.automl()`
 The following performs an automated search for two hours, which ended up assessing 80 models. `h2o.automl()` will automatically use the same folds for stacking so you do not need to specify `fold_assignment = "Modulo"`. This allows for consistent model comparison across the same CV sets. We see that most of the leading models are GBM variants and achieve an RMSE in the 22000–23000 range. As you probably noticed, this was not as good as some of our best models we found using our own GBM grid searches (reference Chapter 12). However, we could start this AutoML procedure and then spend our two hours performing other tasks while h2o automatically assesses these 80 models. The AutoML procedure then provides us direction for further analysis. In this case, we could start by further assessing the hyperparameter settings in the top five GBM models to see if there were common attributes that could point us to additional grid searches worth exploring.
 
 ```{r}
+# Use AutoML to find a list of candidate models (i.e., leaderboard)
+auto_ml <- h2o.automl(
+  x = X, y = Y, training_frame = train_h2o, nfolds = 5, 
+  max_runtime_secs = 60 * 120, max_models = 50,
+  keep_cross_validation_predictions = TRUE, sort_metric = "RMSE", seed = 123,
+  stopping_rounds = 50, stopping_metric = "RMSE", stopping_tolerance = 0
+)
 
+# Assess the leader board; the following truncates the results to show the top 
+# and bottom 15 models. You can get the top model with auto_ml@leader
+auto_ml@leaderboard %>% 
+  as.data.frame() %>%
+  dplyr::select(model_id, rmse) %>%
+  dplyr::slice(1:25)
+##                                               model_id   rmse
+## 1                     XGBoost_1_AutoML_20190220_084553   22229.97
+## 2            GBM_grid_1_AutoML_20190220_084553_model_1   22437.26
+## 3            GBM_grid_1_AutoML_20190220_084553_model_3   22777.57
+## 4                         GBM_2_AutoML_20190220_084553   22785.60
+## 5                         GBM_3_AutoML_20190220_084553   23133.59
+## 6                         GBM_4_AutoML_20190220_084553   23185.45
+## 7                     XGBoost_2_AutoML_20190220_084553   23199.68
+## 8                     XGBoost_1_AutoML_20190220_075753   23231.28
+## 9                         GBM_1_AutoML_20190220_084553   23326.57
+## 10           GBM_grid_1_AutoML_20190220_075753_model_2   23330.42
+## 11                    XGBoost_3_AutoML_20190220_084553   23475.23
+## 12       XGBoost_grid_1_AutoML_20190220_084553_model_3   23550.04
+## 13      XGBoost_grid_1_AutoML_20190220_075753_model_15   23640.95
+## 14       XGBoost_grid_1_AutoML_20190220_084553_model_8   23646.66
+## 15       XGBoost_grid_1_AutoML_20190220_084553_model_6   23682.37
+## ...                                                ...        ...
+## 65           GBM_grid_1_AutoML_20190220_084553_model_5   33971.32
+## 66           GBM_grid_1_AutoML_20190220_075753_model_8   34489.39
+## 67  DeepLearning_grid_1_AutoML_20190220_084553_model_3   36591.73
+## 68           GBM_grid_1_AutoML_20190220_075753_model_6   36667.56
+## 69      XGBoost_grid_1_AutoML_20190220_084553_model_13   40416.32
+## 70           GBM_grid_1_AutoML_20190220_075753_model_9   47744.43
+## 71    StackedEnsemble_AllModels_AutoML_20190220_084553   49856.66
+## 72    StackedEnsemble_AllModels_AutoML_20190220_075753   59127.09
+## 73 StackedEnsemble_BestOfFamily_AutoML_20190220_084553   76714.90
+## 74 StackedEnsemble_BestOfFamily_AutoML_20190220_075753   76748.40
+## 75           GBM_grid_1_AutoML_20190220_075753_model_5   78465.26
+## 76           GBM_grid_1_AutoML_20190220_075753_model_3   78535.34
+## 77           GLM_grid_1_AutoML_20190220_075753_model_1   80284.34
+## 78           GLM_grid_1_AutoML_20190220_084553_model_1   80284.34
+## 79       XGBoost_grid_1_AutoML_20190220_075753_model_4   92559.44
+## 80      XGBoost_grid_1_AutoML_20190220_075753_model_10  125384.88
 ```
+
+### References
+
+- Breiman, Leo. 1996b. “Stacked Regressions.” Machine Learning 24 (1). Springer: 49–64.
+- Deane-Mayer, Zachary A., and Jared E. Knowles. 2016. CaretEnsemble: Ensembles of Caret Models. https://CRAN.R-project.org/package=caretEnsemble.
+- Laan, Mark J. van der, Eric C. Polley, and Alan E. Hubbard. 2003. “Super Learner.” Statistical Applications in Genetics and Molecular Biology 6 (1).
+- LeDell, Erin, Stephanie Sapp, Mark van der Laan, and Maintainer Erin LeDell. 2014. Package “Subsemble”. https://CRAN.R-project.org/package=subsemble.
+- Polley, Eric, Erin LeDell, Chris Kennedy, and Mark van der Laan. 2019. SuperLearner: Super Learner Prediction. https://CRAN.R-project.org/package=SuperLearner.
+- Sapp, Stephanie, Mark J van der Laan, and John Canny. 2014. “Subsemble: An Ensemble Method for Combining Subset-Specific Algorithm Fits.” Journal of Applied Statistics 41 (6). Taylor & Francis: 1247–59.
+- Van der Laan, Mark J, Eric C Polley, and Alan E Hubbard. 2007. “Super Learner.” Statistical Applications in Genetics and Molecular Biology 6 (1). De Gruyter.
+- Wolpert, David H. 1992. “Stacked Generalization.” Neural Networks 5: 241–59.
+
+## Interpretable ML
+
+In the previous chapters you learned how to train several different forms of advanced ML models. Often, these models are considered “black boxes” due to their complex inner-workings. However, because of their complexity, they are typically more accurate for predicting nonlinear, faint, or rare phenomena. Unfortunately, more accuracy often comes at the expense of interpretability, and interpretability is crucial for business adoption, model documentation, regulatory oversight, and human acceptance and trust. Luckily, several advancements have been made to aid in interpreting ML models over the years and this chapter demonstrates how you can use them to extract important insights. Interpreting ML models is an emerging field that has become known as interpretable machine learning (IML).
+
+### Prerequisites 
+
+There are many packages that provide robust machine learning interpretation capabilities. Unfortunately, there is not one single package that is optimal for all IML applications; rather, when performing IML you will likely use a combination of packages. 
+
+The following packages are used in this chapter.
+
+```{r}
+# Helper packages
+library(dplyr)      # for data wrangling
+library(ggplot2)    # for awesome graphics
+
+# Modeling packages
+library(h2o)       # for interfacing with H2O
+library(recipes)   # for ML recipes
+library(rsample)   # for data splitting
+library(xgboost)   # for fitting GBMs
+
+# Model interpretability packages
+library(pdp)       # for partial dependence plots (and ICE curves)
+library(vip)       # for variable importance plots
+library(iml)       # for general IML-related functions
+library(DALEX)     # for general IML-related functions
+library(lime)      # for local interpretable model-agnostic explanations
+```
+
+To illustrate various concepts we’ll continue working with the h2o version of the Ames housing example from Section 15.1. We’ll also use the stacked ensemble model (`ensemble_tree`) created in Section 15.3.
+
+### The idea
+
+It is not enough to identify a machine learning model that optimizes predictive perfromance; understanding and trusting model results is a hallmark of good science and necessary for our model to be adopted.
+
+ As we apply and embed ever-more complex predictive modeling and machine learning algorithms, both we (the analysts) and the business stakeholders need methods to interpret and understand the modeling results so we can have trust in its application for business decisions (Doshi-Velez and Kim 2017).
+
+Advancements in interpretability now allow us to extract key insights and actionable information from the most advanced ML models. These advancements allow us to answer questions such as:
+
+- What are the most important customer attributes driving behavior?
+- How are these attributes related to the behavior output?
+- Do multiple attributes interact to drive different behavior among customers?
+- Why do we expect a customer to make a particular decision?
+- Are the decisions we are making based on predicted results fair and reliable?
+
+Approaches to model interpretability to answer the exemplar questions above can be broadly categorized as providing global or local explanations. It is important to understand the entire model that you have trained ona global scale, and also to zoome in on local regions of your data or your predictions and derive explanations. Being able to answer such questions and provide both levels of explanation is key to any ML project becoming accepted, adopted, embedded, and properly utilized.
+
+#### Global interpretation
+
+Global interpretability is about understanding how the model makes predictions, based on a holistic view of its features and how they influence the underlying model structure. It answers questions regarding which features are relatively influential, how these features influence the response variable, and what kinds of potential interactions are occurring. Global model interpretability helps to understand the relationship between the response variable and the individual features (or subsets thereof). Arguably, comprehensive global model interpretability is very hard to achieve in practice. Any model that exceeds a handful of features will be hard to fully grasp as we will not be able to comprehend the whole model structure at once.
+
+While global model interpretability is usually out of reach, there is a better chance to understand at least some models on a modular level. This typically revolves around gaining understanding of which features are the most influential (via _feature importance_) and then focusing on how the most influential variables drive the model output (via _feature effects_). Although you may not be able to fully grasp a model with a hundred features, typically only a dozen or so of these variables are really influential in driving the model’s performance. And it is possible to have a firm grasp of how a dozen variables are influencing a model.
+
+#### Local interpretation 
+
+Global intepretability methods help us to understand the inputs and their overall relationship with the response variable, but they can be highly deceptive in some cases (e.g., when strong interactions are occurring). Although a given feature may influence the predictive accuracy of our model as a whole, it does not mean that that feature has the largest influence on a predicted value for a given observation (e.g., a customer, house, or employee) or even a group of observations. Local interpretations help us understand what features are influencing the predicted response for a given observation (or small group of observations). These techniques help us to not only answer what we expect a customer to do, but also why our model is making a specific prediction for a given observation.
+
+There are three primary approaches to local interpretation:
+
+- Local interpretable model-agnostic explanations (LIME)
+- Shapley values
+- Localized step-wise procedures
+
+These techniques have the same objective; to explain which variables are most influential in predicting the target for a set of observations. To illustrate, we’ll focus on two observations. The first is the observation that our ensemble produced the highest predicted Sale_Price for (i.e., observation 1825 which has a predicted `Sale_Price` of $663,136$), and the second is the observation with the lowest predicted Sale_Price (i.e., observation 139 which has a predicted Sale_Price of $47,245.45$). Our goal with local interpretation is to explain what features are driving these two predictions
+
+```{r}
+# Compute predictions
+predictions <- predict(ensemble_tree, train_h2o) %>% as.vector()
+
+# Print the highest and lowest predicted sales price
+paste("Observation", which.max(predictions), 
+      "has a predicted sale price of", scales::dollar(max(predictions))) 
+## [1] "Observation 1825 has a predicted sale price of $663,136"
+paste("Observation", which.min(predictions), 
+      "has a predicted sale price of", scales::dollar(min(predictions)))  
+## [1] "Observation 139 has a predicted sale price of $47,245.45"
+
+# Grab feature values for observations with min/max predicted sales price
+high_ob <- as.data.frame(train_h2o)[which.max(predictions), ] %>% select(-Sale_Price)
+low_ob  <- as.data.frame(train_h2o)[which.min(predictions), ] %>% select(-Sale_Price)
+```
+
+#### Model-specifc vs model-agnostic
+
+It is also important to understand that there are model-specific and model-agnostic approaches for interpreting your model. Many of the approaches you’ve seen in the previous chapters for understanding feature importance are model-specific. For example, in linear models we can use the absolute value of the  
+t
+ –statistic as a measure of feature importance (though this becomes complicated when your linear model involves interaction terms and transformations). Random forests, on the other hand, can record the prediction accuracy on the OOB portion of the data, then the same is done after permuting each predictor variable, and the difference between the two accuracies are then averaged over all trees, and normalized by the standard error. These model-specific interpretation tools are limited to their respective model classes. There can be advantages to using model-specific approaches as they are more closely tied to the model performance and they may be able to more accurately incorporate the correlation structure between the predictors (Kuhn and Johnson 2013).
+
+However, there are also some disadvantages. For example, many ML algorithms (e.g., stacked ensembles) have no natural way of measuring feature importance:
+
+```{r}
+vip(ensemble_tree, method = "model")
+## Error in vi_model.default(ensemble_tree, method = "model") : 
+##  model-specific variable importance scores are currently not available for objects of class "h2o.stackedEnsemble.summary"
+```
+
+
+Furthermore, comparing model-specific feature importance across model classes is difficult since you are comparing different measurements (e.g., the magnitude of  
+t
+ -statistics in linear models vs. degradation of prediction accuracy in random forests). In model-agnostic approaches, the model is treated as a “black box”. The separation of interpretability from the specific model allows us to easily compare feature importance across different models.
+ 
+Ultimately, there is no one best approach for model interpretability. Rather, only by applying multiple approaches (to include comparing model specific and model agnostic results) can we really gain full trust in the interpretations we extract.
+
+An important item to note is that when using model agnostic procedures, additional code preparation is often required. For example, the iml (Molnar 2019), __DALEX__ (Biecek 2019), and __LIME__ (Pedersen and Benesty 2018) packages use purely model agnostic procedures. Consequently, we need to create a model agnostic object that contains three components:
+
+1. A data frame with just the features (must be of class "data.frame", cannot be an "H2OFrame" or other object).
+2. A vector with the actual responses (must be numeric—0/1 for binary classification problems).
+3. A custom function that will take the features from 1), apply the ML algorithm, and return the predicted values as a vector.
+
+The following code extracts these items for the __h2o__ example:
+
+```{r}
+# 1) create a data frame with just the features
+features <- as.data.frame(train_h2o) %>% select(-Sale_Price)
+
+# 2) Create a vector with the actual responses
+response <- as.data.frame(train_h2o) %>% pull(Sale_Price)
+
+# 3) Create custom predict function that returns the predicted values as a vector
+pred <- function(object, newdata)  {
+  results <- as.vector(h2o.predict(object, as.h2o(newdata)))
+  return(results)
+}
+
+# Example of prediction output
+pred(ensemble_tree, features) %>% head()
+## [1] 207144.3 108958.2 164248.4 241984.2 190000.7 202795.8
+```
+
+Once we have these three components we can create our model agnostic obejcts for the __iml__ and __DALEX__ pacakages, which will just pass these downstream components (along with the ML model) to other functions.
+
+```{r}
+# iml model agnostic object
+components_iml <- Predictor$new(
+  model = ensemble_tree, 
+  data = features, 
+  y = response, 
+  predict.fun = pred
+)
+
+# DALEX model agnostic object
+components_dalex <- DALEX::explain(
+  model = ensemble_tree,
+  data = features,
+  y = response,
+  predict_function = pred
+)
+```
+
+### Permutation-based feature importance
+
+In previous chapters, we illustrated a few model-specific approaches for measuring feature importance (e.g., linear models, we used the absolute value of the t-statistic). For SVMs, on the other hand, we had to rely on a model-agnostic approach which was based on the permutation feature importance measurement introduced for random forests by Breiman (2001) (see Section 11.6) and expanded on by Fisher, Rudin, and Dominici (2018).
+
+#### Concept
+
+
+
 
 
 
