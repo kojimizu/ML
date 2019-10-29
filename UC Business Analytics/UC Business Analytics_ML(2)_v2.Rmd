@@ -71,6 +71,8 @@ library(h2o)          # a java-based platform
 library(pdp)          # model visualization
 library(ggplot2)      # model visualization
 library(lime)         # model visualization
+
+library(tidymodels)
 ```
 
 To illustrate various GBM concepts, we will use the Ames housing data that has been included in the `AmesHousing` package.
