@@ -2299,14 +2299,14 @@ best_rf <- h2o.randomForest(
   stopping_tolerance = 0
 )
 
-# Train & cross-validate a GBM model
-best_gbm <- h2o.gbm(
-  x = X, y = Y, training_frame = train_h2o, ntrees = 5000, learn_rate = 0.01,
-  max_depth = 7, min_rows = 5, sample_rate = 0.8, nfolds = 10,
-  fold_assignment = "Modulo", keep_cross_validation_predictions = TRUE,
-  seed = 123, stopping_rounds = 50, stopping_metric = "RMSE",
-  stopping_tolerance = 0
-)
+# # Train & cross-validate a GBM model
+# best_gbm <- h2o.gbm(
+#   x = X, y = Y, training_frame = train_h2o, ntrees = 5000, learn_rate = 0.01,
+#   max_depth = 7, min_rows = 5, sample_rate = 0.8, nfolds = 10,
+#   fold_assignment = "Modulo", keep_cross_validation_predictions = TRUE,
+#   seed = 123, stopping_rounds = 50, stopping_metric = "RMSE",
+#   stopping_tolerance = 0
+# )
 
 # Train & cross-validate an XGBoost model
 best_xgb <- h2o.xgboost(
@@ -2325,7 +2325,10 @@ We can now use `h2o.stackedEnsemble()` to stack these models. Note how we feed t
 # Train a stacked tree ensemble
 ensemble_tree <- h2o.stackedEnsemble(
   x = X, y = Y, training_frame = train_h2o, model_id = "my_tree_ensemble",
-  base_models = list(best_glm, best_rf, best_gbm, best_xgb),
+  base_models = list(best_glm, 
+                     # best_rf, 
+                     # best_gbm, 
+                     best_xgb),
   metalearner_algorithm = "drf"
 )
 ```
