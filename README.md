@@ -26,11 +26,20 @@ From 2018 to 2019 January
 This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
 📚 Book: University of Cincinatti - http://uc-r.github.io  
 
-- Predictive analyitics: 
-    - Supervised learning: Linear, Naive Bayes, Regularized Regression, MARS, Regression Tree, Random Forests, GBM, Discriminant Analysis, SVM
-    - Unsupervised learning: PCA
-    - Time series analysis: Exponential smoothing, MA/AR
-    - DL: Regression DNN, Classification DNN
+- Predictive analytics / Supervised learning: 
+  - Linear:  
+  - Naive Bayes:
+  - Regularized Regression:  Ridge, LASSO, Elastic Net by `glmnet`
+  - MARS: 
+  - Regression Tree:
+  - Random Forests:
+  - Gradient Boosting Machines (GBM): 
+  - Discriminant Analysis
+  - SVM
+
+- Predictive analytics / Unsupervised learning: PCA
+- Time series analysis: Exponential smoothing, MA/AR
+- DL: Regression DNN, Classification DNN
 
 ## Modeling Resources
 ### 📦 Caret
