@@ -41,6 +41,10 @@ This material from the below page covers basic R techniques, descrptive analytic
 - Time series analysis: Exponential smoothing, MA/AR
 - DL: Regression DNN, Classification DNN
 
+### 📚 Introduction to data science   
+Modeling algorithm by R. 
+https://rafalab.github.io/dsbook/  
+
 ## Modeling Resources
 ### 📦 Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
@@ -153,6 +157,5 @@ Machine learning course by Andrew Ng from Stanford University
 Bayes stats using `brms`, `ggplot2` and `tidyverse`
 - 📚 Bookdown: https://bookdown.org/ajkurz/Statistical_Rethinking_recoded/  
 - HP: https://xcelab.net/rm/statistical-rethinking/    
-
 
 
