@@ -43,14 +43,15 @@ This material from the below page covers basic R techniques, descrptive analytic
 
 ### 📚 Introduction to data science   
 Modeling algorithm by R. 
-https://rafalab.github.io/dsbook/  
+📚 Book: https://rafalab.github.io/dsbook/  
+📦 Repo: https://github.com/rafalab/dsbook/tree/master/docs  
 
 ## Modeling Resources
 ### 📦 Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
 A package for ML modeling with pre-processing techniques 
 📚 Book: http://topepo.github.io/caret/  
-📦 Repo:   https://github.com/topepo/caret  
+📦 Repo: https://github.com/topepo/caret  
 
 ```{R}
 # Avaiable from CRAN
