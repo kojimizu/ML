@@ -46,6 +46,13 @@ Modeling algorithm by R.
 📚 Book: https://rafalab.github.io/dsbook/  
 📦 Repo: https://github.com/rafalab/dsbook/tree/master/docs  
 
+## ML Interpretability  
+### Intepretable Machine Learning  
+📚 Book: https://christophm.github.io/interpretable-ml-book/
+
+### Limitations of Interpretable Machine Learning Methods  
+📚 Book: https://compstat-lmu.github.io/iml_methods_limitations/  
+
 ## Modeling Resources
 ### 📦 Caret
 __Caret package introduction by Max Kuhn (Bookdown)__
