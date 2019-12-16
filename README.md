@@ -1,5 +1,5 @@
 
-<font size="10" color="black"></font>
+<font size="10"></font>
 
 # Machine Learning Archive  
 The below is an simple introduction of useful books for statistical modeling and proeprocessing/feature engineering.
