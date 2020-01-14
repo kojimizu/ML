@@ -154,7 +154,7 @@ site: http://estrellita.hatenablog.com/entry/2019/05/01/235406
 Blogpost: http://estrellita.hatenablog.com/entry/2018/09/25/230000_3    
 
 =========================================
-## Stats by Uni Class
+## Stats by Uni Class / Workshop 
 
 ### Stat 
 Lecture by Jenny Brian:  
@@ -168,4 +168,6 @@ Bayes stats using `brms`, `ggplot2` and `tidyverse`
 - 📚 Bookdown: https://bookdown.org/ajkurz/Statistical_Rethinking_recoded/  
 - HP: https://xcelab.net/rm/statistical-rethinking/    
 
-
+### Deep learning with TF and Keras in R  
+Workshop for Rstudio::2020 by Bradley Boemeike.  
+Repo: https://github.com/kojimizu/dl-keras-tf  
