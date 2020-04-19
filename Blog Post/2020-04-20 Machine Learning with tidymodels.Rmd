@@ -1,0 +1,50 @@
+---
+title: "2020-04-20 ML with tidymodels"
+date: "April 19, 2020 - `r Sys.Date()`"
+always_allow_html: yes
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    number_sections: yes
+    section_divs: yes
+    theme: "readable"
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+# The Blog overview
+
+This is the blog post created by Rebecca Barter. Please refer [this](http://www.rebeccabarter.com/blog/2020-03-25_machine_learning/) link for your reference. 
+
+# What is tidymodels
+# Getting set up
+
+```{r}
+# 
+library(tidymodels)
+library(tidyverse)
+
+pacman::p_install("workflows", "tune")
+
+install.packages("tune")
+```
+
+
+
