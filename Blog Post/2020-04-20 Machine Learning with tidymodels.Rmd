@@ -40,10 +40,25 @@ This is the blog post created by Rebecca Barter. Please refer [this](http://www.
 # 
 library(tidymodels)
 library(tidyverse)
+library(workflows)
+library(tune)
+```
 
-pacman::p_install("workflows", "tune")
+```{r}
+# load Pima Indians dataset from the mlbench dataset
+library(mlbench)
+data(PimaIndianDv)
+```
 
-install.packages("tune")
+```{r}
+lobfd
+data(PimaIndianDiabetes)
+
+# rename dataset to have shorter name because lazqy
+
+```
+
+
 ```
 
 
