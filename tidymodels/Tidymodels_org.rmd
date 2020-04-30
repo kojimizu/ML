@@ -1,0 +1,69 @@
+---
+title: "Tidymodels.org"
+author: "Koji Mizumura"
+date: "2020-04-30 - `r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    number_sections: yes
+    fig_height: 10
+    fig_width: 14
+    highlight: kate
+    toc_depth: 3
+#    css: style.css
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    number_sections: yes
+    section_divs: yes
+    theme: readable
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+always_allow_html: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  # fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+# Build a model
+## Introduction
+
+How do you create a statistical model using tidymodels? IN this article, we will walk you through the steps. We start with data for modeling, learn how to specify and train models with different engines using the [parsnip package](parsnip package), and understand why these functions are desgined this way.
+
+To use code in this article, you will need to install the following packages; readr, rstatnarm, and tidymodels. 
+
+```{r}
+# tictoc::tic()
+pacman::p_load(tidymodels, readr)
+# tictoc::toc()
+```
+
+## The Sea Urchins data
+
+Let's use the data from Constable(1993) to explore how three different feeding regimes affect the size of sea urchins over time. The initial size of the sea urchins at the beginning of the experiment probably affects how big they grow as they are fed.
+
+To start, let's rad our urchins data into 
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
