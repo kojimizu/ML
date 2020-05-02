@@ -36,7 +36,11 @@ knitr::opts_chunk$set(
 )
 ```
 
-# Build a model
+
+```{r setup4, include=FALSE}
+```
+
+# Build a model {# Build-a-model}
 ## Introduction
 
 How do you create a statistical model using tidymodels? IN this article, we will walk you through the steps. We start with data for modeling, learn how to specify and train models with different engines using the [parsnip package](parsnip package), and understand why these functions are desgined this way.
@@ -53,11 +57,332 @@ pacman::p_load(tidymodels, readr)
 
 Let's use the data from Constable(1993) to explore how three different feeding regimes affect the size of sea urchins over time. The initial size of the sea urchins at the beginning of the experiment probably affects how big they grow as they are fed.
 
-To start, let's rad our urchins data into 
+To start, let's rad our urchins data into R, which we’ll do by providing `readr::read_csv()` with a url where our CSV data is located (“https://tidymodels.org/start/models/urchins.csv”):
+
+```{r}
+urchins <- 
+  # Data were assembled for a tutorial
+  # at https://www.flutterbys.com.au/stats/tut/tut7.5a.html
+  read_csv("https://tidymodels.org/start/models/urchins.csv") %>% 
+  # chnge the names to be a little more verbose
+  setNames(c("food_regime", "initial_volume", "width")) %>% 
+  # factors are very helpful for modeling, so we convert one column
+  mutate(
+    food_regime = factor(food_regime, levels = c("Initial", "Low", "High")))
+#> Parsed with column specification:
+#> cols(
+#>   TREAT = col_character(),
+#>   IV = col_double(),
+#>   SUTW = col_double()
+#> )
+```
+
+```{r}
+urchins
+```
+
+The urchins data is a [tibble](https://tibble.tidyverse.org/index.html). 
+If you are new to tibbles, they best place to start is the tibbles chapter in R for Data Science. For each of the 72 urchins, we know their: 
+
+- erimental feeding regime group (food_regime: either Initial, Low, or High),
+- size in milliliters at the start of the experiment (initial_volume), and
+- suture width at the end of the experiment (width).
+
+As a first step in modeling, it’s always a good idea to plot the data:
+
+```{r}
+ggplot(urchins,
+  aes(x = initial_volume,
+      y = width,
+      group = food_regime,
+      col = food_regime))+
+  geom_point()+
+  geom_smooth(se = FALSE, #method = lm
+              )+
+  # hrbrthemes::theme_ft_rc()
+  scale_color_viridis_d(option = "plasma", end = .7)
+```
+
+We can see that urchins that were larger in volume at the start of the experiment tended to have wider sutures at the end, but the slopes of the lines look different so this effect may depend on the feeding regime condition.
+
+## Build and fit a model
+
+A standard two-way analysis of variance (ANOVA) model makes sense for this dataset because we have continuous predictor and a categorical predictor. Since the slopes appear to be different for at least two of the feeding regimes, let’s build a model that allows for two-way interactions. Specifying an R formula with our variables in this way:
+
+```{r eval=FALSE}
+width ~ initial_volume + food_regime
+```
+
+allows our regression model depending on initial volume to have separate slopes and intercepts for each food regime.
+
+For this kind of model, ordinary least squares is a good initial approach. With tidymodels, we start by specifying the functional form of the model that we want using the parsnip package. Since there is a numeric outcome and the model should be linear with slopes and intercepts, the model type is “linear regression”. We can declare this with:
+
+```{r}
+linear_reg()
+```
+
+That is pretty underwhelming since, on its own, it doesn’t really do much. However, now that the type of model has been specified, a method for fitting or training the model can be stated using the engine. The engine value is often a mash-up of the software that can be used to fit or train the model as well as the estimation method. For example, to use ordinary least squares, we can set the engine to be `lm`:
+
+```{r}
+linear_reg() %>% 
+  set_engine("lm")
+```
+
+The documentation page for `linear_reg()` lists the possible engines. We’ll save this model object as `lm_mod`.
+
+```{r}
+lm_mod <- 
+  linear_reg() %>%
+  set_engine("lm")
+```
+
+From here, the model can be estimated or trained using the `fit()` function.
+
+```{r}
+lm_fit <- 
+  lm_mod %>% 
+  fit(width ~ initial_volume*food_regime, data = urchins)
+
+lm_fit  
+```
+
+Perhaps our analysis requires a description of the model parameter estimates and their statistical properties. Although the `summary()` function for lm objects can provide that, it gives the results back in an unwieldy format. Many models have a `tidy()` method that provides the summary results in a more predictable and useful format (e.g. a data frame with standard column names):
+
+```{r}
+tidy(lm_fit)
+```
+
+## Use a model to predict
+
+This fitted object `lm_fit` has the `lm` model output built-in, which you can access with `lm_fit$fit`, but there are some benefits to using the fitted parsnp model object when it comes to predicting. 
+
+Suppose that, for a publication, it would be particularly interesting to make a plot of the mean body size for urchins that started the experiment with an initial volume of 20ml. To create such a graph, we start with some new example data that we will make predictions for, to show in our graph:
+
+```{r}
+new_points <- expand.grid(
+  initial_volume = 20,
+  food_regime = c("Initial", "Low", "High")
+)
+```
+
+To get one predicted results, we can use the `predict()` funtio to find the mean values at 20ml.
+
+It is also important to communicate the variability, so we also need to find the predicted confidence intervals. If we had used `lm() `to fit the model directly, a few minutes of reading the documentation page for `predict.lm()` would explain how to do this. However, if we decide to use a different model to estimate urchin size (spoiler: we will!), it is likely that a completely different syntax would be required.
+
+Instead, with tidymodels, the types of predicted values are standardized so that we can use the same syntax to get these values.
+
+First, let’s generate the mean body width values:
+
+```{r}
+mean_pred <- 
+  predict(lm_fit, new_data = new_points)
+
+mean_pred
+```
+
+When making predictions, the tidymodels convention is to always produce a tibble of results with standardized column names. This makes it easy to combine the original data and the predictions in a usable format:
+
+```{r}
+conf_int_pred <- predict(lm_fit, 
+                         new_data = new_points, 
+                         type = "conf_int")
+conf_int_pred
+#> # A tibble: 3 x 2
+#>   .pred_lower .pred_upper
+#>         <dbl>       <dbl>
+#> 1      0.0555      0.0729
+#> 2      0.0499      0.0678
+#> 3      0.0870      0.105
+
+# Now combine: 
+plot_data <- 
+  new_points %>% 
+  bind_cols(mean_pred) %>% 
+  bind_cols(conf_int_pred)
+
+# library(hrbrthemes)
+# library(thematic)
+# thematic_on(
+#   bg = "#222222", fg = "white", accent = "#0CE3AC",
+#   font = font_spec("Oxanium", scale = 1.25)
+# )
+
+# and plot:
+ggplot(plot_data, aes(x = food_regime)) + 
+  geom_point(aes(y = .pred)) + 
+  geom_errorbar(aes(ymin = .pred_lower, 
+                    ymax = .pred_upper),
+                width = .2) + 
+  labs(y = "urchin size")
+
+```
+
+# Model with a different engine
+
+Every one on your team is happy with that plot except that one person who jut read their first book on Bayesian analysis. They are interested in knowing if the results would be different if the model were estimated using a Bayesian approach. In such an analysis, a prior distribution needs to be declared for each model parameter that represents the possible values of the parameters (before being exposed to the observed data). After some discussion, the group agrees that the priors should be bell-shaped but, since no one has any idea what the range of values should be, to take a conservative approach and make the priors wide using a Cauchy distribution (which is the same as a t-distribution with a single degree of freedom).
+
+The documentation on the rstanarm package shows us that the `stan_glm()` function can be used to estimate this model, and that the function arguments that need to be specified are called prior and prior_intercept. It turns out that `linear_reg()` has a stan engine. Since these prior distribution arguments are specific to the Stan software, they are passed as arguments to `parsnip::set_engine()`. After that, the same exact `fit()` call is used:
+
+```{r}
+# see the prior distribution
+prior_dist <- rstanarm::student_t(df = 1)
+set.seed(123)
+
+# make the parsnip model
+bayes_mod <- 
+  linear_reg() %>% 
+  set_engine("stan",
+             prior_intercept = prior_dist,
+             prior = prior_dist)
+
+# train the model
+bayes_fit <- 
+  bayes_mod %>% 
+  fit(width ~ initial_volume*food_regime, data = urchins)
+
+print(bayes_fit, digits = 5)
+```
+
+This kind of Bayesian analysis (like many models) involves randomly generated numbers in its fitting procedure. We can use `set.seed()` to ensure that the same (pseudo-)random numbers are generated each time we run this code. The number 123 isn’t special or related to our data; it is just a “seed” used to choose random numbers.
+
+To update the parameter table, the `tidy() `method is once again used:
+
+```{r}
+tidy(bayes_fit, intervals = TRUE)
+```
+
+A goal of the tidymodels packages is that the interfaces to common tasks are standardized (as seen in the `tidy()` results above). The same is true for getting predictions; we can use the same code even though the underlying packages use very different syntax:
+
+```{r}
+bayes_plot_data <- 
+  new_points %>% 
+  bind_cols(predict(bayes_fit, new_data = new_points)) %>% 
+  bind_cols(predict(bayes_fit, new_data = new_points, type = "conf_int"))
+
+bayes_plot_data
+
+ggplot(bayes_plot_data, 
+       aes(x = food_regime))+
+  geom_point(aes(y =.pred))+
+  geom_errorbar(aes(ymin = .pred_lower,
+                    ymax = .pred_upper),
+                width = .2)+
+  labs(y = "urchin size")+
+  ggtitle("Bayesian model with t(1) prior distribution")
+```
+
+## Why does it work that way?
+
+The extra step of defining the model using a function like linear_reg() might seem superfluous since a call to lm() is much more succinct. However, the problem with standard modeling functions is that they don’t separate what you want to do from the execution. For example, the process of executing a formula has to happen repeatedly across model calls even when the formula does not change; we can’t recycle those computations.
+
+Also, using the tidymodels framework, we can do some interesting things by incrementally creating a model (instead of using single function call). Model tuning with tidymodels uses the specification of the model to declare what parts of the model should be tuned. That would be very difficult to do if linear_reg() immediately fit the model.
+
+If you are familiar with the tidyverse, you may have noticed that our modeling code uses the magrittr pipe (%>%). With dplyr and other tidyverse packages, the pipe works well because all of the functions take the data as the first argument. For example:
+
+```{r}
+urchins %>% 
+  group_by(food_regime) %>% 
+  summarize(med_vol = median(initial_volume))
+```
+
+whereas the modeling code uses the pipe to pass around the moel object:
+
+```{r}
+bayes_mod %>% 
+  fit(width ~ initial_volume * food_regime, data = urchins)
+```
+
+This may seem jarring if you have used dplyr, but it is extremely similar to how ggplot2 operates:
+
+```{r}
+ggplot(urchins,
+       aes(initial_volume, width)) +      # returns a ggplot object 
+  geom_jitter() +                         # same
+  geom_smooth(method = lm, se = FALSE)   # same                    
+```
+
+# Process your data with recipes
+
+## Introduction
+In our [build a model article](#Build-a-model), we learned how to specify and train models with different engines using the [parsnip package](https://tidymodels.github.io/parsnip/). In this article, we will explorer another tidymodels packages recipes, which is designed to help you preprocess your data before  traing your model. Recipes are built as a series of preprocess steps, such as:
+
+- converting qualitative predictors to indicate variables(also known as dummy variables)
+- transforming data to be on a different scale (e.g., taking the logarithm of a variable)
+- transforming whole groups of predictors together,
+- extracting key features from raw variables (e.g., getting the day of the week out of a date variable)
+
+and so on. If you are familiar with R’s formula interface, a lot of this might sound familiar and like what a formula already does. Recipes can be used to do many of the same things, but they have a much wider range of possibilities. This article shows how to use recipes for modeling.
+
+To use code in this article, you will need to install the following packages: `nycflights13`, `skimr`, and `tidymodels`.
+
+```{r}
+pacman::p_load(tidymodels,   # recipes package
+               nycflights13, # flight data
+               skimr)        # for variables summaries
+```
+
+## The New York City Fligt Data
+
+Let’s use the `nycflights13` data to predict whether a plane arrives more than 30 minutes late. This data set contains information on 325,819 flights departing near New York City in 2013. Let’s start by loading the data and making a few changes to the variables:
+
+```{r}
+set.seed(123)
+
+flight_data <- 
+  flights %>% 
+  mutate(
+    # Convert the arrivial delay to a factor
+    arr_delay = ifelse(arr_delay >= 30, "late", "on_time"),
+    arr_delay = factor(arr_delay),
+    # we will use the date (not date-time) in the recipes below
+    date = as.Date(time_hour)
+  ) %>% 
+  # Include the weather data
+  inner_join(weather, by = c("origin", "time_hour")) %>% 
+  # ONly rtain the specific columns we will use 
+  select(dep_time, flight, origin, dest, arr_time, distance,
+         carrier, date, arr_delay, time_hour) %>% 
+  # Exclude missing data
+  na.omit() %>% 
+  # For creating models, it is better to have qualitative columns
+  # Encoded as factors (instead of character strings)
+  mutate_if(is.character, as.factor)
+```
+
+We can see that about 16% of the flights in this data set arrived more than 30 minutes late.
+
+```{r}
+flight_data %>% 
+  skimr::skim()
+
+flight_data %>% 
+  count(arr_delay) %>% 
+  mutate(prop = n/sum(n))
+```
+
+Before we start building op our recipe, let's take a quick look at a few specific variables that will be important for both preprocessing and modeling.
+
+First, notice that the variable we created called `arr_delay` is a factor variable; it is important that our outcome variable for training a logistic model is a factor.
+
+```{r}
+glimpse(flight_data)
+```
+
+Second, there are two variables that we don’t want to use as predictors in our model, but that we would like to retain as identification variables that can be used to troubleshoot poorly predicted data points. These are `flight`, a numeric value, and `time_hour`, a date-time value.
+
+Third, there are 104 flights destinations contained in `dest` and 16 distinc `carrier`s.
 
 ```{r}
 
 ```
+
+
+
+
+
+
+
+
 
 
 
