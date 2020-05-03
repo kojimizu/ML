@@ -373,10 +373,13 @@ Second, there are two variables that we don’t want to use as predictors in our
 Third, there are 104 flights destinations contained in `dest` and 16 distinc `carrier`s.
 
 ```{r}
-
+flight_data %>% 
+  skimr::skim(dest, carrier) 
 ```
 
+Because we’ll be using a simple logistic regression model, the variables dest and carrier will be converted to [dummy variables](https://bookdown.org/max/FES/creating-dummy-variables-for-unordered-categories.html). However, some of these values do not occur very frequently and this could complicate our analysis. We’ll discuss specific steps later in this article that we can add to our recipe to address this issue before modeling.
 
+## DATA SPLITTING 
 
 
 
