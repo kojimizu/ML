@@ -489,12 +489,39 @@ At this stage in the recipe, this step selects the `origin`, `dest` and `carrier
 
 More generally, the recipe selectors mean that you don't always have to apply step to individual variables one at a time. Since a recipe knows the _variable type_ and role of each column, they can also be selected (or dropped) using this information.
 
+We need one final step to add to our recipe. Since carrier and dest have some infrequently occurring values, it is possible that dummy variables might be created for values that don’t exist in the training set. For example, there is one destination that is only in the test set:
 
+```{r}
+test_data %>% 
+  distinct(dest) %>% 
+  anti_join(train_data)
+```
 
+When the recipe is applied to the training set, a column is made for LEX but it will contain all zeros. This is a zero-variance predictor that has no information within the column. 
 
+While some R functions will not produce an error for such predictors, it usually causes warning and other issue. `step_nz()` will remove columns from the data when the training set data has a single value, so it is added to the recipe after `step_dummy()`.
 
+```{r}
+flights_rec <- 
+  recipe(arr_delay ~., data = train_data) %>% 
+  update_role(flight, time_hour, new_role = "ID") %>% 
+  step_date(date, holidays = timeDate::listHolidays("US")) %>% 
+  step_rm(date) %>% 
+  step_dummy(all_nominal(), -all_outcomes()) %>% 
+  step_zv(all_predictors())
+```
 
+Now we have created a specification of what should be done with the data. How do we use the recipe we made? 
 
+## Fit a model with a recipe
+
+Let's use logistic regression to model the flight data. As we saw in Build a Model, we start by building a model specification using the parsnip package. 
+
+```{r}
+lr_mod <- 
+  logistic_reg() %>% 
+  set_engine("glm")
+```
 
 
 
