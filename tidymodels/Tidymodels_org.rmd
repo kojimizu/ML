@@ -503,9 +503,10 @@ While some R functions will not produce an error for such predictors, it usually
 
 ```{r}
 flights_rec <- 
-  recipe(arr_delay ~., data = train_data) %>% 
+  recipe(arr_delay ~ ., data = train_data) %>% 
   update_role(flight, time_hour, new_role = "ID") %>% 
-  step_date(date, holidays = timeDate::listHolidays("US")) %>% 
+  step_date(date, features = c("dow", "month")) %>% 
+  step_holiday(date, holidays = timeDate::listHolidays("US")) %>% 
   step_rm(date) %>% 
   step_dummy(all_nominal(), -all_outcomes()) %>% 
   step_zv(all_predictors())
@@ -522,6 +523,74 @@ lr_mod <-
   logistic_reg() %>% 
   set_engine("glm")
 ```
+
+We will want to use our recipe across several steps as we train and test our model. We will 
+
+1. __Process the recipe using the training set__: This involves any estimation or calculations based on the training set. For our recipe, the training set will be used to determine which predictors should be converted to dummy variables and which predictors will have zero-variance in the training set, and should be slated for removal.
+
+2. __Apply the recipe to the training set__: We create the final predictor set on the training set. 
+
+3. __Apply the recipe to the test set__: We create the final predictor set on the test set. Nothing is recomputed and no information from the test set is used here; the dummy variable and zero-variance results from the training set are applied to the test set.
+
+To simplify this process, we can use a model workflow, which pairs a model and recipe together. This is a straightforward approach because different recipes are often needed for different models, so when a model and recipe are bundled, it becomes easier to train and test workflows. We’ll use the [workflows package](https://tidymodels.github.io/workflows/) from tidymodels to bundle our parsnip model(`lr_mod`) with our recipe(`flights_rec`)
+
+```{r}
+library(workflows)
+
+flights_wflow <- 
+  workflows::workflow() %>% 
+  workflows::add_model(lr_mod) %>% 
+  workflows::add_recipe(flights_rec)
+
+flights_wflow
+```
+
+Now, there is a single function that can be used to prepare the recipe and train the model from the resulting predictors:
+
+```{r}
+flights_fit <- 
+  flights_wflow %>% 
+  fit(data = train_data)
+```
+
+This object has the finalized recipe and fitted model objects inside. You may want to extract the model or recipe objects from the workflow. To do this, you can use the helper functions `pull_workflow_fit()` and `pull_workflow_recipe()`. For example, here we pull the fitted model object then use the broom::tidy() function to get a tidy tibble of model coefficients:
+
+```{r}
+flights_fit %>% 
+  pull_workflow_fit() %>% 
+  tidy()
+```
+
+## Use a trained workflow to predict
+
+Our goal was to predict whether a plane arrives more than 30 minutes late. We have just:
+
+1. Built the model (`lr_mod`),
+2. Created a preprocessing recipe (`flights_rec`),
+3. Bundled the model and recipe (`flights_wflow`), and
+4. Trained our workflow using a single call to `fit()`.
+
+The next step is to use the trained workflow (`flights_fit`) to predict with the unseen test data, which we will do with a single call to `predict()`. The `predict()` method applies the recipe to the new data, then passes them to the fitted model.
+
+```{r}
+predict(flights_fit, test_data)
+```
+
+Because our outcome variable here is a factor, the output from `predict()` returns the predicted class: late versus on_time. But, let’s say we want the predicted class probabilities for each flight instead. To return those, we can specify `type = "prob"` when we use `predict()`. We’ll also bind the output with some variables from the test data and save them together:
+
+```{r}
+flights_pred <- 
+  predict(flights_fit, test_data, type = "prob") %>% 
+  bind_cols(test_data %>% select(arr_delay, time_hour, flight)) 
+
+# The data look like: 
+flights_pred
+```
+
+
+
+
+
 
 
 
