@@ -587,6 +587,54 @@ flights_pred <-
 flights_pred
 ```
 
+Now that we have a tibble with our predicted class probabilities, how will we evaluate the performance of our workflow? We can see from these first few rows that our model predicted these 5 on time flights correctly because the values of `.pred_on_time` are `p > .50`. But we also know that we have 81,454 rows total to predict. We would like to calculate a metric that tells how well our model predicted late arrivals, compared to the true status of our outcome variable, `arr_delay`.
+
+Let’s use the area under the [ROC curve](https://bookdown.org/max/FES/measuring-performance.html#class-metrics) as our metric, computed using `roc_curve()` and `roc_auc()` from the [yardstick package](https://tidymodels.github.io/yardstick/). 
+
+To generate a ROC curve, we need the predicted class probabilities for late and on_time, which we just calculated in the code chunk above. We can create the ROC curve with these values, using `roc_curve()` and then piping to `the autoplot()` method:
+
+```{r}
+flights_pred %>% 
+  roc_curve(truth = arr_delay, .pred_late) %>% 
+  autoplot()
+```
+
+Similarly, `roc_auc()` estimates the area under the curve:
+
+```{r}
+flights_pred %>% 
+  roc_auc(truth = arr_delay, .pred_late)
+```
+
+Not too bad! We leave it to the reader to test out this workflow without this recipe. You can use `workflows::add_formula(arr_delay ~ .`) instead of `add_recipe()` (remember to remove the identification variables first!), and see whether our recipe improved our model’s ability to predict late arrivals.
+
+# Evaluate your model with resamples
+
+# Introduction
+
+So far, we have built a model and preprocessed data with a recipe. We also introduced [workflows](https://www.tidymodels.org/start/recipes/#fit-workflow) as a way to bundle a [parsnip model](https://tidymodels.github.io/parsnip/) and [recipe](https://tidymodels.github.io/recipes/) together. Once we have a model trained, we need a way yo measure how well that model predicts new dat. This tutorial explains how to characterize model performance based on resampling statistics.
+
+To use code in this article, you need to install the following packages.
+
+```{r}
+library(tidymodels)
+library(modeldata)
+```
+
+## The cell image data
+
+Let’s use data from Hill, LaPan, Li, and Haney (2007), available in the modeldata package, to predict cell image segmentation quality with resampling. To start, we load this data into R:
+
+```{r}
+data(cells, package = "modeldata")
+cells
+```
+
+
+
+
+
+
 
 
 
