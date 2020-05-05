@@ -1595,14 +1595,15 @@ $(document).ready(function () {
       <li><a href="#introduction-1"><span class="toc-section-number">3.1</span> Introduction</a></li>
       <li><a href="#the-new-york-city-fligt-data"><span class="toc-section-number">3.2</span> The New York City Fligt Data</a></li>
       <li><a href="#data-splitting"><span class="toc-section-number">3.3</span> Data splitting</a></li>
-      <li><a href="#create-recipe-and-roles"><span class="toc-section-number">3.4</span> Create recipe and roles</a></li>
+      <li><a href="#create-recipe-and-role"><span class="toc-section-number">3.4</span> Create recipe and role</a></li>
+      <li><a href="#create-features"><span class="toc-section-number">3.5</span> Create features</a></li>
       </ul></li>
       </ul>
     </div>
     
     <div id="postamble" data-toggle="wy-nav-shift" class="status">
               <p class="author"><span class="glyphicon glyphicon-user"></span> Koji Mizumura</p>
-                  <p class="date"><span class="glyphicon glyphicon-calendar"></span> 2020-04-30 - 2020-05-02</p>
+                  <p class="date"><span class="glyphicon glyphicon-calendar"></span> 2020-04-30 - 2020-05-03</p>
         </div>
 </div>
 
@@ -2182,8 +2183,8 @@ $(document).ready(function () {
 <a class="sourceLine" id="cb23-7" data-line-number="7"><span class="co">##   &lt;fct&gt;      &lt;int&gt; &lt;dbl&gt;</span></a>
 <a class="sourceLine" id="cb23-8" data-line-number="8"><span class="co">## 1 late       52540 0.161</span></a>
 <a class="sourceLine" id="cb23-9" data-line-number="9"><span class="co">## 2 on_time   273279 0.839</span></a></code></pre></div>
-<p>Before we start building up our recipe, let’s take a quick look at a few specific variables that will be important for both preprocessing and modeling.</p>
-<p>First, notice that the variable we created called <code>arr_delay</code> is a factor variable; it is important that our outcome variable for training a logistic regression model is a factor.</p>
+<p>Before we start building op our recipe, let’s take a quick look at a few specific variables that will be important for both preprocessing and modeling.</p>
+<p>First, notice that the variable we created called <code>arr_delay</code> is a factor variable; it is important that our outcome variable for training a logistic model is a factor.</p>
 <div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb24-1" data-line-number="1"><span class="kw">glimpse</span>(flight_data)</a>
 <a class="sourceLine" id="cb24-2" data-line-number="2"><span class="co">## Rows: 325,819</span></a>
 <a class="sourceLine" id="cb24-3" data-line-number="3"><span class="co">## Columns: 10</span></a>
@@ -2197,25 +2198,61 @@ $(document).ready(function () {
 <a class="sourceLine" id="cb24-11" data-line-number="11"><span class="co">## $ date      &lt;date&gt; 2013-01-01, 2013-01-01, 2013-01-01, 2013-01-01, 2013-01-01…</span></a>
 <a class="sourceLine" id="cb24-12" data-line-number="12"><span class="co">## $ arr_delay &lt;fct&gt; on_time, on_time, late, on_time, on_time, on_time, on_time,…</span></a>
 <a class="sourceLine" id="cb24-13" data-line-number="13"><span class="co">## $ time_hour &lt;dttm&gt; 2013-01-01 05:00:00, 2013-01-01 05:00:00, 2013-01-01 05:00…</span></a></code></pre></div>
-<p>Second, there are two variables that we don’t want to use as predictors in our model, but that we would like to retain as identification variables that can be used to troubleshoot poorly predicted data points. These are flight, a numeric value, and <code>time_hour</code>, a date-time value. ` Third, there are 104 flight destinations contained in dest and 16 distinct carriers</p>
+<p>Second, there are two variables that we don’t want to use as predictors in our model, but that we would like to retain as identification variables that can be used to troubleshoot poorly predicted data points. These are <code>flight</code>, a numeric value, and <code>time_hour</code>, a date-time value.</p>
+<p>Third, there are 104 flights destinations contained in <code>dest</code> and 16 distinc <code>carrier</code>s.</p>
 <div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb25-1" data-line-number="1">flight_data <span class="op">%&gt;%</span><span class="st"> </span></a>
-<a class="sourceLine" id="cb25-2" data-line-number="2"><span class="st">  </span>skimr<span class="op">::</span><span class="kw">skim</span>(dest, carrier) <span class="op">%&gt;%</span><span class="st"> </span></a>
-<a class="sourceLine" id="cb25-3" data-line-number="3"><span class="st">  </span>knitr<span class="op">::</span><span class="kw">kable</span>()</a></code></pre></div>
+<a class="sourceLine" id="cb25-2" data-line-number="2"><span class="st">  </span>skimr<span class="op">::</span><span class="kw">skim</span>(dest, carrier) </a></code></pre></div>
+<table>
+<caption>Data summary</caption>
+<tbody>
+<tr class="odd">
+<td align="left">Name</td>
+<td align="left">Piped data</td>
+</tr>
+<tr class="even">
+<td align="left">Number of rows</td>
+<td align="left">325819</td>
+</tr>
+<tr class="odd">
+<td align="left">Number of columns</td>
+<td align="left">10</td>
+</tr>
+<tr class="even">
+<td align="left">_______________________</td>
+<td align="left"></td>
+</tr>
+<tr class="odd">
+<td align="left">Column type frequency:</td>
+<td align="left"></td>
+</tr>
+<tr class="even">
+<td align="left">factor</td>
+<td align="left">2</td>
+</tr>
+<tr class="odd">
+<td align="left">________________________</td>
+<td align="left"></td>
+</tr>
+<tr class="even">
+<td align="left">Group variables</td>
+<td align="left">None</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Variable type: factor</strong></p>
 <table>
 <thead>
 <tr class="header">
-<th align="left">skim_type</th>
 <th align="left">skim_variable</th>
 <th align="right">n_missing</th>
 <th align="right">complete_rate</th>
-<th align="left">factor.ordered</th>
-<th align="right">factor.n_unique</th>
-<th align="left">factor.top_counts</th>
+<th align="left">ordered</th>
+<th align="right">n_unique</th>
+<th align="left">top_counts</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td align="left">factor</td>
 <td align="left">dest</td>
 <td align="right">0</td>
 <td align="right">1</td>
@@ -2224,7 +2261,6 @@ $(document).ready(function () {
 <td align="left">ATL: 16771, ORD: 16507, LAX: 15942, BOS: 14948</td>
 </tr>
 <tr class="even">
-<td align="left">factor</td>
 <td align="left">carrier</td>
 <td align="right">0</td>
 <td align="right">1</td>
@@ -2234,34 +2270,95 @@ $(document).ready(function () {
 </tr>
 </tbody>
 </table>
-<p>Because we will be using a simple logistic regression model, the variables <code>dest</code> and <code>carrier</code> will be converted to <a href="https://bookdown.org/max/FES/creating-dummy-variables-for-unordered-categories.html">dummy variables</a>. However, some of these values do not occur very frequently, and this could complicate our analysis. We will discuss specific steps later in this article that we can add to our recipe to address this issue before modeling.</p>
+<p>Because we’ll be using a simple logistic regression model, the variables dest and carrier will be converted to <a href="https://bookdown.org/max/FES/creating-dummy-variables-for-unordered-categories.html">dummy variables</a>. However, some of these values do not occur very frequently and this could complicate our analysis. We’ll discuss specific steps later in this article that we can add to our recipe to address this issue before modeling.</p>
 </div>
 <div id="data-splitting" class="section level2">
 <h2><span class="header-section-number">3.3</span> Data splitting</h2>
-<p>To get started, let’s split this single dataset into two: <em>a training set</em> and <em>a testing set</em>. The traiing data will be used to fit the model, and the testing set will be used to measure model performance.</p>
-<p>To do thi, we can use the <a href="https://tidymodels.github.io/rsample/">rsample</a> pacakge to create an object that contains the information on how to split the data, and then two mre rsample function to create data frames for the training and testing sets.</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb26-1" data-line-number="1"><span class="co"># Fix the random numbers by setting the seed</span></a>
-<a class="sourceLine" id="cb26-2" data-line-number="2"><span class="co"># This enalbes the analysis to be reproducible when random numbers are used</span></a>
+<p>To get started, let’s split this single dataset into two: a training set and a testing set. We’ll keep most of the rows in the original dataset (subset chosen randomly) in the training set. The training data will be used to fit the model, and the testing set will be used to measure model performance.</p>
+<p>To do this, we can use the <code>rsample</code> package to create an object that contains the information on how to split the data, and then two more rsample functions to create data frames for the training and testing sets:</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb26-1" data-line-number="1"><span class="co"># Fix the random numbers by setting the seed </span></a>
+<a class="sourceLine" id="cb26-2" data-line-number="2"><span class="co"># This enables the analysis to be reproducible when random numbers are used </span></a>
 <a class="sourceLine" id="cb26-3" data-line-number="3"><span class="kw">set.seed</span>(<span class="dv">555</span>)</a>
-<a class="sourceLine" id="cb26-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb26-5" data-line-number="5"><span class="co"># Put .7 of the data into the training set</span></a>
-<a class="sourceLine" id="cb26-6" data-line-number="6">data_split &lt;-<span class="st"> </span><span class="kw">initial_split</span>(flight_data,</a>
-<a class="sourceLine" id="cb26-7" data-line-number="7">                            <span class="dt">prop =</span> <span class="fl">.7</span>)</a>
-<a class="sourceLine" id="cb26-8" data-line-number="8"></a>
-<a class="sourceLine" id="cb26-9" data-line-number="9"><span class="co"># Create data frames for the two sets:</span></a>
-<a class="sourceLine" id="cb26-10" data-line-number="10">train_data &lt;-<span class="st"> </span><span class="kw">training</span>(data_split)</a>
-<a class="sourceLine" id="cb26-11" data-line-number="11">test_data &lt;-<span class="st"> </span><span class="kw">testing</span>(data_split)</a></code></pre></div>
+<a class="sourceLine" id="cb26-4" data-line-number="4"><span class="co"># Put 3/4 of the data into the training set </span></a>
+<a class="sourceLine" id="cb26-5" data-line-number="5">data_split &lt;-<span class="st"> </span><span class="kw">initial_split</span>(flight_data, <span class="dt">prop =</span> <span class="dv">3</span><span class="op">/</span><span class="dv">4</span>)</a>
+<a class="sourceLine" id="cb26-6" data-line-number="6"></a>
+<a class="sourceLine" id="cb26-7" data-line-number="7"><span class="co"># Create data frames for the two sets:</span></a>
+<a class="sourceLine" id="cb26-8" data-line-number="8">train_data &lt;-<span class="st"> </span><span class="kw">training</span>(data_split)</a>
+<a class="sourceLine" id="cb26-9" data-line-number="9">test_data &lt;-<span class="st"> </span><span class="kw">testing</span>(data_split)</a></code></pre></div>
 </div>
-<div id="create-recipe-and-roles" class="section level2">
-<h2><span class="header-section-number">3.4</span> Create recipe and roles</h2>
+<div id="create-recipe-and-role" class="section level2">
+<h2><span class="header-section-number">3.4</span> Create recipe and role</h2>
 <p>To get started, let’s create a recipe for a simple logistic regression model. Before training the model, we can use a recipe to create a few new predictors and conduct some preprocessing required by the model.</p>
+<p>Let’s initiate a new recipe:</p>
 <div class="sourceCode" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb27-1" data-line-number="1">flights_rec &lt;-<span class="st"> </span></a>
-<a class="sourceLine" id="cb27-2" data-line-number="2"><span class="st">  </span><span class="kw">recipe</span>(arr_delay <span class="op">~</span>., <span class="dt">data =</span> train_data)</a></code></pre></div>
+<a class="sourceLine" id="cb27-2" data-line-number="2"><span class="st">  </span><span class="kw">recipe</span>(arr_delay <span class="op">~</span><span class="st"> </span>., <span class="dt">data =</span> train_data) </a></code></pre></div>
 <p>The <code>recipe()</code> function as we used it here has two arguments:</p>
 <ul>
-<li>A <strong>formula</strong>:</li>
-<li>The <strong>data</strong>:</li>
+<li>A formula:Any variable on the left-hand side of the tilde (<code>~</code>) is considered the model outcome (here, <code>arr_delay</code>). On the right-hand side of the tilde are the predictors. Variables may be listed by name, or you can use the dot (<code>.</code>) to indicate all other variables as predictors.</li>
+<li>The data: A recipe is associated with the data set used to create the model. This will typically be the training set, so <code>data = train_data</code> here. Naming a data set doesn’t actually change the data itself; it is only used to catalog the names of the variables and their types, like factors, integers, dates, etc.</li>
 </ul>
+<p>Now we can add roles to this recipe. We can use the <code>update_role()</code> function to let recipes know that <code>flight</code> and <code>time_hour</code> are variables with a custom role that we called “ID” (a role can have any character value). Whereas our formula included all variables in the training set other than arr_delay as predictors, this tells the recipe to keep these two variables but not use them as either outcomes or predictors.</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb28-1" data-line-number="1">flights_rec &lt;-<span class="st"> </span></a>
+<a class="sourceLine" id="cb28-2" data-line-number="2"><span class="st">  </span><span class="kw">recipe</span>(arr_delay <span class="op">~</span>., <span class="dt">data =</span> train_data) <span class="op">%&gt;%</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb28-3" data-line-number="3"><span class="st">  </span><span class="kw">update_role</span>(flight, time_hour, <span class="dt">new_role =</span> <span class="st">&quot;ID&quot;</span>)</a></code></pre></div>
+<p>This step of adding roles to a recipe is optional; the purpose of using it here is that those two variables can be retained in the data but not included in the model. This can be convenient when, after the model is fit, we want to investigate some poorly predicted value. These ID columns will be available and can be used to try to understand what went wrong.</p>
+<p>To get the current set of variables and roles, use the <code>summary()</code> function:</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb29-1" data-line-number="1"><span class="kw">summary</span>(flights_rec)</a>
+<a class="sourceLine" id="cb29-2" data-line-number="2"><span class="co">## # A tibble: 10 x 4</span></a>
+<a class="sourceLine" id="cb29-3" data-line-number="3"><span class="co">##    variable  type    role      source  </span></a>
+<a class="sourceLine" id="cb29-4" data-line-number="4"><span class="co">##    &lt;chr&gt;     &lt;chr&gt;   &lt;chr&gt;     &lt;chr&gt;   </span></a>
+<a class="sourceLine" id="cb29-5" data-line-number="5"><span class="co">##  1 dep_time  numeric predictor original</span></a>
+<a class="sourceLine" id="cb29-6" data-line-number="6"><span class="co">##  2 flight    numeric ID        original</span></a>
+<a class="sourceLine" id="cb29-7" data-line-number="7"><span class="co">##  3 origin    nominal predictor original</span></a>
+<a class="sourceLine" id="cb29-8" data-line-number="8"><span class="co">##  4 dest      nominal predictor original</span></a>
+<a class="sourceLine" id="cb29-9" data-line-number="9"><span class="co">##  5 arr_time  numeric predictor original</span></a>
+<a class="sourceLine" id="cb29-10" data-line-number="10"><span class="co">##  6 distance  numeric predictor original</span></a>
+<a class="sourceLine" id="cb29-11" data-line-number="11"><span class="co">##  7 carrier   nominal predictor original</span></a>
+<a class="sourceLine" id="cb29-12" data-line-number="12"><span class="co">##  8 date      date    predictor original</span></a>
+<a class="sourceLine" id="cb29-13" data-line-number="13"><span class="co">##  9 time_hour date    ID        original</span></a>
+<a class="sourceLine" id="cb29-14" data-line-number="14"><span class="co">## 10 arr_delay nominal outcome   original</span></a></code></pre></div>
+</div>
+<div id="create-features" class="section level2">
+<h2><span class="header-section-number">3.5</span> Create features</h2>
+<p>Now we can start adding steps onto our recipe using the pipe operator. Perhaps it is reasonable for the date of the flight to have an effect on the likelihood of a late arrival. A little bit of <strong>feature engineering</strong> might go a long way to improving our model. How should the date be encoded into the model? The date column has an R date object so including that column “as is” will mean that the model will convert it to a numeric format equal to the number of days after a reference date:</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb30-1" data-line-number="1">flight_data <span class="op">%&gt;%</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb30-2" data-line-number="2"><span class="st">  </span><span class="kw">distinct</span>(date) <span class="op">%&gt;%</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb30-3" data-line-number="3"><span class="st">  </span><span class="kw">mutate</span>(<span class="dt">numeric_date =</span> <span class="kw">as.numeric</span>(date))</a>
+<a class="sourceLine" id="cb30-4" data-line-number="4"><span class="co">## # A tibble: 364 x 2</span></a>
+<a class="sourceLine" id="cb30-5" data-line-number="5"><span class="co">##    date       numeric_date</span></a>
+<a class="sourceLine" id="cb30-6" data-line-number="6"><span class="co">##    &lt;date&gt;            &lt;dbl&gt;</span></a>
+<a class="sourceLine" id="cb30-7" data-line-number="7"><span class="co">##  1 2013-01-01        15706</span></a>
+<a class="sourceLine" id="cb30-8" data-line-number="8"><span class="co">##  2 2013-01-02        15707</span></a>
+<a class="sourceLine" id="cb30-9" data-line-number="9"><span class="co">##  3 2013-01-03        15708</span></a>
+<a class="sourceLine" id="cb30-10" data-line-number="10"><span class="co">##  4 2013-01-04        15709</span></a>
+<a class="sourceLine" id="cb30-11" data-line-number="11"><span class="co">##  5 2013-01-05        15710</span></a>
+<a class="sourceLine" id="cb30-12" data-line-number="12"><span class="co">##  6 2013-01-06        15711</span></a>
+<a class="sourceLine" id="cb30-13" data-line-number="13"><span class="co">##  7 2013-01-07        15712</span></a>
+<a class="sourceLine" id="cb30-14" data-line-number="14"><span class="co">##  8 2013-01-08        15713</span></a>
+<a class="sourceLine" id="cb30-15" data-line-number="15"><span class="co">##  9 2013-01-09        15714</span></a>
+<a class="sourceLine" id="cb30-16" data-line-number="16"><span class="co">## 10 2013-01-10        15715</span></a>
+<a class="sourceLine" id="cb30-17" data-line-number="17"><span class="co">## # … with 354 more rows</span></a></code></pre></div>
+<p>It’s possible that the numeric date variable is a good option for modeling; perhaps the model would benefit from a linear trend between the log-odds of a late arrival and the numeric date variable. However, it might be better to add model terms derived from the date that have a better potential to be important to the model. For example, we could derive the following meaningful features from the single date variable:</p>
+<ul>
+<li>the day of the week</li>
+<li>the month, and</li>
+<li>whether or not he date corresponds to our recipe:</li>
+</ul>
+<div class="sourceCode" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb31-1" data-line-number="1">flight_rec &lt;-<span class="st"> </span></a>
+<a class="sourceLine" id="cb31-2" data-line-number="2"><span class="st">  </span><span class="kw">recipe</span>(arr_delay <span class="op">~</span>., <span class="dt">data =</span> train_data) <span class="op">%&gt;%</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb31-3" data-line-number="3"><span class="st">  </span><span class="kw">update_role</span>(flight, time_hour, <span class="dt">new_role =</span> <span class="st">&quot;ID&quot;</span>) <span class="op">%&gt;%</span></a>
+<a class="sourceLine" id="cb31-4" data-line-number="4"><span class="st">  </span><span class="kw">step_date</span>(date, <span class="dt">features =</span> <span class="kw">c</span>(<span class="st">&quot;dow&quot;</span>, <span class="st">&quot;month&quot;</span>)) <span class="op">%&gt;%</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb31-5" data-line-number="5"><span class="st">  </span><span class="kw">step_holiday</span>(date, <span class="dt">holidays =</span> timeDate<span class="op">::</span><span class="kw">listHolidays</span>(<span class="st">&quot;US&quot;</span>)) <span class="op">%&gt;%</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb31-6" data-line-number="6"><span class="st">  </span><span class="kw">step_rm</span>(date)</a></code></pre></div>
+<p>What do each of these steps do?</p>
+<ul>
+<li>With <code>step_date()</code>, we created two new factor columns with the appropriate day of the week and the month.</li>
+<li>With <code>step_holiday()</code>, we created a binary variable indicating whether the current date is a holiday or not. The argument value of <code>timeDate::listHolidays(&quot;US)</code> uses the timeDate package to list the 17 standard US holidays.</li>
+<li>With <code>step_rm()</code>, we remove the original date variable since we no longer wait it in the model.</li>
+</ul>
+<p>Next, we will turn our attention to the variable types of our predictors. Because we plan to train a logistic regression model, we know that predictors will ultimately need to be numeric, as opposed to factor variables. In other words, there may be a difference in how we store our data (in factors inside a data frame), and how the underlying equations require them (a purely numeric matrix).</p>
+<p>For factors like <code>dest</code> and <code>origin</code>, <a href="https://bookdown.org/max/FES/creating-dummy-variables-for-unordered-categories.html">standard practice</a> is to convert them into dummy or indicator variables to make them numeric. These are binary values for each level of the factor. For example, our origin variable has values of <code>&quot;EWR&quot;</code>, <code>&quot;JFK&quot;</code>, and <code>&quot;LGA&quot;</code>. The standard dummy variable encoding, shown below, will create two numeric columns of the data that are 1 when the originating airport is <code>&quot;JFK&quot;</code> or &quot;<code>LGA&quot;</code> and zero otherwise, respectively.</p>
+<p>But, unlike the standard model formula methods in R, a recipe <strong>does not</strong> automatically create these dummy variables for you; you’ll need to tell your recipe to add this step. This is for two reasons. First, many models do not require numeric predictors, so dummy variables may not always be preferred. Second, recipes can also be used for purposes outside of modeling, where non-dummy versions of the variables may work better. For example, you may want to make a table or a plot with a variable as a single factor. For those reasons, you need to explicitly tell recipes to create dummy variables using step_dummy():</p>
 </div>
 </div>
 </div>

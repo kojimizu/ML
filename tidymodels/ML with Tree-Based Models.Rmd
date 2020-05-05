@@ -1,0 +1,179 @@
+---
+title: "ML with Tree-Based Models"
+author: "Koji Mizumura"
+date: "2020-04-30 - `r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    number_sections: yes
+    fig_height: 10
+    fig_width: 14
+    highlight: kate
+    toc_depth: 3
+#    css: style.css
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    number_sections: yes
+    section_divs: yes
+    theme: readable
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+always_allow_html: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  # fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+# Classification trees
+## Overview
+
+Tree-based models 
+- Interpretability + Ease-of-use + Accuracy
+- Make decisions + Numeric predictions
+
+## Build a clasification tree
+
+Let's get started and build our first classification tree. _A classification tree_ is a decision tree that performs a classification (vs regression) task.
+
+You will train a decision tree model to understand which loan applications are at higher risk of default using a subset of the [German Credit Dataset](https://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29). The response variable, called "default", indicates whether the loan went into a default or not, which means this is a binary classification problem (there are just two classes).
+
+You will use the rpart package to fit the decision tree and the rpart.plot package to visualize the tree.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+
+# Look at the data
+credit <- read.csv("credit.csv")
+creditub <- credit
+str(creditsub)
+
+# Create the model
+credit_model <- rpart(formula = default ~ ., 
+                      data = creditsub, 
+                      method = "class")
+
+# Display the results
+rpart.plot(x = credit_model, yesno = 2, type = 0, extra = 0)
+
+```
+
+## Overview of the modeling process
+
+```{r}
+# Total number of rows in the restaurant data frame
+n <- nrow(creditsub)
+
+# Number of rows for the training set
+n_train <- round(0.80*n)
+
+# set a random seed for reproducibility
+set.seed(123)
+
+# Create a vector of indices which is an 80% random sample 
+train_indices <- sample(1:n, n_train)
+
+# Subset the data frame to training indices only
+restaurant_train <- creditsub[train_indices, ]
+
+# Exclude the training indices to create the test set
+restaurant_test <- creditsub[-train_indices, ]
+```
+
+To train a classification tree in R, you will must specify the formula, the data and the method.
+
+```{r}
+# train the model to predict the binary response 
+credit_model <- rpart(formula = default ~ ., 
+                      data = creditsub, 
+                      method = "class")
+
+```
+
+## Train/test split
+
+For this exercise, you will randomly split the German credit dataset into two pieces: a training set (80%) called `credit_train`
+
+```{r}
+# Total number of rows in the credit data frame
+n <- nrow(credit)
+
+# Number of rows for the training set (80% of the dataset)
+n_train <- round(.8 * n) 
+
+# Create a vector of indices which is an 80% random sample
+set.seed(123)
+train_indices <- sample(1:n, n_train)
+
+# Subset the credit data frame to training indices only
+credit_train <- credit[train_indices, ]  
+  
+# Exclude the training indices to create the test set
+credit_test <- credit[-train_indices, ]  
+```
+
+## Train a classification tree model
+
+In this exercise, you will train a model on the newly created training set and print the model object to get a sense of the results.
+
+```{r}
+# Train the model (to predict 'default')
+credit_model <- rpart(formula = default~., 
+                      data = credit_train, 
+                      method = "class")
+
+# Look at the model output                      
+print(credit_model)
+```
+
+## Evaluate model performance 
+
+$$
+Accuracy = /frac {n of correct predictions} {n of total data points}
+$$
+
+```{r}
+library(caret)
+# calculate the confusion matrix for the test set
+class_pred <- predict(object = credit_model,
+                      newdata = credit_test,
+                      type = "class")
+
+caret::confusionMatrix(data = class_pred,
+                       reference = credit_test$default)
+```
+
+## Compute confusion matrix
+
+As discussed in the previous video, there are a number of different metrics by which you can measure the performance of a classification model. In this exercise, we will evaluate the performance of the model using test set classification error. A confusion matrix is a convenient way to examine the per-class error rates for all classes at once.
+
+The c`onfusionMatrix()` function from the caret package prints both the confusion matrix and a number of other useful classification metrics such as "Accuracy" (fraction of correctly classified instances).
+
+The caret package has been loaded for you.
+
+```{r}
+# Generate predicted classes using the model object
+class_prediction <- predict(object = credit_model,  
+                        newdata = credit_test,   
+                        type = "class")  
+                            
+# Calculate the confusion matrix for the test set
+confusionMatrix(data = class_prediction,       
+                reference = credit_test$default)  
+```
+
+## Splitting criterion in trees 
+
+

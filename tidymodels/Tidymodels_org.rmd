@@ -379,11 +379,115 @@ flight_data %>%
 
 Because we’ll be using a simple logistic regression model, the variables dest and carrier will be converted to [dummy variables](https://bookdown.org/max/FES/creating-dummy-variables-for-unordered-categories.html). However, some of these values do not occur very frequently and this could complicate our analysis. We’ll discuss specific steps later in this article that we can add to our recipe to address this issue before modeling.
 
-## DATA SPLITTING 
+## Data splitting 
 
+To get started, let’s split this single dataset into two: a training set and a testing set. We’ll keep most of the rows in the original dataset (subset chosen randomly) in the training set. The training data will be used to fit the model, and the testing set will be used to measure model performance.
 
+To do this, we can use the `rsample` package to create an object that contains the information on how to split the data, and then two more rsample functions to create data frames for the training and testing sets:
 
+```{r}
+# Fix the random numbers by setting the seed 
+# This enables the analysis to be reproducible when random numbers are used 
+set.seed(555)
+# Put 3/4 of the data into the training set 
+data_split <- initial_split(flight_data, prop = 3/4)
 
+# Create data frames for the two sets:
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+## Create recipe and role
+
+To get started, let’s create a recipe for a simple logistic regression model. Before training the model, we can use a recipe to create a few new predictors and conduct some preprocessing required by the model.
+
+Let’s initiate a new recipe:
+
+```{r eval=FALSE}
+flights_rec <- 
+  recipe(arr_delay ~ ., data = train_data) 
+```
+
+The `recipe()` function as we used it here has two arguments:
+
+- A formula:Any variable on the left-hand side of the tilde (`~`) is considered the model outcome (here, `arr_delay`). On the right-hand side of the tilde are the predictors. Variables may be listed by name, or you can use the dot (`.`) to indicate all other variables as predictors.
+- The data: A recipe is associated with the data set used to create the model. This will typically be the training set, so `data = train_data` here. Naming a data set doesn’t actually change the data itself; it is only used to catalog the names of the variables and their types, like factors, integers, dates, etc.
+
+Now we can add roles to this recipe. We can use the `update_role()` function to let recipes know that `flight` and `time_hour` are variables with a custom role that we called "ID" (a role can have any character value). Whereas our formula included all variables in the training set other than arr_delay as predictors, this tells the recipe to keep these two variables but not use them as either outcomes or predictors.
+
+```{r}
+flights_rec <- 
+  recipe(arr_delay ~., data = train_data) %>% 
+  update_role(flight, time_hour, new_role = "ID")
+```
+
+This step of adding roles to a recipe is optional; the purpose of using it here is that those two variables can be retained in the data but not included in the model. This can be convenient when, after the model is fit, we want to investigate some poorly predicted value. These ID columns will be available and can be used to try to understand what went wrong.
+
+To get the current set of variables and roles, use the `summary()` function:
+
+```{r}
+summary(flights_rec)
+```
+
+## Create features
+
+Now we can start adding steps onto our recipe using the pipe operator. Perhaps it is reasonable for the date of the flight to have an effect on the likelihood of a late arrival. A little bit of __feature engineering__ might go a long way to improving our model. How should the date be encoded into the model? The date column has an R date object so including that column “as is” will mean that the model will convert it to a numeric format equal to the number of days after a reference date:
+
+```{r}
+flight_data %>% 
+  distinct(date) %>% 
+  mutate(numeric_date = as.numeric(date))
+```
+
+It’s possible that the numeric date variable is a good option for modeling; perhaps the model would benefit from a linear trend between the log-odds of a late arrival and the numeric date variable. However, it might be better to add model terms derived from the date that have a better potential to be important to the model. For example, we could derive the following meaningful features from the single date variable:
+
+- the day of the week
+- the month, and
+- whether or not he date corresponds to our recipe:
+
+```{r}
+flight_rec <- 
+  recipe(arr_delay ~., data = train_data) %>% 
+  update_role(flight, time_hour, new_role = "ID") %>%
+  step_date(date, features = c("dow", "month")) %>% 
+  step_holiday(date, holidays = timeDate::listHolidays("US")) %>% 
+  step_rm(date)
+```
+
+What do each of these steps do? 
+
+- With `step_date()`, we created two new factor columns with the appropriate day of the week and the month. 
+- With `step_holiday()`, we created a binary variable indicating whether the current date is a holiday or not. The argument value of `timeDate::listHolidays("US)` uses the timeDate package to list the 17 standard US holidays.
+- With `step_rm()`, we remove the original date variable since we no longer wait it in the model.
+
+Next, we will turn our attention to the variable types of our predictors. Because we plan to train a logistic regression model, we know that predictors will ultimately need to be numeric, as opposed to factor variables. In other words, there may be  a difference in how we store our data (in factors inside a data frame), and how the underlying equations require them (a purely numeric matrix).
+
+For factors like `dest` and `origin`, [standard practice](https://bookdown.org/max/FES/creating-dummy-variables-for-unordered-categories.html) is to convert them into dummy or indicator variables to make them numeric. These are binary values for each level of the factor. For example, our origin variable has values of `"EWR"`, `"JFK"`, and `"LGA"`. The standard dummy variable encoding, shown below, will create two numeric columns of the data that are 1 when the originating airport is `"JFK"` or "`LGA"` and zero otherwise, respectively.
+
+But, unlike the standard model formula methods in R, a recipe __does not__ automatically create these dummy variables for you; you’ll need to tell your recipe to add this step. This is for two reasons. First, many models do not require numeric predictors, so dummy variables may not always be preferred. Second, recipes can also be used for purposes outside of modeling, where non-dummy versions of the variables may work better. For example, you may want to make a table or a plot with a variable as a single factor. For those reasons, you need to explicitly tell recipes to create dummy variables using `step_dummy()`:
+
+```{r}
+flights_rec <- 
+  recipe(arr_delay ~., data = train_data) %>% 
+  update_role(flight, time_hour, new_role = "ID") %>%
+  step_date(date, features = c("dow", "month")) %>% 
+  step_holiday(date, holidays = timeDate::listHolidays("US")) %>% 
+  step_rm(date) %>% 
+  step_dummy(all_nominal(), -all_outcomes())
+```
+
+Here, we did something different than before: instead of applying a step to an individual variable, we used [selectors](https://tidymodels.github.io/recipes/reference/selections.html) to apply this recipe step to several variables at once.
+
+- The first selector, `all_nominal()`, selects all variables that are either factors or characters.
+- The second selector, -`all_outcomes()` removes any outcome variables from this recipe step.
+
+With these two selectors together, our recipe step above translates to:
+
+> Create dummy variables for all of the factor or character columns unless they are outcomes. 
+
+At this stage in the recipe, this step selects the `origin`, `dest` and `carrier` variables. It also includes two new variables, `date_dow` and `date_month`, that were created by earlier `step_date()`.
+
+More generally, the recipe selectors mean that you don't always have to apply step to individual variables one at a time. Since a recipe knows the _variable type_ and role of each column, they can also be selected (or dropped) using this information.
 
 
 
