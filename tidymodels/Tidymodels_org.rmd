@@ -913,6 +913,15 @@ set.seed(456)
 rf_fit_rs <- 
   rf_wf %>% 
   tune::fit_resamples(folds)
+
+gbm_wf <- 
+  workflow() %>% 
+  add_model(gbm_mod) %>% 
+  add_formula(class ~ .)
+
+gbm_fit_rs <- 
+  gbm_wf %>% 
+  tune::fit_resamples(folds)
 ```
 
 ```{r}
@@ -920,4 +929,13 @@ rf_fit_rs
 ```
 
 The results are similar to the `folds` results with some extra columns. The column .metrics contains the performance statistics created from the 10 assessment sets. These can be manually unnested but the tune package contains a number of simple functions that can extract these data:
+
+```{r}
+collect_metrics(rf_fit_rs)
+collect_metrics(gbm_fit_rs)
+```
+
+Think about these values we now have for accuracy and AUC. These performance metrics are now realistic 
+
+
 
