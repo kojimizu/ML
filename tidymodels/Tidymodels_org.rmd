@@ -931,11 +931,148 @@ rf_fit_rs
 The results are similar to the `folds` results with some extra columns. The column .metrics contains the performance statistics created from the 10 assessment sets. These can be manually unnested but the tune package contains a number of simple functions that can extract these data:
 
 ```{r}
+# df <- tibble(x = c(1, 1, 1, 2, 2, 3), y = 1:6, z = 6:1)
+# df
+# df %>% 
+#   nest(data = c(y, z)) %>% 
+#   unnest(data)
+# df %>% chop(c(y, z)) %>% 
+#   unnest(y)
+
+rf_fit_rs %>% 
+  unnest(.metrics)
+
 collect_metrics(rf_fit_rs)
 collect_metrics(gbm_fit_rs)
 ```
 
-Think about these values we now have for accuracy and AUC. These performance metrics are now realistic 
+Think about these values we now have for accuracy and AUC. These performance metrics are now realistic (i.e. lower) than our ill-advised first attempt at computing performance metrics in the section above. If we wanted to try different model types for this data set, we could more confidently compare performance metrics computed using resampling to choose between models. Also, remember that at the end of our project, we return to our test set to estimate final model performance. We have looked at this once already before we started using resampling, but let’s remind ourselves of the results:
+
+```{r}
+rf_testing_pred %>%  # test set predictions
+  roc_auc(truth = class, .pred_PS)
+
+rf_testing_pred %>%  # test set prediction
+  accuracy(truth = class, .pred_class)
+
+```
+
+The performance metrics from the test set are much closer to the performance metrics computed using resampling than our first (“bad idea”) attempt. Resampling allows us to simulate how well our model will perform on new data, and the test set acts as the final, unbiased check for our model’s performance.
+
+# Tune model parameters 
+
+## Introduction
+
+Some model parameters cannot be learned directly from a data set during model training; these kinds of parameters are called __hyperparameters__. Some examples of hyperparameters include the number of predictors hat are sampled at splits in a tree-based model (we call this `mtry` in tidymodels) or the learning rate in a boosted tree model (we call this `learn_rate`). Instead of learning these kinds of hyperparameters during model training, we can estimate the best values for these values by training many models on resampled data sets and exploring how well all these models perform. This process is called __tuning__.
+
+To use code in this article, you will need to install the following packages: mdoeldata, rpart, tidymodels, and vip.
+
+```{r}
+library(tidymodels)  # for the tune package, along with the rest of tidymodels
+
+# Helper packages
+library(modeldata)   # for the cells data
+library(vip)         # for variable importance plots
+```
+
+## The cell image data, revisited
+
+In our previous [evaluate your model with resampling article](https://www.tidymodels.org/start/resampling/), we introduced a dataset of images of cells that were labeled by experts as well-segmented (`WS`) or poorly segmented (`PS`). WE trained a random forest model to predict which images are segmented well vs poorly, so that a biologist could filter our poorly segmented cell images in their analysis. We used resamplig to estimate the performance of our model on this data. 
+
+```{r}
+data(cells, package = "modeldata")
+cells
+```
+
+## Predicting image segmentation, but better
+
+Random forest models are a tree-based ensemble method, and typically perform well with default hyperparameters. However, the accuracy of some other tree-based models, such as boosted tree models or decision tree models, can be sensitive to the values of hyperparameters. In this article, we will train a decision tree model. There are several hyperparameters for __decision tree__ models that can be tuned for better performance. Let’s explore:
+
+- complexity parameter (which we call `cost_complexity` in tidymodels) for the tree, and
+- the maximum `tree_depth`
+
+Tuning these hyperparameters can improve model performance because decision tree models are prone to overfitting. This happens because single tree models tend to fit the training data too well — so well, in fact, that they over-learn patterns present in the training data that end up being detrimental when predicting new data.
+
+Tuning the value of `cost_complexity` helps by pruning back our tree. It adds a cost, or penalty, to error rates of more complex trees; a cost closer to zero decreases the number tree nodes pruned and is more likely to result in an overfit tree. However, a high cost increases the number of tree nodes pruned and can result in the opposite problem—an underfit tree. Tuning tree_depth, on the other hand, helps by stopping our tree from growing after it reaches a certain depth. We want to tune these hyperparameters to find what those two values should be for our model to do the best job predicting image segmentation.
+
+We will tune the model hyperparameters to avoid overfitting. Tuning the value of `cost_compexity` helps by pruning back our tree. It adds a cost, or penalty, to error rates of more complex trees; a cost closer to zero decreases the number tree nodes pruned and is more likely to result in an overfit tree. However, a high cost increases the number of tree nodes pruned and can result in the opposite problem—an underfit tree. Tuning tree_depth, on the other hand, helps by stopping our tree from growing after it reaches a certain depth. We want to tune these hyperparameters to find what those two values should be for our model to do the best job predicting image segmentation.
+
+Before we start the tuning process, we split our data into training and testing sets, just like when we trained the model with one default set of hyperparameters. As before, we can use strata = class if we want our training and testing sets to be created using stratified sampling so that both have the same proportion of both kinds of segmentation.
+
+```{r}
+set.seed(123)
+cell_split <- initial_split(cells %>% 
+                              select(-case),
+                            strata = class)
+cell_train <- training(cell_split)
+cell_test <- testing(cell_split)
+```
+
+## Tuning hyperparameters
+
+Let's start with the parsnip package, using `decision_tree()` model with the `rpart` engine. To tune the decision tree hyperparameters `cost_complexity` and `tree_depth`, we create a model specification that identifies whichi hyperparameters we plan to tune.
+
+```{r}
+tune_spec <- 
+  decision_tree(
+    cost_complexity = tune(),
+    tree_depth = tune()
+  ) %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+tune_spec
+
+tune_gbm_mod <- 
+  parsnip::boost_tree(
+    mtry = tune(),
+    trees = tune(),
+    tree_depth = tune(),
+    learn_rate = tune()
+  ) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("classification")
+
+tune_gbm_mod
+```
+
+Think of `tune()` here as a placeholder. After the tuning process, we will select a single numeric value for each of these hyperparameters. For now, we specify our parsnip model object and identify the hyperparameters we will `tune()`.
+
+We can’t train this specification on a single data set (such as the entire training set) and learn what the hyperparameter values should be, but we can train many models using resampled data and see which models turn out best. We can create a regular grid of values to try using some convenience functions for each hyperparameter:
+
+```{r}
+tree_grid <- grid_regular(
+  cost_complexity(),
+  tree_depth(),
+  levels = 5
+)
+
+tree_grid
+
+# gbm_grid <- grid_regular(
+#   mtry(),
+#   trees(),
+#   tree_depth(),
+#   learn_rate()
+# )
+```
+
+Here, you can see all 5 vaues of `cost_compexity` ranging up to 0.1. These values get repeated for each of the 5 values of `tree_depth`.
+
+```{r}
+tree_grid %>% 
+  count(tree_depth)
+```
+
+
+Armed with our grid filled with 25 candidate decision tree models, let's create cross-validation folds for tuning:
+
+```{r}
+set.seed(234)
+cell_folds <- vfold_cv(cell_train)
+```
+
+
 
 
 
