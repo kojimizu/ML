@@ -386,10 +386,20 @@ This process is called "model selection" or "hyperparameter selection" because t
 - What is a model hyperparameter?
 - What is a grid? 
 - What is the goal of a grid search? 
+- How is the best model chosen? 
 
 Model hyperparameters are the knobs that you tweak to get slightly different models. For example, max depth is the maximum depth allowed in a decision tree. 
 
 The grid refers to the set of hyperparameter combinations that you will iterate over durign the grid search. 
+
+THe goal of the grid search is to evaluate a large number of parameter settings, by training models on each combination of hyperparameter values, to find the combination that produces the best model.
+
+
+
+
+
+
+
 
 
 
