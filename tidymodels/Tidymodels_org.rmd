@@ -1064,15 +1064,194 @@ tree_grid %>%
   count(tree_depth)
 ```
 
-
 Armed with our grid filled with 25 candidate decision tree models, let's create cross-validation folds for tuning:
 
 ```{r}
 set.seed(234)
 cell_folds <- vfold_cv(cell_train)
+
+cell_folds
+```
+
+Tuning in tidymodels requires a resampled object created with the rsample package. 
+
+## Model tuning with a grid
+
+We are ready to tune. Let's use [tune_grid()](https://tidymodels.github.io/tune/reference/tune_grid.html) to fit models at all the different values we chose for each tuned parameter. THere are sveral options for building the object for tuning: 
+
+- Tune a model specification along with a recipe or model, or
+- Tune a `workflow()` that bundles together a model specification and a recipe or model preprocessor.
+
+Here we use a `workflow()` with a straightfoward formula; if this model required more involved data preprocessing, we could use `add_recipe()` intead of `add_formula()`.
+
+```{r}
+set.seed(345)
+
+tree_wf <- workflow() %>%
+  add_model(tune_spec) %>%
+  add_formula(class ~ .)
+
+tree_res <- 
+  tree_wf %>% 
+  tune_grid(
+    resamples = cell_folds,
+    grid = tree_grid
+    )
+
+tree_res
+#> #  10-fold cross-validation 
+#> # A tibble: 10 x 4
+#>    splits             id     .metrics          .notes          
+#>  * <list>             <chr>  <list>            <list>          
+#>  1 <split [1.4K/152]> Fold01 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  2 <split [1.4K/152]> Fold02 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  3 <split [1.4K/152]> Fold03 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  4 <split [1.4K/152]> Fold04 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  5 <split [1.4K/152]> Fold05 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  6 <split [1.4K/151]> Fold06 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  7 <split [1.4K/151]> Fold07 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  8 <split [1.4K/151]> Fold08 <tibble [50 × 5]> <tibble [0 × 1]>
+#>  9 <split [1.4K/151]> Fold09 <tibble [50 × 5]> <tibble [0 × 1]>
+#> 10 <split [1.4K/151]> Fold10 <tibble [50 × 5]> <tibble [0 × 1]>
 ```
 
 
+Once we have our tuning results, we can both explore them through visualization and then select the best result. THe function `collect_metrics()` gives us a tidy tibble with all the rsults. We had 25 candidate models and two metrics `accuracy` and `roc_auc` and we get a row for each `metric` and model. 
 
+```{r}
+tree_res %>% 
+  collect_metrics()
+```
+
+We might get more out of plotting these results:
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  mutate(tree_depth = factor(tree_depth)) %>%
+  ggplot(aes(cost_complexity, mean, color = tree_depth)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) +
+  scale_x_log10(labels = scales::label_number()) +
+  scale_color_viridis_d(option = "plasma", begin = .9, end = 0)
+```
+
+We can see that our stubbiest tree, with a depth of 1, is the worst model according to both metrics and across all candidate values of `cost_complexity`. Our deepest tree, with a depth of 15, did better. However, the best tree seems to be between these values with a tree depth of 4. The `show_best()` function shows us the top 5 candidate models by default:
+
+```{r}
+tree_res %>% 
+  show_best("roc_auc")
+```
+
+We can also use the `select_best()` function to pull out the single set of hyperparameter values for our best decision tree model:
+
+```{r}
+best_tree <- 
+  tree_res %>% 
+  select_best("roc_auc")
+
+best_tree
+```
+ 
+These are the values for `tree_depth` and `cost_complexity` that maximize AUC in this data set of cell images.
+
+## Finalizing our model
+
+We can update (or "finalize") our workflow object `tree_wf` with the values from `select_best()`. 
+
+```{r}
+final_wf <- 
+  tree_wf %>% 
+  finalize_workflow(best_tree)
+
+final_wf
+```
+
+## Exploring results 
+
+Let's fit this final model to the training data. What does the decision tree look like? 
+
+```{r}
+final_tree <- 
+  final_wf %>% 
+  fit(data = cell_train)
+
+final_tree
+```
+
+This `final_tree` object has the finalized, fitted model object inside. You may want to extract the model object from the workflow. To do this, you can use the helper function `pull_workflow_fit()`.
+
+For example, perhaps we woul also like to understand what variables are important in this final model. We can use the [vip](https://koalaverse.github.io/vip/) package to estimate variable importance. 
+
+```{r}
+library(vip)
+
+final_tree %>% 
+  pull_workflow_fit() %>% 
+  vip::vip()
+```
+
+These are the automated image analysis measurements that are the most important in driving segmentation quality predictions
+
+## The last fit
+
+Finally, let's return to our test data and estimte the model performance we expect to see with new data. We can use the function `last_fit()` with our finalized model; this function fits the finalized model on the full training data set and evaluates the finalized model on the testing data.
+
+```{r}
+final_fit <- 
+  final_wf %>% 
+  last_fit(cell_split)
+
+final_fit %>% 
+  collect_metrics()
+
+final_fit %>% 
+  collect_predictions() %>% 
+  roc_curve(class, .pred_PS) %>% 
+  autoplot()
+```
+
+The performance metric from the test set indicates that we did not overfit during our tuning procedure. 
+
+We leave it to the reader to xplore whether you can tune a different decision tree hyperparameter. You can explore the [reference docs](https://www.tidymodels.org/find/parsnip/#models), or use the `args()` function to see which parsnip object arguments are available:
+
+```{r}
+args(decision_tree)
+```
+
+You could tune the other hyperparameter we didn’t use here, min_n, which sets the minimum n to split at any node. This is another early stopping method for decision trees that can help prevent overfitting. Use this [searchable table](https://www.tidymodels.org/find/parsnip/#model-args) to find the original argument for min_n in the rpart package (hint). See whether you can tune a different combination of hyperparameters and/or values to improve a tree’s ability to predict cell segmentation quality.
+
+# [A predictive modeling case study](https://www.tidymodels.org/start/case-study/)
+
+## Introduction
+ 
+Each of the four previous _Get Started_ articles has focused on a single task related to modeling. Along the way, we also introduced core packages in the tidymodels ecosystem and some of the key functions you will need to start working with models. 
+
+In this final case setudy, we will use all of the previous articles as a foundation to build a predictive model from beggining to end with data on hotel stays.
+
+```{r}
+library(tidymodels)  
+
+# Helper packages
+library(readr)       # for importing data
+library(vip)         # for variable importance plots
+```
+
+## The hotel booking data
+
+Let's use hotel bookings data from [Antonio, Almeida, and Nunes (2019)](https://doi.org/10.1016/j.dib.2018.11.126) to predict which hotel stays included children and/or babies, based on the other characteristics of the stays such as which hotel the guests stay at, how much they pay, etc. This was also a [#TidyTuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-02-11) dataset with a [data dictionary](https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-02-11#data-dictionary) you may want to look over to learn more about the variables. We’ll use a slightly edited version of the dataset for this case study.
+
+To start, let’s read our hotel data into R, which we’ll do by providing `readr::read_csv()` with a url where our CSV data is located (“https://tidymodels.org/start/case-study/hotels.csv”):
+
+```{r}
+hotels <- 
+  read_csv('https://tidymodels.org/start/case-study/hotels.csv') %>% 
+  mutate_if(is.character, as.factor)
+
+dim(hotels)
+```
+
+In the original paper, the authors caution that the distribution of many variables (such as number of adults/children)
 
 

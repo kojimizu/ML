@@ -392,7 +392,332 @@ Model hyperparameters are the knobs that you tweak to get slightly different mod
 
 The grid refers to the set of hyperparameter combinations that you will iterate over durign the grid search. 
 
-THe goal of the grid search is to evaluate a large number of parameter settings, by training models on each combination of hyperparameter values, to find the combination that produces the best model.
+The goal of the grid search is to evaluate a large number of parameter settings, by training models on each combination of hyperparameter values, to find the combination that produces the best model.
+
+The first step is to choose an appropriate performance metric for your task - examples are classification error, AUC or root mean squared error. The performance of each model in the grid is computed by cross-validation or evaluation on a hold-out validation set. 
+
+The model with the best performacne, as evaluated by this metric is selected as the winner. For example, if the hyperparameter of a decision tree is the minimum number of observations that must exist in a node in order for a split to be attempted, then the grid could be 5, 10, 20 30 etc. 
+
+Some guesswork is necessary to specify the minimum and maximum values. So sometimes, people run a small grid, see if the optimum lies at either endpoint, and then expand the grid in that direction. 
+
+Manual grid search
+1) Define a list of possible values for minsplit and maxdepth
+2) A data frame is created, containing all combinations using the expand.grid
+
+```{r eval=FALE}
+# Establish a list of possible options
+
+splits <- seq(1,30,5)
+depths <- seq(5,40,10)
+
+# create a data frame containing all combinations
+hyper_grid <- 
+  expand.grid(
+    minsplit = split,
+    maxdepth = depths
+  )
+
+```
+
+## Generate a grid of hyperparameter values
+
+Use `expand.grid()` to generate a grid of maxdepth and minsplit values.
+
+```{r}
+# Establish a list of possible values for minsplit and maxdepth
+minsplit <- seq(1, 4, 1)
+maxdepth <- seq(1, 6, 1)
+
+# Create a data frame containing all combinations 
+hyper_grid <- expand.grid(minsplit = minsplit, maxdepth = maxdepth)
+
+# Check out the grid
+head(hyper_grid)
+
+# Print the number of grid combinations
+nrow(hyper_grid)
+```
+
+## Generate a grid of models
+
+In this exercise, we will write a simple loop to train a "grid" of models and store the models in a list called `grade_models`. R users who are familiar with the `apply` functions in R could think about how this loop could be easily converted into a function applied to a list as an extra-credit thought experiment.
+
+```{r}
+# Number of potential models in the grid
+num_models <- nrow(hyper_grid)
+
+# Create an empty list to store models
+grade_models <- list()
+
+# Write a loop over the rows of hyper_grid to train the grid of models
+for (i in 1:num_models) {
+
+    # Get minsplit, maxdepth values at row i
+    minsplit <- hyper_grid$minsplit[i]
+    maxdepth <- hyper_grid$maxdepth[i]
+
+    # Train a model and store in the list
+    grade_models[[i]] <- rpart(formula = final_grade ~ ., 
+                               data = grade_train, 
+                               method = "anova",
+                               minsplit = minsplit,
+                               maxdepth = maxdepth)
+}
+```
+
+## Evaluate the grid
+
+Earlier in the chapter we split the dataset into three parts: training, validation and test.
+
+A dataset that is not used in training is sometimes referred to as a "holdout" set. A holdout set is used to estimate model performance and although both validation and test sets are considered to be holdout data, there is a key difference:
+
+- Just like a test set, a validation set is used to evaluate the performance of a model. The difference is that a validation set is specifically used to compare the performance of a group of models with the goal of choosing a "best model" from the group. All the models in a group are evaluated on the same validation set and the model with the best performance is considered to be the winner.
+- Once you have the best model, a final estimate of performance is computed on the test set.
+- A test set should only ever be used to estimate model performance and should not be used in model selection. Typically if you use a test set more than once, you are probably doing something wrong.
+
+```{r}
+# Number of potential models in the grid
+num_models <- length(grade_models)
+
+# Create an empty vector to store RMSE values
+rmse_values <- c()
+
+# Write a loop over the models to compute validation RMSE
+for (i in 1:num_models) {
+
+    # Retrieve the i^th model from the list
+    model <- grade_models[[i]]
+    
+    # Generate predictions on grade_valid 
+    pred <- predict(object = model,
+                    newdata = grade_valid)
+    
+    # Compute validation RMSE and add to the 
+    rmse_values[i] <- rmse(actual = grade_valid$final_grade, 
+                           predicted = pred)
+}
+
+# Identify the model with smallest validation set RMSE
+best_model <- grade_models[[which.min(rmse_values)]]
+
+# Print the model paramters of the best model
+best_model$control
+
+# Compute test set RMSE on best_model
+pred <- predict(object = best_model,
+                newdata = grade_test)
+rmse(actual = grade_test$final_grade, 
+     predicted = pred)
+```
+
+# Bagged Trees
+## Introduction to bagged trees 
+
+One of the main drawbacks of a decision tree is their high variance. Often a small change in the data can result in va very different series of splits, which can also make model intepretation somewhat precautious. 
+
+Bagging, and in particular, bagged trees, averages many trees to reduce this variance. Combining several moels into one is what is called an ensemble model and averaging is one of the easiest ways to create an ensemble from a collection of models. 
+
+In addition to reducing variance, it can also help avoid overfitting. 
+
+Bagging is an ensemble method and the term "bagging" is shorthand for bootstrap aggregation. Bagging uses bootstrap sampling and agrregates the individual models by averaging. 
+
+Bootstrap means sampling rows at random from the training dataset, with replacement. When we draw samples with replacement, that means it is possible that you will draw a single training example more than once. 
+
+This results in a modified version of the training set where some rows are represented multiple times and some rows are absent. This let's you generate new data that is similar to the data you started with. 
+
+By doing this, we can fit many different, but similar models. 
+
+- Step 1: You draw B samples with replacement from the original training set where B is a number less than or equal to the N, number of total samples in the training set.
+
+```{r}
+knitr::include_graphics("Bootstrapping_step1.png")
+```
+
+- Step 2: Train a decision tree on the newly created bootstrapped sample. 
+
+```{r}
+knitr::include_graphics("Bootstrapping_step2.png")
+```
+
+Repeate step 1 through 2 for as many times as you like - that could be 20 times, 100 times or 1000. Typically, the more trees, the better the model. 
+
+Suppose we use 1000 trees for the model construction. In this case, each model has different featurs, and to generate a prediction using a bagged tree model, you need to generate predictions from each of the 1000 trees and then simply average the prediction together to get a final prediction.
+
+```{r}
+knitr::include_graphics("Bootstrapping_step3.png")
+```
+
+The bagged, or ensemble prediction is the average prediction across the bootstrapped trees. Bagging can dramatically reduce the variance of unstable models such as trees, leading to improved prediction.
+
+This means averaging reduces variance and leaves bias unchanged. 
+
+```{r eval=FALSE}
+library(ipred)
+bagging(formula = response ~., data = dat)
+```
+
+## Train a bagged tree model
+
+Let's start by training a bagged tree model. You'll be using the `bagging()` function from the ipred package. The number of bagged trees can be specified using the `nbagg` parameter, but here we will use the default (25).
+
+If we want to estimate the model's accuracy using the "out-of-bag" (OOB) samples, we can set the the `coob` parameter to `TRUE`. The OOB samples are the training obsevations that were not selected into the bootstrapped sample (used in training). Since these observations were not used in training, we can use them instead to evaluate the accuracy of the model (done automatically inside the `bagging()` function).
+
+```{r}
+# Bagging is a randomized model, so let's set a seed (123) for reproducibility
+set.seed(123)
+
+# Train a bagged model
+credit_model <- bagging(formula = default ~ ., 
+                        data = credit_train,
+                        coob = TRUE)
+
+# Print the model
+print(credit_model)
+```
+
+## Evaluating the bagged tree performance 
+
+We have to pass the model object, the test dataset and what type you want your prediction to be. In this example, we set the argument type to be class since we want the function to returns a vector of class predictions. 
+
+If you want to take a peak in the predictions, you can print the class prediction and you will see that indeed classification labels were returned. After making predictions, it is time to evaluate the model performance. We can use the `confusionMatrix()` from the `caret` package. 
+
+It's always good to take a look at the output using the `print()` function.
+
+```{r}
+# Generate predicted classes using the model object
+class_prediction <- predict(object = credit_model,    
+                            newdata = credit_test,  
+                            type = "class")  # return classification labels
+
+# Print the predicted classes
+print(class_prediction)
+credit_test
+# Calculate the confusion matrix for the test set
+confusionMatrix(data = class_prediction,       
+                reference = credit_test$default)  
+```
+
+## PRedict on a test set and compute AUC
+
+In binary classification problems, we can predict numeric values instead of class labels. In fact, class labels are created only after you use the model to predict a raw, numeric, predicted value for a test point.
+
+The predicted label is generated by applying a threshold to the predicted value, such that all tests points with predicted value greater than that threshold get a predicted label of "1" and, points below that threshold get a predicted label of "0".
+
+In this exercise, generate predicted values (rather than class labels) on the test set and evaluate performance based on [AUC (Area Under the ROC Curve)](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve). The AUC is a common metric for evaluating the discriminatory ability of a binary classification model.
+
+```{r}
+# Generate predictions on the test set
+pred <- predict(object = credit_model,
+                newdata = credit_test,
+                type = "prob")
+
+# `pred` is a matrix
+class(pred)
+                
+# Look at the pred format
+head(pred)
+                
+# Compute the AUC (`actual` must be a binary (or 1/0 numeric) vector)
+auc(actual = ifelse(credit_test$default == "yes", 1, 0), 
+    predicted = pred[,"yes"])      
+
+library(tidymodels)
+
+# yardstick::roc_curve()
+bind_cols(
+  actual = ifelse(credit_test$default == "yes", 1, 0), 
+    predicted = pred[,"yes"]
+) %>%
+  mutate(actual = as.factor(actual)) %>% 
+  roc_curve(truth = actual, predicted)
+
+# yardstick::roc_auc()
+bind_cols(
+  actual = ifelse(credit_test$default == "yes", 1, 0), 
+    predicted = pred[,"yes"]
+) %>%
+  mutate(actual = as.factor(actual)) %>% 
+  roc_auc(truth = actual, predicted)
+
+```
+
+## Using caret for cross-validating models
+
+Although using a single training and test set is a quick way to get an estimate of your model's performance, it is susceptible to variations in the data. Variability in your data can stem both from the size of your training set - smaller datasets have more variability - and also from natural variability in the true population that you are sampling from. 
+
+### K-fold cross validation 
+
+1) Partition the rows of the dataset into K subset of equal sizes. 
+
+For example, dataset size = 200 rows, k = 10 (number of corss validation folds)
+In each iteration, you pick one of the k subsets as your test set and the remaining k minus 1 subsets are aggregated and used as the training set. 
+
+2) Train the model on the training set and evaluate the performance
+Then you train your machine learning algorthim on that training set, and evaluate the model's performance on the test set. You can use any metric to evaluate the performance, so as an example, let's say you compute the test set AUC. 
+
+3) CV estimate of AUC
+We average those 10 estimates together to get what is called the corss-validated estimate of AUC.
+- 10 estimates of test set AUC
+- the average is the cross-validated estimate of AUC
+
+Since we end up training k models instead of one, its obvious that CV takes k times as long to evaluate your models this way. It depends on what's more valuable to your use-case: time or accuracy of your model performance estimates. 
+
+caret:: `train()` and `trainControl()`
+
+```{r eval=FALSE}
+# Specify the training cofiguration
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary()
+)
+
+# For reproducibility set a seed
+set.seed(123)
+credit_model <- train(
+  default ~ ., 
+  data = credit_train,
+  method = "treebag",
+  metric = "ROC",
+  trControl = ctrl
+)
+```
+
+## Cross-validate a bagged tree model in caret
+
+Use `caret::train()` with the `treebag` method to train a model and evaluate the model using cross-validated AUC. The __caret__ package allows the user to easily cross-validate any model across any relevant performance metric. In this case, we will use 5-fold cross validation and evaluate cross-validated AUC (Area Under the ROC Curve).
+
+```{r}
+# Specify the training configuration
+ctrl <- trainControl(method = "cv",     # Cross-validation
+                     number = 5,      # 5 folds
+                     classProbs = TRUE,                  # For AUC
+                     summaryFunction = twoClassSummary)  # For AUC
+
+# Cross validate the credit model using "treebag" method; 
+# Track AUC (Area under the ROC curve)
+set.seed(1)  # for reproducibility
+credit_caret_model <- train(default ~ .,
+                            data = credit_train, 
+                            method = "treebag",
+                            metric = "ROC",
+                            trControl = ctrl)
+
+# Look at the model object
+print(credit_caret_model)
+
+# Inspect the contents of the model list 
+names(credit_caret_model)
+
+# Print the CV AUC
+credit_caret_model$results[,"ROC"]
+```
+
+## Generate predictions from the caret model
+
+
+
 
 
 
