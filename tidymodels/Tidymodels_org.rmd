@@ -880,12 +880,6 @@ These resampling statistics are an effective method for measuring model performa
 
 ## Fit a model with resampling
 
-```{r}
-library(hrbrthemes)
-  
-```
-
-
 To generate these results, the first step is to create a resampling object using `resample`. There are [several resampling methods]() implemented in rsample; cross-validation folds can be created using `vfold_cv()`:
 
 ```{r}
@@ -1184,7 +1178,7 @@ This `final_tree` object has the finalized, fitted model object inside. You may 
 
 For example, perhaps we woul also like to understand what variables are important in this final model. We can use the [vip](https://koalaverse.github.io/vip/) package to estimate variable importance. 
 
-```{r}
+```{r eval=FALSE}
 library(vip)
 
 final_tree %>% 
@@ -1252,6 +1246,165 @@ hotels <-
 dim(hotels)
 ```
 
-In the original paper, the authors caution that the distribution of many variables (such as number of adults/children)
+In the original paper, the authors caution that the distribution of many variables (such as number of adults/children, room type, meals bought, country of origin of the guests, and so forth) is different for hotel stays that were canceled versus not canceled. This makes sense because much of that information is gathered (or gathered again more accurately) when guests check in for their stay, so canceled bookings are likely to have more missing data than non-canceled bookings, and/or to have different characteristics when data is not missing. Given this, it is unlikely that we can reliably detect meaningful differences between guests who cancel their bookings and those who do not with this dataset. To build our models here, we have already filtered the data to include only the bookings that did not cancel, so we’ll be analyzing hotel stays only.
+
+```{r}
+glimpse(hotels)
+```
+
+We will build a model to predict which actual hotel stays included children and/or babies, and which did not. Our outcome variable `childre`n is a factor variable with two levels:
+
+```{r}
+hotels %>% 
+  count(children) %>% 
+  mutate(prop = n/sum(n))
+```
+ 
+We can see that children were only in 8.1% of the reservations. This type of class imbalance can often wreak havoc on an analysis. While there are several methods for combating this issue using recipes (search for steps to `upsample` or `downsample`) or other more specialized packages like themis, the analyses shown below analyze the data as-is.
+
+## Data splitting & resampling 
+
+For a data splitting strategy, let’s reserve 25% of the stays to the test set. As in our Evaluate your model with resampling article, we know our outcome variable children is pretty imbalanced so we’ll use a stratified random sample:
+
+```{r}
+set.seed(123)
+splits <- initial_split(hotels, strata = children)
+
+hotel_other <- training(splits)
+hotel_test <- testing(splits)
+
+# training set proportions by children 
+hotel_other %>% 
+  count(children) %>% 
+  mutate(prop = n/sum(n))
+
+# test set proportions by children 
+hotel_test %>% 
+  count(children) %>% 
+  mutate(prop = n/sum(n))
+
+```
+
+In our articles so far, we’ve relied on 10-fold cross-validation as the primary resampling method using `rsample::vfold_cv()`. This has created 10 different resamples of the training set (which we further split into analysis and assessment sets), producing 10 different performance metrics that we then aggregated.
+
+For this case study, rather than using multiple iterations of resampling, let’s create a single resample called a validation set. In tidymodels, a validation set is treated as a single iteration of resampling. This will be a split from the 37,500 stays that were not used for testing, which we called `hotel_other`. This split creates two new datasets:
+
+- the set held out for the purpose of measuring performance, called the validation set and
+- the remaining data used to fit the model, called the training set
+
+We will use the `validation_split()` function to allocate 20% of the `hotel_other` stays to the validation set and 30,000 stays to the training set. This means that ur model performance metrics will be computed on a single set of 7,500 hotel stays. This is fairly large, so the amount of data should provide enough precision to be a reliable indicator for how well each model predicts the outcome with a single iteration of resampling.
+
+```{r}
+set.seed(234)
+val_set <- validation_split(hotel_other, 
+                            strata = children, 
+                            prop = 0.80)
+val_set
+#> # Validation Set Split (0.8/0.2)  using stratification 
+#> # A tibble: 1 x 2
+#>   splits             id        
+#>   <named list>       <chr>     
+#> 1 <split [30K/7.5K]> validation
+```
+
+This function, like `initial_split()` has the same `strata` argument, which uses stratified sampling to create the resample. This means that we will have roughly the same proportions of hotel stays with and without children in our new validation and training sets, as compared to the original `hotel_other` proportions.
+
+## A First model: penalized logistic regression
+
+Since our outcome variable children is categorical, logistic regression would be a good first model to start. Let’s use a model that can perform feature selection during training. The [glmnet](https://cran.r-project.org/web/packages/glmnet/index.html) R package fits a generalized linear model via penalized maximum likelihood. This method of estimating the logistic regression slope parameters uses a penalty on the process so that less relevant predictors are driven towards a value of zero. One of the glmnet penalization methods, called the [lasso method](https://en.wikipedia.org/wiki/Lasso_(statistics)) can actually set the predictor slopes to zero if a large enough penalty is used.
+
+### Build the model
+
+To specify a penalized logistic regression model that uses a feature selection penalty, let' use the parsnip package with the [glmnet engine](https://www.tidymodels.org/find/parsnip/):
+
+```{r}
+lr_model <- 
+  logistic_reg(penalty = tune(), mixture = 1) %>% 
+  set_engine("glmnet")
+
+lr_model
+```
+
+We will set the penalty argument to `tune()` as a placeholder for now. This is a model hyperparameter that we will tune to find the best value for making predictions with our data. Setting mixture to a value of one means that the glmnet model will potentially remove irrelevant predictors and choose a simpler model.
+
+## Create the receipe 
+
+Let's create a recipe to define the preprocessing steps we need to prepare our hotel stays data for this moel. It might make sense to crete a set of date-based predictors that reflect important components related to the arrival date. We have already introduced a [number of useful receipe steps](https://www.tidymodels.org/start/recipes/#features) for creating features from dates:
+
+- `step_date()` creates predictors for the year, month, and day of the week
+- `step_holiday()` generates a set pf omdocatpr varoab;es fpr specific holidays. Although we don't know where theses two hotels are located, we do know that the countries for origin for most staays are based on Europe
+- `step_rm()` removes vairables: here we will use it to remove theoriginal date variables ince we no longer wait in the model.
+
+Additionally, all categorical predictors (e.g., `distribution_channel`, `hotel`) should be converted to dummy variables, and all numeric predictors need to be centered and scaled. 
+
+- `step_dummu()`  converts characters or factors (i.e., nominal variables) into one or more numeric binary model terms for the levels of the original data.
+- `step_zv()` removes indicator variables that only contain a single unique value (e.g. all zeros). This is important because, for penalized models, the predictors should be centered and scaled.
+- `step_normalize()` centers and scales numeric variables.
+
+Putting all these steps together into a recipe for penalized logistic regression model, we have
+
+```{r}
+holidays <- c("AllSouls", "AshWednesday", "ChristmasEve", "Easter", 
+              "ChristmasDay", "GoodFriday", "NewYearsDay", "PalmSunday")
+
+lr_recipe <- 
+  recipe(children ~., data = hotel_other) %>% 
+  step_date(arrival_date) %>% 
+  step_holiday(arrival_date, holidays = holidays) %>%
+  step_rm(arrival_date) %>% 
+  step_dummy(all_predictors()) %>% 
+  step_normalize(all_predictors())
+```
+
+### Create the workflow
+
+As we introduced in Preproess your data with recipe, let’s bundle the model and recipe into a single `workflow() `object to make management of the R objects easier:
+
+```{r}
+lr_workflow <- 
+  workflow() %>% 
+  add_model(lr_mod) %>% 
+  add_recipe(lr_recipe)
+```
+
+### Creatt the grid for tuning
+
+Before we fit this model, we need to set up a grid of `penality` values to tune. In our Tune model parameters article, we used `dials::grid_regular()` to create an expanded grid based on a combination of two hyperparameters. Since we have only one hyperparameter to tune here, we can set the grid up manually using a one-column tibble with 30 candidate values:
+
+```{r}
+lr_reg_grid <- 
+  tibble(penalty = 10^seq(-4,-1, length.out = 30))
+
+# lowest penalty values 
+lr_reg_grid %>% 
+  top_n(-5)
+
+# highest penalty values 
+lr_reg_grid %>% 
+  top_n(5)
+```
+
+## Train and tune the moel
+
+Let's use `tune::tune_grid()` to train these 30 penalized logistic regression models. We will alos save the validation set predictions (via the call to `control_grid()`) so that diagnostic information can be availble after the model fit. The area under the ROC curve will be used to quantify how well the model performs across a continuum of event thresholds (recall that the event rate—the proportion of stays including children— is very low for these data).
+
+```{r}
+lr_res <- 
+  lr_workflow %>% 
+  tune_grid(val_set,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(roc_auc))
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
