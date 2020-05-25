@@ -1001,8 +1001,9 @@ opt_i <- which.min(oob_err)
 print(hyper_grid[opt_i,])
 ```
 
-
 # Boosted trees 
+## Introduction to boosting 
+
 
 
 
