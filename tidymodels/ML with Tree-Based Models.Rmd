@@ -716,15 +716,293 @@ credit_caret_model$results[,"ROC"]
 
 ## Generate predictions from the caret model
 
+Generate predictions on a test set for the `caret` model.
+
+```{r}
+# Generate predictions on the test set
+pred <- predict(object = credit_caret_model, 
+                newdata = credit_test,
+                type = "prob")
+
+# Compute the AUC (`actual` must be a binary (or 1/0 numeric) vector)
+auc(actual = ifelse(credit_test$default == "yes", 1, 0), 
+                    predicted = pred[,"yes"])
+```
+
+## Compare test set performance to CV performance
+
+In this excercise, you will print test set AUC estimates that you computed in previous exercises. These two methods use the same code underneath, so the estimates should be very similar.
+
+- The `credit_ipred_model_test_auc` object stores the test set AUC from the model trained using the `ipred::bagging()` function.
+- The `credit_caret_model_test_auc` object stores the test set AUC from the model trained using the `caret::train()` function with `method = "treebag"`.
+
+Lastly, we will print the 5-fold cross-validated estimate of AUC that is stored within the `credit_caret_model` object. This number will be a more accurate estimate of the true model performance since we have averaged the performance over five models instead of just one.
+
+On small datasets like this one, the difference between test set model performance estimates and cross-validated model performance estimates will tend to be more pronounced. When using small data, it's recommended to use cross-validated estimates of performance because they are more stable.
+
+```{r}
+# Print ipred::bagging test set AUC estimate
+print(credit_ipred_model_test_auc)
+
+# Print caret "treebag" test set AUC estimate
+print(credit_caret_model_test_auc)
+                
+# Compare to caret 5-fold cross-validated AUC
+credit_caret_model$results[, "ROC"]
+```
+
+# Random forest
+
+In this chapter, you will learn about the Random Forest algorithm, another tree-based ensemble method. Random Forest is a modified version of bagged trees with better performance. Here you'll learn how to train, tune and evaluate Random Forest models in R.
+
+## Introduction to Random Forest
+
+In the last chapter, we introduced bagged trees, which are a big improvement over a single decision tree. 
+
+- Better pefromance
+- Sample subset of the features 
+- Improved version of bagging
+- Reduced correlation between the sampled trees
+
+The basic idea behind random forests is identical to bagging, - both are ensembles of trees trained on bootstrapped samples of the training data. 
+
+However, in the random forest algorithm, there is slight tweak to the way the decision trees are built that leads to better performance. 
+
+They key difference is that when we train the trees that make up the ensemble. We add a bit of extra randomness to the model -- hence the name, Random Forests.
+
+At each split in the tree, rather than considering all features, or imput variables, for the split. We sample a subset of hese features and consider only these few variables as a candidates for the split. 
+
+The technique of sampling variables from the input or 
+feature space is also feature bagging, or the random subspace method.
+
+We have fewer variables to choose from, which means there is less information available to the model - so how can that lead to better performance? Adding this extra randomness leads to a collection of trees that are decorrelated (or more different) from one another.
+
+RF improve upon bagging by reducing the correlation between the sampled trees. The number of trees is specified through the `ntrees` argument and defaults to 500, which is usually a good place to start. 
+
+We can always add more trees to improve the performance of the ensemble - more trees almost always means better performance in a Random Forest.
+
+## Train a random forest model 
+
+Here you will use the `randomForest()` function from the randomForest package to train a Random Forest classifier to predict loan default.
+
+```{r}
+# Train a Random Forest
+library(randomForest)
+set.seed(1)  # for reproducibility
+credit_model <- randomForest(formula = default ~ ., 
+                             data = credit_train)
+                             
+# Print the model output                             
+print(credit_model)
+```
+
+## Understanding random forest model output
+
+You will see what's called the "out-of-bag" or OOB estimate of the error rate for the model. This is the error rate computed across the samples that were not selected into the bootstrapped training sets.
+
+Since this is the classification problem, we also see a confusion matrix based on the out-of-bag samples. Since each tree in the Random Forest is trained on a bootstrapped sample of the original training set, this means that some of the samples will be duplicated in the training set and some will be absent. 
+
+```{r}
+# Grab OOB error matrix & take a look
+err <- credit_model$err.rate
+head(err)
+```
+
+The i-th row reports the OOB error rate for all trees up to and including the i-th tree. The first column shows the error across all the classes and then there are additional columns for per-class OOB error. 
+
+If you get the last row, you will have the final out-of-bag error. This is the same value that is printed in the model output. When plotting the OOB error rates, the OOB error rates asa function of the number of trees in the forest. 
+
+This plot helps you decide how many trees are necessary to include in the ensemble. As you can see, when using less than 50 trees the OOB error remains quite high, but drops and starts to flattens out between 300 and 400 trees. 
+
+After a certain point, including more trees in your model will not get you any additional performance. There is nothing wrong with using "too many" trees, however, computing the predictions for each tree does take time, so you don't want to include more trees than you actually need.
+
+```{r}
+# look at final OOB error rate
+oob_err <- err[nrow(err), "OOB"]
+print(oob_err)
+
+err %>%
+  as.tibble() %>% 
+  mutate(trees = row_number()) %>% 
+  ggplot(aes(x = trees, y = OOB))+
+  geom_line()
+```
+
+## Evaluate out-of-bag error
+
+Here you will plot the OOB error as a function of the number of trees trained, and extract the final OOB error of the Random Forest model from the trained model object. 
+
+```{r}
+# Grab OOB error matrix & take a look
+err <- credit_model$err.rate
+head(err)
+
+# Look at final OOB error rate (last row in err matrix)
+oob_err <- err[nrow(err), "OOB"]
+print(oob_err)
+
+# Plot the model trained in the previous exercise
+plot(credit_model)
+
+# Add a legend since it doesn't have one by default
+legend(x = "right", 
+       legend = colnames(err),
+       fill = 1:ncol(err))
+```
+
+## Evaluate model performance on a test set
+
+Use the `caret::confusionMatrix()` function to compute test set accuracy and generate a confusion matrix. Compare the test set accuracy to the OOB accuracy.
+
+```{r}
+# Generate predicted classes using the model object
+class_prediction <- predict(object = credit_model,   # model object 
+                            newdata = credit_test,  # test dataset
+                            type = "class") # return classification labels
+                            
+# Calculate the confusion matrix for the test set
+pacman::p_load(caret, RandomForest)
+cm <- confusionMatrix(data = class_prediction,       # predicted classes,
+                      reference = credit_test$default)  # actual classes
+print(cm)
+
+# Compare test set accuracy to OOB accuracy
+paste0("Test Accuracy: ", cm$overall[1])
+paste0("OOB Accuracy: ", 1 - oob_err)
+```
+
+## OOB error vs. test set error
+
+AS a feature of the Random Forest algorithm, you are provided with a built-in validation set without any extra work on your part, and training data is not required to be sacrificed for validation.
+
+In addition the Random Forest has a OOB erro computation built-in, so you don't need to write any extra code to evaluate your model performance. 
+
+The RandomForest package does not keep track of which observations were part of the ot-of-bag sample in each tree, so there is no way to calculate these metrics after-the-fact.
+
+If you are comparing the performance of your Random Forest to another type model such as a GLM or SVM, then you would want to score each of these models on the same validation set to compare performance. 
+
+So although the out-of-bag error rate can be used to compare several random forests, you won't be able to perform a model comparison to any other type of model using the out-of-bag estimate. 
+
+## Evaluate test set AUC
+
+In Chapter 3, we learned about the AUC metric for evaluating binary classification models. In this exercise, you will compute test set AUC for the Random Forest model.
+
+```{r}
+# Generate predictions on the test set
+pred <- predict(object = credit_model,
+            newdata = credit_test,
+            type = "prob")
+
+# `pred` is a matrix
+class(pred)
+                
+# Look at the pred format
+head(pred)
+                
+# Compute the AUC (`actual` must be a binary 1/0 numeric vector)
+auc(actual = ifelse(credit_test$default == "yes", 1, 0), 
+    predicted = pred[,"yes"])                    
+```
+
+## Tuning a Random Forest model 
+
+Like any ML algorithm, the key to getting a good performance is to tune the model hyperparameters. Random Forest is one of the easiest algorithms to tune because there are only a handful of hyperparameters that have a big impact on the performance of the model.
+
+If you contrast tuning a random forest model to support vector or deep neural network, its a walk in the park. On the other hand, you will get performance by using the random forest, with little tuning and no expert knowledge required. 
+Random forest hyperparameters are:
+
+- `ntree`: number of trees 
+- `mtry`: number of variables randomy sampled as candidates at each split
+- `sampsize`: number of samples to train on
+- `nodesize`: minimum size (number of samples) of the terminal nodes
+- `maxnodes`: maximum number of terminal nodes 
+ 
+`mtry` is an important parameter that we will discuss in further detail in the next slide. 
+
+`nodesize` and `maxnodes` are both parameers that control the complexity of the tree. Whe `nodesize` is small, it allows deeper, more complex trees to be grown. `Maxnodes` is another way to limit tree growth and avoid overfitting. 
+
+Keep in mind that each random forest implementation can use different names for these same parameters. These are just the names that the random forest R package uses. 
+
+At each split in a tree, we consider some number of predictor variables - from this group, we choose the variable that splits the data in the most pure manner. `Mtry` is te number of predictor variables that we sample at each split. 
+
+The RandomForest package has a built-in function for tuning the `mtry` parameter called `tuneRF()`, which tunes the model based on OOB error. Rather thsan iterating over a set list of mtry values, the tuneRF function will start with default value of `mtry` and increase the value by an amount specified in the StepFactor argument. 
+
+The search will be stopped when the OOB error stops decreasing by a specified amount. Keep in mind that the specialized tuneRF() function is just one way to tune a Random Forest. A manual grid search will give us more control over the search space, allows us to evaluate the Random Forest using metrics other than OOB error and allow us to include other model hyperparamters in the grid search, such as nodesize and sampsize. 
+
+```{r eval=FALSE}
+# Execute the tuning process
+set.seed(1)
+res <- tuneRF(
+  x = train_predictor_df,
+  y = train_response_vector, 
+  mtreeTry = 500
+)
+```
 
 
+## Tuning a Random Forest via `mtry`
+
+In this exercise, you will use the randomForest::tuneRF() to tune mtry (by training several models). This function is a specific utility to tune the mtry parameter based on OOB error, which is helpful when you want a quick & easy way to tune your model. A more generic way of tuning Random Forest parameters will be presented in the following exercise.
+
+```{r}
+# Execute the tuning process
+set.seed(1)       
+library(randomForest)
+res <- tuneRF(x = subset(credit_train, select = -default),
+              y = credit_train$default,
+              ntreeTry = 500)
+               
+# Look at results
+print(res)
+
+# Find the mtry value that minimizes OOB Error
+mtry_opt <- res[,"mtry"][which.min(res[,"OOBError"])]
+print(mtry_opt)
+
+# If you just want to return the best RF model (rather than results)
+# you can set `doBest = TRUE` in `tuneRF()` to return the best RF model
+# instead of a set performance matrix.
+```
+
+## Tuning a Random Forest via tree depth
+
+In Chapter 2, we created a manual grid of hyperparameters using the `expand.grid()` function and wrote code that trained and evaluated the models of the grid in a loop. In this exercise, you will create a grid of `mtry`, `nodesize` and `sampsize` values. In this example, we will identify the "best model" based on OOB error. The best model is defined as the model from our grid which minimizes OOB error.
+
+Keep in mind that there are other ways to select a best model from a grid, such as choosing the best model based on validation AUC. However, for this exercise, we will use the built-in OOB error calculations instead of using a separate validation set.
+
+```{r}
+# Establish a list of possible values for mtry, nodesize and sampsize
+mtry <- seq(4, ncol(credit_train) * 0.8, 2)
+nodesize <- seq(3, 8, 2)
+sampsize <- nrow(credit_train) * c(0.7, 0.8)
+
+# Create a data frame containing all combinations 
+hyper_grid <- expand.grid(mtry = mtry, nodesize = nodesize, sampsize = sampsize)
+
+# Create an empty vector to store OOB error values
+oob_err <- c()
+
+# Write a loop over the rows of hyper_grid to train the grid of models
+for (i in 1:nrow(hyper_grid)) {
+
+    # Train a Random Forest model
+    model <- randomForest(formula = default ~ ., 
+                          data = credit_train,
+                          mtry = hyper_grid$mtry[i],
+                          nodesize = hyper_grid$nodesize[i],
+                          sampsize = hyper_grid$sampsize[i])
+                          
+    # Store OOB error for the model                      
+    oob_err[i] <- model$err.rate[nrow(model$err.rate), "OOB"]
+}
+
+# Identify optimal set of hyperparmeters based on OOB error
+opt_i <- which.min(oob_err)
+print(hyper_grid[opt_i,])
+```
 
 
-
-
-
-
-
+# Boosted trees 
 
 
 

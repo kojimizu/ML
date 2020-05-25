@@ -1541,7 +1541,211 @@ The `mtry` hyperparameter sets the number of predictor variables that each node 
 We will use a space-filing design to tune, with 25 candidate models:
 
 ```{r}
+set.seed(345)
+rf_res <- 
+  rf_workflow %>% 
+  tune_grid(val_set, 
+            grid = 25,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(roc_auc))
+# I created pre-processing data to finalize unknown parameter: mtry
+```
 
+The message printed above "Creating pre-processing data to finalize unknown parameter: mtry" is related to the size of the data set. Since `mtry` depends on the number of predictors in the data set, `tune_grid()` determines the upper bound for `mtry` once it receives the data. 
+
+Here are our top 5 random forest models, out of the 25 candidates: 
+
+```{r}
+rf_res %>% 
+  show_best(metric = "roc_auc")
+#> # A tibble: 5 x 7
+#>    mtry min_n .metric .estimator  mean     n std_err
+#>   <int> <int> <chr>   <chr>      <dbl> <int>   <dbl>
+#> 1     8     7 roc_auc binary     0.933     1      NA
+#> 2     6    18 roc_auc binary     0.933     1      NA
+#> 3     9    12 roc_auc binary     0.932     1      NA
+#> 4     3     3 roc_auc binary     0.932     1      NA
+#> 5     5    35 roc_auc binary     0.932     1      NA
+
+```
+
+Right away, we see that these values for area under the ROC look more promising than our top model using penalized logistic regression, which yielded an ROC AUC of 0.881. 
+
+Plotting the results of the tuning process highlights that both `mtry` (number of predictors at each node) and `min_n` (minimum number of data points required to keep splitting) should be fairly small to optmize performance. However, the range of the y-axis ndicates that the model is very robust to the choice of these parameter values — all but one of the ROC AUC values are greater than 0.90.
+
+```{r}
+autoplot(rf_res)
+```
+
+Let's select the best model according to the ROC AUC metric. Our final tuning parameter values are:
+
+```{r}
+rf_best <- 
+  rf_res %>% 
+  select_best(metric = "roc_auc")
+rf_best
+#> # A tibble: 1 x 2
+#>    mtry min_n
+#>   <int> <int>
+#> 1     8     7
+
+```
+
+To calculate the data needed to plot the ROC curve, we use `collect_predictions()`. This is only possible after tuning with `control_grid(save_pred = TRUE)`. In the output, you can see the two columns that hold our class probabilities for predicting hotel stays including and not including children. 
+
+```{r}
+rf_res %>% 
+  collect_predictions()
+#> # A tibble: 187,475 x 7
+#>   id         .pred_children .pred_none  .row  mtry min_n children
+#>   <chr>               <dbl>      <dbl> <int> <int> <int> <fct>   
+#> 1 validation       0.00158       0.998    11    12     7 none    
+#> 2 validation       0.000167      1.00     13    12     7 none    
+#> 3 validation       0.000286      1.00     31    12     7 none    
+#> 4 validation       0.000168      1.00     32    12     7 none    
+#> 5 validation       0.00075       0.999    36    12     7 none    
+#> # … with 1.875e+05 more rows
+```
+
+To filter the predictions for only our best random forest model, we can use the `parameters` argument and pass it our tibble with the best hyperparameter values from tuning, which we called `rf_best`:
+
+```{r}
+rf_auc <- 
+  rf_res %>% 
+  collect_predictions(parameters = rf_best) %>% 
+  roc_curve(children, .pred_children) %>% 
+  mutate(model = "Random Forest")
+```
+
+Now, we can compare the validation set ROC curves for our top penalized logistic regression model and random forest model:
+
+```{r}
+bind_rows(rf_auc, lr_auc) %>% 
+  ggplot(aes(x = 1 - specificity, y = sensitivity, col = model)) + 
+  geom_path(lwd = 1.5, alpha = 0.8) +
+  geom_abline(lty = 3) + 
+  coord_equal() + 
+  scale_color_viridis_d(option = "plasma", end = .6)
+```
+
+THe random forest is uniformly better across event probability thresholds.
+
+## The last fit
+
+Our goal was to predict which hotel stays included children and/or babies. The random forest model clearly performed better than the penalized logistic regression model, and would be our best bet for predicting hotel stays with and without children. After selecting our best model and hyperparameter values, our last step is to fit the final model on all the rows of data not originally held out for testing (both the training and the validation sets combined), and then evaluate the model performance one last time with the held-out test set.
+
+We’ll start by building our parsnip model object again from scratch. We take our best hyperparameter values from our random forest model. When we set the engine, we add a new argument: `importance = "impurity"`. This will provide variable importance scores for this last model, which gives some insight into which predictors drive model performance.
+
+```{r}
+# the last model
+last_rf_mod <- 
+  rand_forest(mtry = 8, min_n = 7, trees = 1000) %>% 
+  set_engine("ranger", num.threads = cores, importance = "impurity") %>% 
+  set_mode("classification")
+
+# the last workflow
+last_rf_workflow <- 
+  rf_workflow %>% 
+  update_model(last_rf_mod)
+
+# the last fit
+set.seed(345)
+last_rf_fit <- 
+  last_rf_workflow %>% 
+  last_fit(splits)
+
+last_rf_fit
+#> # Monte Carlo cross-validation (0.75/0.25) with 1 resamples  
+#> # A tibble: 1 x 6
+#>   splits         id          .metrics     .notes      .predictions     .workflow
+#> * <list>         <chr>       <list>       <list>      <list>           <list>   
+#> 1 <split [37.5K… train/test… <tibble [2 … <tibble [0… <tibble [12,500… <workflo…
+
+```
+
+This fitted workflow contains _everything_, including our final metrics based on the test set. So, how did this model do on the test set? Was the validation set a good estimate of future performance?
+
+```{r}
+last_rf_fit %>% 
+  collect_metrics()
+#> # A tibble: 2 x 3
+#>   .metric  .estimator .estimate
+#>   <chr>    <chr>          <dbl>
+#> 1 accuracy binary         0.947
+#> 2 roc_auc  binary         0.922
+```
+
+This ROC AUC value is pretty close to what we saw when we tuned the random forest model with the validation set, which is good news. That means that our estimate of how well our model would perform with new data was not too far off from how well our model actually performed with the unseen test data.
+
+We can access those variable importance scores via the `.workflow` column. We first need to [pluck](https://purrr.tidyverse.org/reference/pluck.html) out the first element in the workflow column, then [pull out the fit](https://tidymodels.github.io/workflows/reference/workflow-extractors.html) from the workflow object. Finally, the vip package helps us visualize the variable importance scores for the top 20 features:
+
+```{r}
+last_rf_fit %>% 
+  pluck(".workflow", 1) %>% 
+  pull_workflow_fit() %>% 
+  vip(num_features = 20)
+```
+
+The most important predictors in whether a hotel stay had children or not were the daily cost for the room, the type of room reserved, the type of room that was ultimately assigned, and the time between the creation of the reservation and the arrival date.
+
+Let's generate our last ROC curve to visualize. Since the event we are predicting is the first level in the `children` factor ("children"), we provide `roc_curve()` with the relevant class probability `.pred_children`:
+
+```{r}
+last_rf_fit %>% 
+  collect_predictions() %>% 
+  roc_curve(children, .pred_children) %>% 
+  autoplot()
+```
+
+Based on these results, the validation set and test set performance statistics are very close, so we would have pretty high confidence that our random forest model with the selected hyperparameters would perform well when predicting new data.
+
+## Where to Next
+
+If you’ve made it to the end of this series of Get Started articles, we hope you feel ready to learn more! You now know the core tidymodels packages and how they fit together. After you are comfortable with the basics we introduced in this series, you can learn how to go farther with tidymodels in your modeling and machine learning projects.
+
+Here are some more ideas for where to go next:
+
+- Study up on statistics and modeling with our comprehensive books.
+- Dig deeper into the package documentation sites to find functions that meet your modeling needs. Use the searchable tables to explore what is possible.
+- Keep up with the latest about tidymodels packages at the tidyverse blog.
+- Find ways to ask for help and contribute to tidymodels to help others.
+
+# [Learn](https://www.tidymodels.org/learn/)
+## Perfrom statitical analysis 
+
+After you know what you need to get started with tidymodels, you can learn more and go further. Find articles here to help you solve specific problems using the tidymodels framework. Articles are organized into four categories:
+
+## [Correltion nd regression fundamental with tidy data principles](https://www.tidymodels.org/learn/statistics/tidy-analysis/)
+
+Analyze the results of correlation tests and simple regression models for many data sets at ounce. 
+
+### Introduction
+
+To use the code in this article, you need to install the following packages: `tidymodels` and `tidyr`. 
+
+While the tidymodels package broom is useful for summarizing the result of a single analysis in a consistent format, it is really designed for high-throughput applications, where you must combine results from multiple analyses. These could be subgroups of data, analyses using different models, bootstrap replicates, permutations, and so on. In particular, it plays well with the `nest()`/`unnest()` functions from tidyr and the `map()` function in purrr.
+
+### Correlation analysis
+
+LEt's demonsotrate this with a simple data set, the built-in `Orange`. We start by coercing `Orange` to a `tibble`. This give us a nicer print method that will be especially useful later on when we start working with list-columns. 
+
+```{r}
+library(tidymodels)
+data("Orange")
+
+Orange <- as_tibble(Orange)
+Orange
+```
+
+This contains 35 observatios of three variables: `Tree`, `age` and `circumference`. `Tree` is a factor with five levels describing five trees. As might be expected, age and circumference are correlated:
+
+```{r}
+cor(Orange$age, Orange$circumference)
+
+library(ggplot2)
+ggplot(Orange, aes(age, circumference, color = Tree))+
+  geom_point()+
+  geom_line()
 ```
 
 
@@ -1550,15 +1754,74 @@ We will use a space-filing design to tune, with 25 candidate models:
 
 
 
+# Blog 
+## Tune XGBoost with tidymodels 
 
+This blog post comes from [Julia Silge's 2020.5.21 post ](https://juliasilge.com/blog/xgboost-tune-volleyball/).
 
+Lately I’ve been publishing screencasts demonstrating how to use the tidymodels framework, starting from just getting started. Today’s screencast explores a more advanced topic in how to tune an XGBoost classification model using with this week’s #TidyTuesday dataset on beach volleyball. 🏐
 
+### Explore the data 
 
+Out modeling goal is to predict whether a beach volleyball team of two won their match based on [game play stats like errors, blocks, attacks, etc from this week’s #TidyTuesday dataset .](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-05-19/readme.md).
 
+This dataset is quite extensive so its a great opportunity to try a more powerful machine learning algorithm like XGBoost. This model has lots of tuning parameters. 
 
+```{r}
+vb_matches <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-05-19/vb_matches.csv', guess_max = 76000)
 
+vb_matches
+```
 
+This data set has the match stats like serv errors, kills, and so forth divided out by the two players for each team, but we want those combined together because we are going to make a prediction __per team__ (i.e. what makes a team more likely to win). Let’s include predictors like gender, circuit, and year in our model along with the per-match statistics. Let’s omit matches with NA values because we don’t have all kinds of statistics measured for all matches.
 
+```{r}
+vb_parsed <- vb_matches %>% 
+  transmute(
+    circuit,
+    gender,
+    year,
+    w_attacks = w_p1_tot_attacks + w_p2_tot_attacks,
+    w_kills = w_p1_tot_kills + w_p2_tot_kills,
+    w_errors = w_p1_tot_errors + w_p2_tot_errors,
+    w_aces = w_p1_tot_aces + w_p2_tot_aces,
+    w_serve_errors = w_p1_tot_serve_errors + w_p2_tot_serve_errors,
+    w_blocks = w_p1_tot_blocks + w_p2_tot_blocks,
+    w_digs = w_p1_tot_digs + w_p2_tot_digs,
+    l_attacks = l_p1_tot_attacks + l_p2_tot_attacks,
+    l_kills = l_p1_tot_kills + l_p2_tot_kills,
+    l_errors = l_p1_tot_errors + l_p2_tot_errors,
+    l_aces = l_p1_tot_aces + l_p2_tot_aces,
+    l_serve_errors = l_p1_tot_serve_errors + l_p2_tot_serve_errors,
+    l_blocks = l_p1_tot_blocks + l_p2_tot_blocks,
+    l_digs = l_p1_tot_digs + l_p2_tot_digs)
 
+vb_parsed %>% 
+  Amelia::missmap()
+
+vb_parsed <- vb_parsed %>% 
+  na.omit()
+```
+
+Still plenty of data! Next, let's create separate dataframes for the winners and losers of each match, and then bind them together. I am using functions like `rename_with` from the upcoming dplyr release here. 
+
+```{r}
+library(tidyverse)
+
+winners <- vb_parsed %>%
+  select(circuit, gender, year,
+         w_attacks:w_digs) %>%
+  rename_with(~ str_remove_all(., "w_"), w_attacks:w_digs) %>%
+  mutate(win = "win")
+
+losers <- vb_parsed %>% 
+  select(circuit, gender, year,
+         l_attacks:l_digs) %>%
+  rename_with(~ str_remove_all(., "l_"), l_attacks:l_digs) %>%
+  mutate(win = "lose")
+
+vb_df <- bind_rows(winners, losers) %>%
+  mutate_if(is.character, factor)
+```
 
 
