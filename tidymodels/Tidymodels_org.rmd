@@ -2032,7 +2032,11 @@ This represents the variance within the clusters. It decreases as `k` increases,
 
 ## Bootstrap resampling and tidy regression models 
 
+Apply bootstrap resampling to estimate uncertainty in model parameters.Combining fitted models in a tidy way is useful for performing bootstrapping or permutation tests. These approaches have been explored before, for instance by Andrew MacDonald here, and Hadley has explored efficient support for bootstrapping as a potential enhancement to dplyr. The tidymodels package broom fits naturally with dplyr in performing these analyses.
 
+### Introduction 
+
+To use the code in this article, you will need packages `tidymodels` and `tidyr`. 
 
 # Blog 
 ## Tune XGBoost with tidymodels 
