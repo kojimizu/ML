@@ -1004,6 +1004,11 @@ print(hyper_grid[opt_i,])
 # Boosted trees 
 ## Introduction to boosting 
 
+## Bagged trees vs Boosted trees 
+
+
+## Train a GBM model
+
 
 
 

@@ -33,6 +33,7 @@ The MNIST dataset comes preloaded in Keras, in the form of `train` and `test` li
 
 ```{r}
 library(keras)
+library(tensorflow)
 
 mnist <- dataset_mnist()
 train_images <- mnist$train$x
@@ -334,6 +335,80 @@ layer_dense(units = 512, activation = "relu")
 ```
 
 This layer can be interpreted as a function, which takes as input a 2D tensor and returns another 2D tensor - a new representation for the input tensor. Specifically, the function is as follows (where `w` is a 2D tensor and `b` is a vector, both attribute of the layer).
+
+```{r eval=FALSE}
+output = relu(dot(W, input) +b)
+```
+
+Let's unpack this. We have three tensor operations here: a dot product (`dot`) between the input tensor and a tensor named `W`; an addition between the resulting 2D tensor and a vector `b`; and finally, a `relu` operation. `relu(x)` is `max(x,0)`. 
+
+### Element-wise operations 
+
+The `relu` n and addition are element-wise operations: operations that are applied
+independently to each entry in the tensors being considered. This means these operations are highly amenable to massively parallel implementations (vectorized implementations, a term that comes from the vector processor supercomputer architecture from the
+1970–1990 period). If you want to write a naive R implementation of an element-wise
+operation, you use a for loop, as in this naive implementation of an element-wise relu
+operation:
+
+```{r}
+naive_relue <- function(x){
+  for (i in nrow(x))
+    for (j in ncol(x))
+      x[i, j] <- max(x[i,j], 0)
+}
+```
+
+You do the same for addition:
+
+```{r}
+naive_add <- function(x,y){
+  for (i in nrow(x))
+    for (j in ncol(x))
+      x[i, j] = x[i, j] + y[i, j]
+}
+```
+
+On the same principle, you can do element-wise multipication, substraction and so on. 
+
+In practice, when dealing with R arrays, these operations are available as welloptimized built-in R functions, which themselves delegate the heavy lifting to a BLAS
+implementation (Basic Linear Algebra Subprograms) if you have one installed (which
+you should). BLAS are low-level, highly parallel, efficient tensor-manipulation routines
+typically implemented in Fortran or C.
+ So in R you can do the following native element-wise operations, and they will be
+blazing fast:
+
+```{r eval=FALSE}
+z <- x + y # element-wise addition
+z <- pmax(z, 0)
+```
+
+### Operations involving tensors of different dimensions 
+
+Our earlier naive implementation of `naive_add` only supports the addition of 2D tensors with identical shapes. But in the dense layer introduced earlier, we added a 2D tensor with a vector. What happens with addition when the shapes of the two tensors
+being added differ?
+
+The R `sweep()` function enables you to perform operations between higherdimension tensors and lower-dimension tensors. With `sweep()`, we could perform the matrix plus vector addition described earlier as follows:
+
+```{r}
+sweep(x, 2, y, `+`)
+```
+
+The second argument (here, 2) specifies the dimensions of x over which to sweep y. The last argument (here, +) is the operation to perform during the sweep, which should be a function of two arguments: x and an array of the same dimensions generated from y by `aperm()`.
+
+You can apply a sweep in any number of dimensions and can apply any function that implements a vectorized operation over two arrays. The following example sweeps a 2D tensor over the last two dimensions of a 4D tensor using the `pmax()` function:
+
+```{r} 
+x <- array(round(runif(1000,0,9)), 
+           dim = c(64, 3, 32, 10))
+y <- array(5, dim = c(32,10))
+z <- sweep(x, c(3,4), y, pmax)
+```
+
+### Tensor dot 
+
+
+
+
 
 
 
