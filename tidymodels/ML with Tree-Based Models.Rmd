@@ -1002,14 +1002,243 @@ print(hyper_grid[opt_i,])
 ```
 
 # Boosted trees 
-## Introduction to boosting 
-
-## Bagged trees vs Boosted trees 
-
 
 ## Train a GBM model
 
+Here you will use the gbm() function to train a GBM classifier to predict loan default. You will train a 10,000-tree GBM on the credit_train dataset, which is pre-loaded into your workspace.
+
+Using such a large number of trees (10,000) is probably not optimal for a GBM model, but we will build more trees than we need and then select the optimal number of trees based on early performance-based stopping. The best GBM model will likely contain fewer trees than we started with.
+
+For binary classification, gbm() requires the response to be encoded as 0/1 (numeric), so we will have to convert from a "no/yes" factor to a 0/1 numeric response column.
+
+Also, the the gbm() function requires the user to specify a distribution argument. For a binary classification problem, you should set distribution = "bernoulli". The Bernoulli distribution models a binary response.
+
+```{r}
+# Convert "yes" to 1, "no" to 0
+credit_train$default <- ifelse(credit_train$default == "yes",1, 0)
+
+# Train a 10000-tree GBM model
+set.seed(1)
+credit_model <- gbm(formula = default ~ ., 
+                    distribution = "bernoulli", 
+                    data = credit_train,
+                    n.trees = 10000)
+                    
+# Print the model object                    
+print(credit_model)
+
+# summary() prints variable importance
+summary(credit_model)
+```
+
+## Understanding GBM model output
+
+You will see what's called the "out-of-bag" or OOB estimate of the error rate for the model. This is the error rate computed across the samples that were not selected into the bootstrapped training sets.
+
+Since this is the classification problem, we also see a confusion matrix based on the out-of-bag samples. Since each tree in the Random Forest is trained on a bootstrapped sample of the original training set, this means that some of the samples will be duplicated in the training set and some will be absent. 
+
+```{r}
+# Grab OOB error matrix & take a look
+err <- credit_model$err.rate
+head(err)
+```
+
+The i-th row reports the OOB error rate for all trees up to and including the i-th tree. The first column shows the error across all the classes and then there are additional columns for per-class OOB error. 
+
+If you get the last row, you will have the final out-of-bag error. This is the same value that is printed in the model output. When plotting the OOB error rates, the OOB error rates asa function of the number of trees in the forest. 
+
+This plot helps you decide how many trees are necessary to include in the ensemble. As you can see, when using less than 50 trees the OOB error remains quite high, but drops and starts to flattens out between 300 and 400 trees. 
+
+After a certain point, including more trees in your model will not get you any additional performance. There is nothing wrong with using "too many" trees, however, computing the predictions for each tree does take time, so you don't want to include more trees than you actually need.
+
+```{r}
+# look at final OOB error rate
+oob_err <- err[nrow(err), "OOB"]
+print(oob_err)
+
+err %>%
+  as.tibble() %>% 
+  mutate(trees = row_number()) %>% 
+  ggplot(aes(x = trees, y = OOB))+
+  geom_line()
+```
 
 
+## Prediction using a GBM model 
+
+The gbm package uses a predict() function to generate predictions from a model, similar to many other machine learning packages in R. When you see a function like predict() that works on many different types of input (a GBM model, a RF model, a GLM model, etc), that indicates that predict() is an "alias" for a GBM-specific version of that function. The GBM specific version of that function is predict.gbm(), but for convenience sake, we can just use predict() (either works).
+
+One thing that's particular to the predict.gbm() however, is that you need to specify the number of trees used in the prediction. There is no default, so you have to specify this manually. For now, we can use the same number of trees that we specified when training the model, which is 10,000 (though this may not be the optimal number to use).
+
+Another argument that you can specify is type, which is only relevant to Bernoulli and Poisson distributed outcomes. When using Bernoulli loss, the returned value is on the log odds scale by default and for Poisson, it's on the log scale. If instead you specify type = "response", then gbm converts the predicted values back to the same scale as the outcome. This will convert the predicted values into probabilities for Bernoulli and expected counts for Poisson.
+
+```{r}
+# Since we converted the training response col, let's also convert the test response col
+credit_test$default <- ifelse(credit_test$default == "yes", 1, 0)
+
+# Generate predictions on the test set
+preds1 <- predict(object = credit_model, 
+                  newdata = credit_test,
+                  n.trees = 10000)
+
+# Generate predictions on the test set (scale to response)
+preds2 <- predict(object = credit_model, 
+                  newdata = credit_test,
+                  n.trees = 10000,
+                  type = "response")
+
+# Compare the range of the two sets of predictions
+range(preds1)
+range(preds2)
+```
+
+## Evaluate tet set AUC
+
+Compute test set AUC of the GBM model for the two sets of predictions. We will notice that they are the same value. That's because AUC is a rank-based metric, so changing the actual values does not change the value of the AUC.
+
+However, if we were to use a scale-aware metric like RMSE to evaluate performance, we would want to make sure we converted the predictions back to the original scale of the response.
+
+```{r}
+# Generate the test set AUCs using the two sets of preditions & compare
+auc(actual = credit_test$default, predicted = preds1)  #default
+auc(actual = credit_test$default, predicted = preds2)  #rescaled
+```
+
+## GBM hyperparameters 
+
+The GBM model can be tuned via grid search across some subset of the GBM model hyperparameters. 
+
+- `ntrees`: number of trees 
+- `bag.fraction`: proportion of observations to be sampled in each tree
+- `n.minobsinnode`: minimum number of observations in the tree terminal nodes 
+- `interaction.depth`: maximum nodes per tree
+- `shrinkage`: learning rate (which reduces the size of incremental steps and penalizes the importance of each consecutive iteration)
+
+The ideal time to stop training an iterative model is after the validation error has decreased and started to stabilize, and before the validation error starts to increase due to overfitting. 
+
+The gbm package exclusively uses error for early stopping purposes, but other GBM implementations such as the ones in the h2o package or xgboost, will allow you to specify a variety of metrics such as AUC or log-loss to control early stopping. 
+
+The gbm package comes with a built-in function for estimating the optimal number of boosting iterations (aka n trees) called. The method argument specifies the method used to estimate the optimal number of boosting iterations. 
+
+method = "OOB" computes the out-of-bag estimate and method = "cv" extracts the optimal number of iterations using CV if gbm was called with cv dot folds >1. 
+
+```{r}
+# train a GBM model 
+model <- gbm(formula = response ~,
+             distribution = "bernoulli",
+             data = train,
+             n.trees = 5000,
+             cv.folds = 3)
+
+# get optimal ntree based on OOB error
+ntree_opt_oob <- gbm.perf(model, method = "OOB")
+```
+
+## Early stopping in GBMs. 
+
+Use the `gbm.perf()` function to estimate the optimal number of boosting iterations (aka `n.trees`) for a GBM model object using both OOB and CV error. When you set out to train a large number of trees in a GBM (such as 10,000) and you use a validation method to determine an earlier (smaller) number of trees, then that's called "early stopping". The term "early stopping" is not unique to GBMs, but can describe auto-tuning the number of iterations in an iterative learning algorithm.
+
+```{r}
+# Optimal ntree estimate based on OOB
+ntree_opt_oob <- gbm.perf(object = credit_model, 
+                          method = "OOB", 
+                          oobag.curve = TRUE)
+
+# Train a CV GBM model
+set.seed(1)
+credit_model_cv <- gbm(formula = default ~ ., 
+                       distribution = "bernoulli", 
+                       data = credit_train,
+                       n.trees = 10000,
+                       cv.folds = 2,
+                       n.cores = 1)
+
+# Optimal ntree estimate based on CV
+ntree_opt_cv <- gbm.perf(object = credit_model_cv, 
+                         method = "cv")
+ 
+# Compare the estimates                         
+print(paste0("Optimal n.trees (OOB Estimate): ", ntree_opt_oob))                         
+print(paste0("Optimal n.trees (CV Estimate): ", ntree_opt_cv))
+```
+
+
+## OOB vs CV-based early stopping 
+
+In the previous exercise, we used OOB error and cross-validated error to estimate the optimal number of trees in the GBM. These are two different ways to estimate the optimal number of trees, so in this exercise we will compare the performance of the models on a test set. We can use the same model object to make both of these estimates since the `predict.gbm()` function allows you to use any subset of the total number of trees (in our case, the total number is 10,000).
+
+```{r}
+# Generate predictions on the test set using ntree_opt_oob number of trees
+preds1 <- predict(object = credit_model, 
+                  newdata = credit_test,
+                  n.trees = ntree_opt_oob)
+                  
+# Generate predictions on the test set using ntree_opt_cv number of trees
+preds2 <- predict(object = credit_model, 
+                  newdata = credit_test,
+                  n.trees = ntree_opt_cv)   
+
+# Generate the test set AUCs using the two sets of preditions & compare
+auc1 <- auc(actual = credit_test$default, predicted = preds1)  #OOB
+auc2 <- auc(actual = credit_test$default, predicted = preds2)  #CV 
+
+# Compare AUC 
+print(paste0("Test set AUC (OOB): ", auc1))                         
+print(paste0("Test set AUC (CV): ", auc2))
+```
+
+## Model comparison via ROC Curve & AUC 
+
+In the remaining exercises, we will perform a model comparison across all types of models that we have learned about so far; Decision trees, bagged trees, random forest and gradient boosting machine. 
+
+In chapter 3, we introduced AUC as performance metric to compare binary classification models. 
+
+We will use the test set predictions from each of the models and compute test set AUC. The model with the highest AUC is considered to be the best performing model. 
+
+After, we will visualize the ROC curves for each of the model and plot them all on the same graph. 
+
+## Compare all models based on AUC
+
+In this final exercise, we will perform a model comparison across all types of models that we've learned about so far: Decision Trees, Bagged Trees, Random Forest and Gradient Boosting Machine (GBM). The models were all trained on the same training set, `credit_train`, and predictions were made for the `credit_test` dataset.
+
+We have pre-loaded four sets of test set predictions, generated using the models we trained in previous chapters (one for each model type). The numbers stored in the prediction vectors are the raw predicted values themselves -- not the predicted class labels. Using the raw predicted values, we can calculate test set AUC for each model and compare the results.
+
+```{r}
+# Generate the test set AUCs using the two sets of predictions & compare
+actual <- credit_test$default
+dt_auc <- auc(actual = actual, predicted = dt_preds)
+bag_auc <- auc(actual = actual, predicted = bag_preds)
+rf_auc <- auc(actual = actual, predicted = rf_preds)
+gbm_auc <- auc(actual = actual, predicted = gbm_preds)
+
+# Print results
+sprintf("Decision Tree Test AUC: %.3f", dt_auc)
+sprintf("Bagged Trees Test AUC: %.3f", bag_auc)
+sprintf("Random Forest Test AUC: %.3f", rf_auc)
+sprintf("GBM Test AUC: %.3f", gbm_auc)
+```
+
+## Plot & compare ROC curves
+
+We conclude this course by plotting the ROC curves for all the models (one from each chapter) on the same graph. The ROCR package provides the `prediction()` and `performance()` functions which generate the data required for plotting the ROC curve, given a set of predictions and actual (true) values.
+
+The more "up and to the left" the ROC curve of a model is, the better the model. The AUC performance metric is literally the "Area Under the ROC Curve", so the greater the area under this curve, the higher the AUC, and the better-performing the model is.
+
+```{r}
+# List of predictions
+preds_list <- list(dt_preds, bag_preds, rf_preds, gbm_preds)
+
+# List of actual values (same for all)
+m <- length(preds_list)
+actuals_list <- rep(list(credit_test$default), m)
+
+# Plot the ROC curves
+pred <- prediction(preds_list, actuals_list)
+rocs <- performance(pred, "tpr", "fpr")
+plot(rocs, col = as.list(1:m), main = "Test Set ROC Curves")
+legend(x = "bottomright", 
+       legend = c("Decision Tree", "Bagged Trees", "Random Forest", "GBM"),
+       fill = 1:m)
+```
 
 
