@@ -378,9 +378,34 @@ ggplot(x_grid, aes(x = A, y = B)) +
 
 ```
 
+## Subsampling for class imbalances 
+
+Improve model performance in imbalanced data sets through undersampling or oversampling.
+
+### Introduction 
+
+To use the code in this article, you will need to install the following packages: `discrim`, `klaR`, `readr`, `ROSE`, `themis`, and tidymodels.
+
+```{r}
+# pacman::p_install(c(discrim, klaR, ROSE, themis))
+
+pacman::p_load(
+  discrim,
+  klaR,
+  readr,
+  ROSE,
+  themis,
+  tidymodels)
+```
 
 
+Subsampling a training set, either undersampling or oversampling the appropriate class or classes, can be a helpful approach to dealing with classification data where one or more classes occur very infrequently. In such a situation (without compensating for it), most models will overfit to the majority class and produce very good statistics for the class containing the frequently occurring classes while the minority classes have poor performance.
 
+This article describes subsampling for dealing with class imbalances. For better understanding, some knowledge of classification metrics like _sensitivity_, _specificity_, and _receiver operating characteristic_ curves is required. See Section 3.2.2 in Kuhn and Johnson (2019) for more information on these metrics.
+
+### Simulated data
+
+Consider a two-class problem where the first class has a very low rate of occurence. The data were simulated and can be imported into R usig the code below. 
 
 
 
