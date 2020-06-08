@@ -1003,10 +1003,124 @@ print(hyper_grid[opt_i,])
 
 # Boosted trees 
 
+<<<<<<< HEAD
+We will also learn how to use the gbm package to train and tune GBM models in R. The two most popular boosting algorithms are `Adaboost` and `Gradient Boosting Machine`
+
+- `Adaboost`
+  - Train decision tree with equally weighted observations
+  - Second tree is grown on weighted data 
+  - The idea is to improve the predictions of first tree. The new model is now Tree 1 + Tree 2 (**New model: Tree 1 + Tree 2**). 
+  - The classification error from this 2-tree ensemble model and grow 3rd tree to predict the revised residuals.
+  - Repeat this process for a specified number of iterations. 
+  
+- `GBM` (Gradient Boosting) = Gradient Descent + Boosting
+  - Fit an additive model (ensemble) in a foward, stage-wise manner
+  - In each stage, introduce a weak learner to compensate the _shortcomings_ of existing weak learners
+  - In `Adaboost`, the _shortcomings_ are identified by high-weight data points
+  - In Gradient Boosting, the _shortcomings_ are identified by gradients
+  
+GBM identifies the shotcomings of weak learners by gradients in the loss function instead of the high weights used in Adaboost. Both high-weight data points and gradients tell us how to improve our model.
+
+One of the reasons that GBM is so popular is that if it is tuned properly, the performance is often better than any other algorithm in your toolbox. 
+
+An optimized GBM can outperform even the state of the art in deep learning on many datasets.
+
+__Advantages__
+- Often performs better than any other algorithm
+- Directly optimizes cost function
+
+__Disadvantages__
+- Overfits (need to find a proper stopping points)
+- Sensitive to extreme values and noises
+
+```{r eval=FALSE}
+# sample code
+model <- gbm(formula = response ~.,
+             distribution = "bernoulli", # distribution of the response variable, bernoulli for this code with a binary classification problem
+             data = train,
+             n.trees = 5000)
+
+```
+
+## Train a GBM model 
+
+Here you will use the `gbm()` function to train a GBM classifier to predict loan default. You will train a 10,000-tree GBM on the credit_train dataset, which is pre-loaded into your workspace.
+
+Using such a large number of trees (10,000) is probably not optimal for a GBM model, but we will build more trees than we need and then select the optimal number of trees based on early performance-based stopping. The best GBM model will likely contain fewer trees than we started with.
+
+For binary classification, `gbm()` requires the response to be encoded as 0/1 (numeric), so we will have to convert from a "no/yes" factor to a 0/1 numeric response column.
+
+Also, the the `gbm()` function requires the user to specify a `distribution` argument. For a binary classification problem, you should set `distribution = "bernoulli"`. The Bernoulli distribution models a binary response.
+
+```{r}
+# Convert "yes" to 1, "no" to 0
+credit_train$default <- ifelse(credit_train$default == "yes",1, 0)
+
+# Train a 10000-tree GBM model
+library(gbm)
+set.seed(1)
+credit_model <- gbm(formula = default ~ ., 
+                    distribution = "bernoulli", 
+                    data = credit_train,
+                    n.trees = 10000)
+                    
+# Print the model object                    
+print(credit_model)
+
+# summary() prints variable importance
+summary(credit_model)
+```
+
+## Understanding GBM model output
+
+When we print the GBM object, it will remind u how many trees, or iterations were trained in its execution. Using its internal calculations of variable importance, it will also let us know if any of our predictor variables had no influence in the model. 
+
+IF you have noise variables or variables with no correlation with the outcome in your training dat, they should show up here. 
+
+```{r}
+print(credit_model)
+```
+
+Another nice feature of tree-based models is that they have built-in mechanism for evaluating variable importance. 
+
+Random forest models also return a variable importance table as part of the output. GBM provides the variable importance table by `summary()`, and this table ranks the variables their relative importance, which is a measure that quantifies how useful certain variable were in training the model. 
+
+```{r}
+summary(credit_model)
+```
+
+In the credit model, we see that checking balance and amount are by far the most important variables. 
+
+The gbm package uses the `predict()` function to generate predictions from a model, similar to many other machine learning packages in R. 
+
+For GBM, the number of trees to use in the prediction needs to be specified. There is no default value, thus you have to specify this manually. 
+
+```{r}
+predict(credit_model,
+        type = "response",
+        n.trees = 10000) %>% 
+  as_tibble() %>% 
+  mutate(pred = if_else(value>.5, 1, 0)) %>% 
+  bind_cols(data = credit_train$default) %>% 
+  dplyr::group_by(pred) %>% 
+  count(data)
+```
+
+
+
+
+
+
+
+
+=======
 ## Train a GBM model
+>>>>>>> 9c1267b9ed0909bbf178a6e6fc336fd1b86cb624
 
 Here you will use the gbm() function to train a GBM classifier to predict loan default. You will train a 10,000-tree GBM on the credit_train dataset, which is pre-loaded into your workspace.
 
+<<<<<<< HEAD
+=======
 Using such a large number of trees (10,000) is probably not optimal for a GBM model, but we will build more trees than we need and then select the optimal number of trees based on early performance-based stopping. The best GBM model will likely contain fewer trees than we started with.
 
 For binary classification, gbm() requires the response to be encoded as 0/1 (numeric), so we will have to convert from a "no/yes" factor to a 0/1 numeric response column.
@@ -1143,6 +1257,7 @@ Use the `gbm.perf()` function to estimate the optimal number of boosting iterati
 ntree_opt_oob <- gbm.perf(object = credit_model, 
                           method = "OOB", 
                           oobag.curve = TRUE)
+>>>>>>> 9c1267b9ed0909bbf178a6e6fc336fd1b86cb624
 
 # Train a CV GBM model
 set.seed(1)

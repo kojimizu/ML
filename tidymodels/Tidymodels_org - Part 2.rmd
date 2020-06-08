@@ -256,20 +256,298 @@ This final plot compares the performance of the random forest and regularized re
 
 ### Introduction
 
+To use the code in this article, you will need to install the following packages: keras and tidymodels. You will also need the python keras library installed (see `?keras::install_keras()`).
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(keras)
+```
 
 
+We can create classification models with the tidymodels package parsnip to predict categorical quantities or class labels. Here, let’s fit a single classification model using a neural network and evaluate using a validation set. While the tune package has functionality to also do this, the parsnip package is the center of attention in this article so that we can better understand its usage.
+
+### Fitting a neural network
+
+Let’s fit a model to a small, two predictor classification data set. The data are in the modeldata package (part of tidymodels) and have been split into training, validation, and test data sets. In this analysis, the test set is left untouched; this article tries to emulate a good data usage methodology where the test set would only be evaluated once at the end after a variety of models have been considered.
+
+```{r}
+library(keras)
+data(bivariate)
+nrow(bivariate_train)
+#> [1] 1009
+nrow(bivariate_val)
+#> [1] 300
+```
+
+A plot of the data shows two right-skewed predictors:
+
+```{r}
+ggplot(bivariate_train, aes(x = A, y = B, col = Class)) + 
+  geom_point(alpha = .2)
+```
+
+Let’s use a single hidden layer neural network to predict the outcome. To do this, we transform the predictor columns to be more symmetric (via the s`tep_BoxCox()` function) and on a common scale (using `step_normalize()`). We can use recipes to do so:
+
+```{r}
+biv_rec <- 
+  recipe(Class ~ ., data = bivariate_train) %>%
+  step_BoxCox(all_predictors())%>%
+  step_normalize(all_predictors()) %>%
+  prep(training = bivariate_train, retain = TRUE)
+
+# We will juice() to get the processed training set back
+
+# For validation:
+val_normalized <- bake(biv_rec, new_data = bivariate_val, all_predictors())
+# For testing when we arrive at a final model: 
+test_normalized <- bake(biv_rec, new_data = bivariate_test, all_predictors())
+```
+
+We can use the keras package to fit a model with 5 hidden units and a 10% dropout rate, to regularize the model:
+
+```{r}
+set.seed(57974)
+nnet_fit <-
+  mlp(epochs = 100, hidden_units = 5, dropout = 0.1) %>%
+  set_mode("classification") %>% 
+  # Also set engine-specific `verbose` argument to prevent logging the results: 
+  set_engine("keras", verbose = 0) %>%
+  fit(Class ~ ., data = juice(biv_rec))
+
+nnet_fit
+```
+
+### Model performance
+
+In parsnip, the `predict()` function can be used to characterize performance on the validation set. Since parsnip always produces tibble outputs, these can just be column bound to the original data:
+
+```{r}
+val_results <- 
+  bivariate_val %>%
+  bind_cols(
+    predict(nnet_fit, new_data = val_normalized),
+    predict(nnet_fit, new_data = val_normalized, type = "prob")
+  )
+val_results %>% slice(1:5)
+#> # A tibble: 5 x 6
+#>       A     B Class .pred_class .pred_One .pred_Two
+#>   <dbl> <dbl> <fct> <fct>           <dbl>     <dbl>
+#> 1 1061.  74.5 One   Two             0.473    0.527 
+#> 2 1241.  83.4 One   Two             0.484    0.516 
+#> 3  939.  71.9 One   One             0.636    0.364 
+#> 4  813.  77.1 One   One             0.925    0.0746
+#> 5 1706.  92.8 Two   Two             0.355    0.645
+
+val_results %>% roc_auc(truth = Class, .pred_One)
+#> # A tibble: 1 x 3
+#>   .metric .estimator .estimate
+#>   <chr>   <chr>          <dbl>
+#> 1 roc_auc binary         0.815
+
+val_results %>% accuracy(truth = Class, .pred_class)
+#> # A tibble: 1 x 3
+#>   .metric  .estimator .estimate
+#>   <chr>    <chr>          <dbl>
+#> 1 accuracy binary         0.737
+
+val_results %>% conf_mat(truth = Class, .pred_class)
+#>           Truth
+#> Prediction One Two
+#>        One 150  27
+#>        Two  52  71
+```
+
+Let’s also create a grid to get a visual sense of the class boundary for the validation set.
+
+```{r}
+a_rng <- range(bivariate_train$A)
+b_rng <- range(bivariate_train$B)
+x_grid <-
+  expand.grid(A = seq(a_rng[1], a_rng[2], length.out = 100),
+              B = seq(b_rng[1], b_rng[2], length.out = 100))
+x_grid_trans <- bake(biv_rec, x_grid)
+
+# Make predictions using the transformed predictors but 
+# attach them to the predictors in the original units: 
+x_grid <- 
+  x_grid %>% 
+  bind_cols(predict(nnet_fit, x_grid_trans, type = "prob"))
+
+ggplot(x_grid, aes(x = A, y = B)) + 
+  geom_contour(aes(z = .pred_One), breaks = .5, col = "black") + 
+  geom_point(data = bivariate_val, aes(col = Class), alpha = 0.3)
+
+```
+
+## Subsampling for class imbalances 
+
+Improve model performance in imbalanced data sets through undersampling or oversampling.
+
+### Introduction 
+
+To use the code in this article, you will need to install the following packages: `discrim`, `klaR`, `readr`, `ROSE`, `themis`, and tidymodels.
+
+```{r}
+# pacman::p_install(c(discrim, klaR, ROSE, themis))
+
+pacman::p_load(
+  discrim,
+  klaR,
+  readr,
+  ROSE,
+  themis,
+  tidymodels)
+```
 
 
+Subsampling a training set, either undersampling or oversampling the appropriate class or classes, can be a helpful approach to dealing with classification data where one or more classes occur very infrequently. In such a situation (without compensating for it), most models will overfit to the majority class and produce very good statistics for the class containing the frequently occurring classes while the minority classes have poor performance.
 
+This article describes subsampling for dealing with class imbalances. For better understanding, some knowledge of classification metrics like _sensitivity_, _specificity_, and _receiver operating characteristic_ curves is required. See Section 3.2.2 in Kuhn and Johnson (2019) for more information on these metrics.
 
+### Simulated data
 
+Consider a two-class problem where the first class has a very low rate of occurence. The data were simulated and can be imported into R usig the code below. 
 
+```{r}
+imbal_data <- 
+  readr::read_csv("http://bit.ly/imbal_data") %>% mutate(Class = factor(Class))
 
+imbal_data
 
+dim(imbal_data)
+table(imbal_data$Class)
+```
 
+If Class 1 is the event of interest, it is very likely that a classification model would be able to achieve very good sepcificity since almost all of the data are of the second class. __Sensitivity__, however, would likelt to be poor since the models will optimize accuracy (or other loss functions) by predicting everything to be the majority class.
 
+One result of class imbalance when there are two classes is that the default probability cuttoff 50% is inappropriate; a different cutoff that is more extreme might be able to achieve a good performance.
 
+### Subsampling the data 
 
+One way to achieve this issue is to _subsample_ the data. There are a number of ways to do this but the most simple one is to _sample down_ (_downsample_) the majority class data until it occurs with the same frequency as the minority class.
+
+While it may seem counterintuitive, throwing out a large percentage of your data can be effective at producing a useful model that can recognize both the majority and minority classes. n some cases, this even means that the overall performance of the model is better (e.g. improved area under the ROC curve). However, subsampling almost always produces models that are better _calibrated_, meaning that the distributions of the class probabilities are more well behaved. As a result, the default 50% cutoff is much more likely to produce better sensitivity and specificity values than they would otherwise.
+
+Let’s explore subsampling using `themis::step_rose()` in a recipe for the simulated data. It uses the ROSE (random over sampling examples) method from Menardi, G. and Torelli, N. (2014). This is an example of an oversampling strategy, rather than undersampling.
+
+In terms of workflow:
+
+- It is extremely important that subsampling occurs inside of resampling. Otherwise, the resampling process can produce [poor estimates of model performance](poor estimates of model performance). 
+- The subsampling process should only be applied to the analysis set. The assessment set should reflect the event rates seen “in the wild” and, for this reason, the `skip` argument to `step_downsample()` and other subsampling recipes steps has a default of TRUE.
+
+Here is a simple recipe implementing oversampling:
+
+```{r}
+library(themis)
+imbal_rec <-
+  recipe(Class ~ ., data = imbal_data) %>% 
+  step_rose(Class)
+```
+
+For a model, let's use a [quadratic discriminant analysis](https://en.wikipedia.org/wiki/Quadratic_classifier#Quadratic_discriminant_analysis) (QDA) model. From the `discrim` package, this model can be specified using:
+
+```{r}
+library(discrim)
+qda_mod <- 
+  discrim_regularized(frac_common_cov = 0,
+                      frac_identity = 0) %>% 
+  set_engine("klaR")
+
+qda_mod
+```
+
+To keep these objects bound together, they can be comibined in a [workflow](https://tidymodels.github.io/workflows/):
+
+```{r}
+qda_rose_wflw <- 
+  workflow() %>% 
+  add_model(qda_mod) %>% 
+  add_recipe(imbal_rec)
+
+qda_rose_wflw
+```
+
+### Model performance
+
+Stratified, repeated 10-fold cross-validation is used to resample the model
+
+```{r}
+set.seed(5732)
+cv_folds <- vfold_cv(imbal_data,
+                    strata = "Class",
+                    repeats = 5)
+```
+
+To measure model performance, let's use two metrics: 
+
+- The area under the ROC curve is an overall assessment of performance across all cotoffs. Values near one indicate very good results while values near 0.05 would imply that the model is very poor. 
+- THe J index (aka Youden's J statistic) is `sensitivity + specificity - 1`. Values near one are once again best.
+
+If a model is poorly calibrated, the ROC curve value might not show diminished performance. However, the J index would be lower for models with pathological distributions for the class probabilities. The yardstick package will be used to compute these metrics.
+
+```{r}
+cls_metrics <- metric_set(roc_auc,
+                          j_index)
+```
+
+Now, we train the moels adn generate the results using `tune::fit_resamples()`:
+
+```{r}
+set.seed(2180)
+qda_rose_res <- fit_resamples(
+  qda_rose_wflw,
+  resamples = cv_folds,
+  metrics = cls_metrics
+)
+
+collect_metrics(qda_rose_res)
+```
+
+What do the results look like without using ROSE? We can create another workflow and fit the QDA model along the same resamples:
+
+```{r}
+qda_wflw <- 
+  workflow() %>% 
+  add_model(qda_mod) %>% 
+  add_formula(Class ~ .)
+
+set.seed(2180)
+
+qda_only_res <- fit_resamples(qda_wflw, resamples = cv_folds, metrics = cls_metrics)
+
+# collect / compare results
+collect_metrics(qda_only_res)
+#> # A tibble: 2 x 5
+#>   .metric .estimator  mean     n std_err
+#>   <chr>   <chr>      <dbl> <int>   <dbl>
+#> 1 j_index binary     0.250    50 0.0288 
+#> 2 roc_auc binary     0.953    50 0.00479
+```
+
+It looks like ROSE helped a lot, especially with the J-index. Class imbalance sampling methods tend to greatly improve metrics based on the hard class predictions (i.e., the categorical predictions) because the default cutoff tends to be a better balance of sensitivity and specificity.
+
+Let’s plot the metrics for each resample to see how the individual results changed.
+
+```{r}
+no_sampling <- 
+  qda_only_res %>% 
+  collect_metrics(summarize = FALSE) %>% 
+  dplyr::select(-.estimator) %>% 
+  mutate(sampling = "no_sampling")
+
+with_sampling <- 
+  qda_rose_res %>% 
+  collect_metrics(summarize = FALSE) %>% 
+  dplyr::select(-.estimator) %>% 
+  mutate(sampling = "rose")
+
+bind_rows(no_sampling, with_sampling) %>% 
+  mutate(label = paste(id2, id)) %>% 
+  ggplot(aes(x = sampling, y = .estimate, group = label))+
+  geom_line(alpha =.4)+
+  facet_wrap(~.metric, scales ="free_y")
+```
 
 
 
