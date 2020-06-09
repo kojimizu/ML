@@ -551,10 +551,55 @@ bind_rows(no_sampling, with_sampling) %>%
 
 ## [Modeling time series with tidy resamples](https://www.tidymodels.org/learn/models/time-series/)
 
-Calculate perfromance estimate for time series forecasts using resamples
+Calculate performance estimate for time series forecasts using `resamples`.
 
 ### Introduction 
 
+To use the code in this article, you will need to install the following packages: `forecast`, `sweep`, `tidymodels`, `tidyr`, `timetk` and `zoo`.
+
+```{r}
+pacman::p_load(
+  forecast, 
+  sweep,
+  tidymodels,
+  tidyr,
+  timetk,
+  zoo
+)
+```
+
+
+[“Demo Week: Tidy Forecasting with sweep”](https://www.business-science.io/code-tools/2017/10/25/demo_week_sweep.html) is an excellent article that uses tidy methods with time series. This article uses their analysis with rsample to find performance estimates for future observations using [rolling forecast origin resampling](https://robjhyndman.com/hyndsight/crossvalidation/).
+
+### Example data
+
+The data for this article are sales of alcholic beverages originally from [the Federal Reserve Bank of St.Louis website](https://fred.stlouisfed.org/series/S4248SM144NCEN). 
+
+```{r}
+pacman::p_load(modeldata)
+pacman::p_load(fabletools,
+               tsibble,
+               feasts,
+               fable)
+data("drinks")
+
+drinks
+glimpse(drinks)
+
+drinks %>% 
+  tsibble::as_tsibble() %>% 
+  fabletools::autoplot() 
+```
+
+Each row represents one month of sales (in millions of US dollars).
+
+### Time series resampling 
+
+Suppose we need predictions for one year ahead and our model should use the most recent data from the last 20 years. To set up this resampling scheme:
+
+```{r}
+
+```
 
 
 
