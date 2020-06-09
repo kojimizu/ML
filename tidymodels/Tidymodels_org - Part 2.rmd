@@ -549,6 +549,13 @@ bind_rows(no_sampling, with_sampling) %>%
   facet_wrap(~.metric, scales ="free_y")
 ```
 
+## [Modeling time series with tidy resamples](https://www.tidymodels.org/learn/models/time-series/)
+
+Calculate perfromance estimate for time series forecasts using resamples
+
+### Introduction 
+
+
 
 
 
