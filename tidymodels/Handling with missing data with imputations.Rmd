@@ -1,0 +1,789 @@
+---
+title: "Handling missing values with imputations"
+author: "Koji Mizumura"
+date: "2020-06-25 - `r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    number_sections: yes
+    fig_height: 10
+    fig_width: 14
+    highlight: kate
+    toc_depth: 3
+#    css: style.css
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    number_sections: yes
+    section_divs: yes
+    theme: readable
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+always_allow_html: yes
+---
+
+```{r setup4, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  # fig.height = 4.5,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE,
+  cache = TRUE
+)
+```
+
+# The problem of missing data
+## Missing data: what can go wrong
+
+The purpose of this course is:
+
+- Understand why missing data require special treatment
+- USe statistical tests and visualization tools to detect patterns in missing data
+- Perform imputation with a collection of statistical machine learning models
+- Incorporate uncertainty from imputation into your analysis and predictions, making them more robust.
+
+Missing data primer
+> Obviously the best way to treate missing data is not to have them
+
+Unfortunately, missing data are everywhere:
+- Nonresponse in surveys
+- Technical issues with data-collecting equipment
+- Joining data from different sources
+
+Main taikeaways
+- Missing data is sometimes ignored silently by statistical software.
+- As a result, it might be impossible to compare different models.
+- Simply dropping all incomplete observations might lead to biased results.
+- Missing data, if present, have to be addressed appropriately.
+
+## Missing data mechanism
+
+Missing data problems can be classified into three categories. Distinguishing between them is vital because each category requires a different solution.
+
+- Missing Completely at Random (MCAR)
+Location of missing values in the data set are purely random, they do not depend on any other data.
+
+- Missing at Random (MAR)
+Locations of missing values in the data set depend on some other, observed data
+
+- Missing not at Random (MNAR)
+Locations of missing values in the data set depend on the missing values themselves. 
+
+What if we simply drop incomplete observations? 
+
+- If the data are MCAR, removing them results in an information loss
+- If the data are MNAR, removing them introduces bias to models built on these data. Thus, missing values should be imputed.
+- Many imputation methods assume MNAR, so it's important to detect it
+
+### Statistical testing 
+
+Example: t-test for difference in means
+
+1. Make an assumption (null hypothesis): the meas are equal
+2. Compute the test statistic from your data
+3. Compute the p-value: how likely it is to obtain the test statistic that you got, assuming the null hypothesis is true? 
+
+### Testing for MAR
+
+Goal: test if the percentage of missing values in one variable differs for different values of another variable
+
+Example: is the percentage of missing values in `PhysActive` different for males and females? 
+
+Testing procedure:
+
+1. Create a dummy variable denoting whether `PhysActive` is missing
+2. Use a t-test to check the mean of this dummy is different for males and females
+3. If the p-value is small (e.g., <0.05), the means are different, so the data are MAR.
+
+```{r eval=FALSE}
+nhanes <- nhanes %>% 
+  mutate(missing_phys_active = is.na(PhysActive))
+
+missing_phys_active_male <- 
+  nhanes %>% 
+  filter(Gender == "male") %>% 
+  pull(missing_phys_active)
+
+missing_phys_active_female <- rhanes %>% 
+  filter(Gender == "female") %>% 
+  pull(missing_phys_active)
+
+t.test(missing_phys_active_female,
+       missing_phys_active_male)
+```
+
+## t-test for MAR: data preparation
+
+Great work on classifying the missing data mechanisms in the last exercise! Of all three, MAR is arguably the most important one to detect, as many imputation methods assume the data are MAR. This exercise will, therefore, focus on testing for MAR.
+
+You will be working with the familiar biopics data. The goal is to test whether the number of missing values in earnings differs per subject's gender. In this exercise, you will only prepare the data for the t-test. First, you will create a dummy variable indicating missingness in earnings. Then, you will split it per gender by first filtering the data to keep one of the genders, and then pulling the dummy variable. For filtering, it might be helpful to print biopics's `head()` in the console and examine the gender variable.
+
+```{r}
+# Create a dummy variable for missing earnings
+biopics <- biopics %>% 
+  mutate(missing_earnings = is.na(earnings))
+
+biopics %>% head()
+
+# Pull the missing earnings dummy for males
+missing_earnings_males <- biopics %>% 
+  filter(sub_sex == "Male") %>% 
+  pull(missing_earnings)
+
+# Pull the missing earnings dummy for females
+missing_earnings_females <- biopics %>% 
+  filter(sub_sex == "Female") %>% 
+  pull(missing_earnings)
+```
+
+## t-test for MAR: interpreration
+
+The p-value is high, so we don't reject the null hypothesis of means equality. Hence, earnings are not Missing at Random with respect to sub_sex.
+
+Correct! Notice how the missing earnings percentage is not significantly different for both genders, even though the sample values (at the bottom of the test's output) differ by almost 5 percentage points. Also, keep in mind that the conclusion that the data are not MAR is only valid for the specific variables we have tested.
+
+```{r}
+t.test(missing_earnings_males,
+       missing_earnings_females)
+```
+
+## Visualizing missing data patterns 
+
+We will look at how to detect missing data mechanisms with visualizations. Using statistical tests to detect data patterns is a great approach, but it comes with some problems. 
+
+- Detecting missing data patterns with statistical tests can be cumbersome. 
+- t-test comes with many assumptions about data
+- Inferences based on p-values are prone to problems (choosing significance level, p-hacking)
+
+Thus, another approach is to use visualizations
+
+- Easy to use
+- Ability to detect missing data patterns
+- Provide insights into other aspects of data quality
+
+The `VIM` package has a great set of tools for plotting missing data, in this lession
+
+- Aggregation plot
+This answers the question: in which combination of variables the data are missing and how often? 
+
+- Spine plot
+This plot shows the percentage of missing values in one variable for different values of the other. 
+
+- Mosaic plot
+This plot is a collection of tiles, where each tile corresponds to a specific combination of categories (for categorical variables) or bins (for numeric variables). With each tile, the percentage of missing data points in another variable is shown. 
+
+```{r eval=FALSE}
+pacman::p_load(VIM)
+# aggregation plot
+nhanes %>% 
+  aggr(combined = TRUE, numbers = TRUE)
+
+# spine plot
+nhanes %>% 
+  select(Gender, TotChol) %>% 
+  spineMiss()
+
+# mosaic plot
+nhanes %>% 
+  mosaicMiss(highlight = "TotChol", plotvars = c("Gender", "PhysActive"))
+```
+
+## Aggregation plot
+
+The aggregation plot provides the answer to the basic question one may ask about an incomplete dataset: in which combinations of variables the data are missing, and how often? It is very useful for gaining a high-level overview of the missingness patterns. For example, it makes it immediately visible if there is some combination of variables that are often missing together, which might suggest some relation between them.
+
+In this exercise, you will first draw the aggregation plot for the biopics data and then practice making conclusions based on it. Let's do some plotting!
+
+```{r}
+# Load the VIM package
+library(VIM)
+
+# Draw an aggregation plot of biopics
+biopics %>% 
+	aggr(combined = TRUE, numbers = TRUE)
+```
+
+
+## Spine plot
+
+The aggregation plot you have drawn in the previous exercise gave you some high-level overview of the missing data. If you are interested in the interaction between specific variables, a spine plot is the way to go. It allows you to study the percentage of missing values in one variable for different values of the other, which is conceptually very similar to the t-tests you have been running in the previous lesson.
+
+In this exercise, you will draw a spine plot to investigate the percentage of missing data in earnings for different categories of sub_race. Is there more missing data on earnings for some specific races of the movie's main character? Let's find out! The VIM package has already been loaded for you.
+
+```{r}
+# Draw a spine plot to analyse missing values in earnings by sub_race
+biopics %>% 
+  	select(sub_race, earnings) %>%
+  	spineMiss()
+```
+
+
+## Mosaic plot
+
+The spine plot you have created in the previous exercise allows you to study missing data patterns between two variables at a time. This idea is generalized to more variables in the form of a mosaic plot.
+
+In this exercise, you will start by creating a dummy variable indicating whether the United States was involved in the production of each movie. To do this, you will use the grepl() function, which checks if the string passed as its first argument is present in the object passed as its second argument. Then, you will draw a mosaic plot to see if the subject's gender correlates with the amount of missing data on earnings for both US and non-US movies.
+
+The `biopics` data as well as the `VIM` package are already loaded for you. Let's do some exploratory plotting!
+
+Note that a propriety `display_image()` function has been created to return the output from the `latestVIMpackage` version. Make sure to expand the `HTML Viewer` section.
+
+
+```{r}
+# Prepare data for plotting and draw a mosaic plot
+biopics %>%
+	# Create a dummy varia	ble for US-produced movies
+	mutate(is_US_movie = grepl("US", country)) %>%
+	# Draw mosaic plot
+	mosaicMiss(highlight = "earnings", 
+             plotvars = c("is_US_movie", "sub_sex"))
+
+# Return plot from latest VIM package - expand the HTML viewer section
+display_image()
+```
+
+# Donor-based imputation
+## Mean imputation
+
+Imputation = meaking an educated guess about what the missing values might be. 
+
+- donor-based imputation - missing values are filled in using other, complete observations. 
+- Model-based imputation - missing values are predicted with a statistical or machine learning model. 
+
+This chapter focuses on donor-based methods:
+
+1. mean imputation
+Mean imputation works well for time-series data that randomly fluctuate around a long-term average. 
+
+For cross-sectional data, mean imputation is often very poor choice:
+- destroys relations between variables
+- There is no variance in the imputed values
+
+- Create binary indicators for whether each value was originally missing.
+
+```{r eval=FALSE}
+nhanes <- nhanes %>% 
+  mutate(Height_imp = ifelse(is.na(Height), TRUE, FALSE)) %>% 
+  mutate(Weight_imp = ifelse(is.na(Weight), TRUE, FALSE))
+```
+
+- Replace missing values in Height and Weight with their respective means. 
+
+```{r eval=FALSE}
+nhanes_imp <- nhanes %>% 
+  mutate(Height = ifelse(is.na(Height), mean(Height, na.rm = TRUE), Height))
+```
+
+A good way to assess the quality of imputation is to visualize the imputed values against the original data. For two numeric variables, such as `Height` and `Weight`, we can draw a margin plot. 
+
+To do this, we select two variables alongside the binary indicators we have created previously and pass them to the "margin plot" function from the `VIM` package. 
+
+We set the delimiter to "imp" to tell the function what is the suffix of the inary indicators for imputed values. The margin plot is basically a scatter plot of "Weight" versus "Height". The blue circles are values observed in both variables, while the orange ones are imputed. The positive relation between these two variables has benn totally destroyed in the imputed values. 
+
+Destroying relation between variables:
+
+- After mean-imputing `Height` and `Weight`, their positive correlation is weaker
+- Models predicting one using the other will be fooled by the outlying imputed values and will produce biased results. 
+
+No variability inimputed data: 
+- With less variance in the data, all standard errors will be underestimated. This prevents reliable hypothesis testing and calculation confidence intervals. 
+
+Median imputation is a better choice when there are outliers in the data. For categorical variables, we cannot compute neither mean or median, so we use the mode instead. 
+
+
+2. hot-deck imputation
+3. kNN imputation
+
+## Smelling the danger of mean imputation
+
+One of the most popular imputation methods is the mean imputation, in which missing values in a variable are replaced with the mean of the observed values in this variable. However, in many cases this simple approach is a poor choice. Sometimes a quick look at the data can already alert you to the dangers of mean-imputing.
+
+In this chapter, you will be working with a subsample of the Tropical Atmosphere Ocean (tao) project data. The dataset consists of atmospheric measurements taken in two different time periods at five different locations. The data comes with the `VIM` package.
+
+In this exercise you will familiarize yourself with the data and perform a simple analysis that will indicate what the consequences of mean imputation could be. Let's take a look at the `tao` data!
+
+```{r}
+# Print first 10 observations
+head(tao, 10)
+
+# Get the number of missing values per column
+tao %>%
+  is.na() %>% 
+  colSums()
+
+# Calculate the number of missing values in air_temp per year
+tao %>% 
+  group_by(year) %>% 
+  summarize(num_miss = sum(is.na(air_temp)))
+
+```
+
+## Mean-imputing the temparature 
+
+Mean imputation can be a risky business. If the variable you are mean-imputing is correlated with other variables, this correlation might be destroyed by the imputed values. You saw it looming in the previous exercise when you analyzed the `air_temp` variable.
+
+To find out whether these concerns are valid, in this exercise you will perform mean imputation on `air_temp`, while also creating a binary indicator for where the values are imputed. It will come in handy in the next exercise, when you will be assessing your imputation's performance. Let's fill in those missing values!
+
+```{r}
+tao_imp <- tao %>% 
+  # Create a binary indicator for missing values in air_temp
+  mutate(air_temp_imp = ifelse(is.na(air_temp), TRUE, FALSE)) %>%
+  # Impute air_temp with its mean
+  mutate(air_temp = ifelse(is.na(air_temp), mean(air_temp, na.rm = TRUE), air_temp))
+
+# Print the first 10 rows of tao_imp
+head(tao_imp, 10)
+```
+
+## Assessing imputation quality with margin plot
+
+In the last exercise, you have mean-imputed air_temp and added an indicator variable to denote which values were imputed, called air_temp_imp. Time to see how well this works.
+
+Upon examining the tao data, you might have noticed that it also contains a variable called sea_surface_temp, which could reasonably be expected to be positively correlated with air_temp. If that's the case, you would expect these two temperatures to be both high or both low at the same time. Imputing mean air temperature when the sea temperature is high or low would break this relation.
+
+To find out, in this exercise you will select the two temperature variables and the indicator variable and use them to draw a margin plot. Let's assess the mean imputation!
+
+```{r}
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+  select(air_temp, sea_surface_temp, air_temp_imp) %>%
+  marginplot(delimiter = "imp")
+```
+
+## Hot-deck imputation
+
+- Hot-deck imputation method dates back to the 1950s, when data was stored on punched cards, like the one in the picture. 
+- Browsing through the data back and forth was very slow
+
+__Cons__
+- Requires data to be MCAR
+- Vanilla hot-deck can destroy relations between variables
+
+__Pros__
+- Fast (only one pass through data)
+- Imputed data are not constant
+- Simple tricks prevent breaking relations 
+
+```{r}
+nhanes_imp <- hotdeck(nhanes, variable = c("Height", "WEight"))
+```
+
+Consider this example: we might expect physically active people to have, on average, lower weight than those who are not active. However, if active and inactive people are mixed in the data set, hot-deck can feed an inactive person's weight to an active person, destroying the relation between weight and physical activity. 
+
+A simple solution is to impute within domains, that is separately for active and inactive people. This way, each active person will receive a value from an also active donor, and vice versa. 
+
+```{r eval=FALSE}
+nhanes_imp <- hotdeck(
+  nhanes,
+  variable = "Weight",
+  domain_var = "PhysActive"
+)
+```
+
+
+## Vanilla hot-deck 
+
+Hot-deck imputation is a simple method that replaces every missing value in a variable by the last observed value in this variable. It's very fast, as only one pass through the data is needed, but in its simplest form, hot-deck may sometimes break relations between the variables.
+
+In this exercise, you will try it out on the `tao` dataset. You will hot-deck-impute missing values in the air temperature column `air_temp` and then draw a margin plot to analyze the relation between the imputed values with the sea surface temperature column sea_surface_temp. Let's see how it works!
+
+```{r}
+pacman::p_load(VIM)
+
+# Load VIM package
+library(VIM)
+
+# Impute air_temp in tao with hot-deck imputation
+tao_imp <- hotdeck(tao, variable = "air_temp")
+
+# Check the number of missing values in each variable
+tao_imp %>% 
+	is.na() %>% 
+	colSums()
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+	select(air_temp, sea_surface_temp, air_temp_imp) %>% 
+	marginplot(delimiter = "imp")
+```
+
+## Hot-deck tricks & tips I: Imputing within domains 
+
+One trick that may help when hot-deck imputation breaks the relations between the variables is imputing within domains. What this means is that if the variable to be imputed is correlated with another, categorical variable, one can simply run hot-deck separately for each of its categories.
+
+For instance, you might expect air temperature to depend on time, as we are seeing the average temperatures rising due to global warming. The time indicator you have available in the tao data is a categorical variable, year. Let's first check if the average air temperature is different in each of the two studied years and then run hot-deck within year domains. Finally, you will draw the margin plot again to assess the imputation performance.
+
+```{r}
+# Calculate mean air_temp per year
+tao %>% 
+	group_by(year) %>% 
+	summarize(average_air_temp = mean(air_temp, na.rm = TRUE))
+
+# Hot-deck-impute air_temp in tao by year domain
+tao_imp <- hotdeck(tao, variable = "air_temp", domain_var = "year")
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+	select(air_temp,sea_surface_temp, air_temp_imp) %>% 
+	marginplot(delimiter = "imp")
+```
+
+## Hot-deck tricks & tips II: sorting by correlated variables
+
+Another trick that can boost the performance of hot-deck imputation is sorting the data by variables correlated to the one we want to impute.
+
+For instance, in all the margin plots you have been drawing recently, you have seen that air temperature is strongly correlated with sea surface temperature, which makes a lot of sense. You can exploit this knowledge to improve your hot-deck imputation. If you first order the data by sea_surface_temp, then every imputed air_temp value will come from a donor with a similar sea_surface_temp. Let's see how this will work!
+
+```{r}
+# Hot-deck-impute air_temp in tao ordering by sea_surface_temp
+tao_imp <- hotdeck(tao, variable = "air_temp", ord_var = "sea_surface_temp")
+
+# Draw a margin plot of air_temp vs sea_surface_temp
+tao_imp %>% 
+	select(air_temp, sea_surface_temp, air_temp_imp) %>% 
+	marginplot(delimiter = "imp")
+```
+
+
+## k-Nearest Neighbors Imputation
+
+We will discuss k-Nearest Neighbors imputation. There is a missing value in A that we would like to impute. 
+
+For each observation with missing values:
+
+1. Find other k observations (donors, neighbors) that are most similar to that observation.
+2. Replace missing values with aggregated values from the k donors (mean, median, mode). 
+
+### Distance measures
+The distance between two observations a and b:
+
+- Euclidean distance for n numeric variables:
+
+$$
+\sqrt{\Sigma(a_i - b_i)^2}
+$$
+
+- Manhattan distance for f factor variables:
+
+$$
+\Sigma||a_i-b_i
+$$
+
+- Hamming distance for c categorical variables:
+
+$$
+\Sigma I(a_i \neq b_i)
+$$
+
+We simply compute Euclidean distance for numeric variables, Manhattan distance for factors and Hamming distance for categorical variables, and then combine them together in an aggregated measure called the Gower distance. 
+
+```{r}
+library(VIM)
+nhanes_imp <- kNN(nhanes,
+                  k = 5,
+                  variable = c("TotChol", "Pulse"))
+```
+
+We need to specify the number of neighbors to use k and the variables to be imputed, here "TotChol" and "Pulse". 
+
+### Weighting donors
+
+- Out of the k chosen neighbors for an observation, some are more similar to it than others. 
+- We might want to put more weight on chosen neighbors when aggregated their values. 
+- Aggregate neighbors with a weighted mean, with weights given by the inverted distances to each neighbor.
+- This is only possible for imputing numeric variables. 
+```{r}
+nhanes_imp <- nhanes %>% 
+  kNN(variable = c("TotChol", "Pulse"),
+      k = 5,
+      numFun = weighted.mean,
+      weightDist = TRUE)
+```
+
+
+### Sorting variables
+
+- The kNN algorithm loops over variables, imputing them one by one
+- Each time the distances between observations are calculated. 
+- If the first variable had a lot of values, then the distance calculation for the second variable will be based on many imputed values. 
+- IT is good to sort the variables in ascending order by the number of missing values before running kNN. 
+
+```{r}
+vars_by_NAs <- nhanes %>% 
+  is.na() %>% 
+  colSums() %>% 
+  sort(decreasing = FALSE) %>% 
+  names()
+
+nhanes_imp <- nhanes %>% 
+  select(vars_by_NAs) %>% 
+  kNN(k = 5)
+```
+
+## Choosing the number of neighbors
+
+k-Nearest-Neighbors (or kNN) imputation fills the missing values in an observation based on the values coming from the k other observations that are most similar to it. The number of these similar observations, called neighbors, that are considered is a parameter that has to be chosen beforehand.
+
+How to choose k? One way is to try different values and see how they impact the relations between the imputed and observed data.
+
+Let's try imputing `humidity` in the `tao` data using three different values of k and see how the imputed values fit the relation between humidity and sea_surface_temp.
+
+```{r}
+# Impute humidity using 30 neighbors
+tao_imp <- kNN(tao, k =30, variable = "humidity")
+
+# Draw a margin plot of sea_surface_temp vs humidity
+tao_imp %>% 
+	select(sea_surface_temp, humidity, humidity_imp) %>% 
+	marginplot(delimiter = "imp", main = "k = 30")
+
+# Impute humidity using 15 neighbors
+tao_imp <- kNN(tao, k = 15, variable = "humidity")
+
+# Draw a margin plot of sea_surface_temp vs humidity
+tao_imp %>% 
+	select(sea_surface_temp, humidity, humidity_imp) %>% 
+	marginplot(delimiter = "imp", main = "k = 15")
+
+# Impute humidity using 5 neighbors
+tao_imp <- kNN(tao, k = 5, variable = "humidity")
+
+# Draw a margin plot of sea_surface_temp vs humidity
+tao_imp %>% 
+	select(sea_surface_temp, humidity, humidity_imp) %>% 
+	marginplot(delimiter = "imp", main = "k = 5")
+
+```
+
+## kNN tricks & tips I: weighting donors 
+
+A variation of kNN imputation that is frequently applied uses the so-called distance-weighted aggregation. What this means is that when we aggregate the values from the neighbors to obtain a replacement for a missing value, we do so using the weighted mean and the weights are inverted distances from each neighbor. As a result, closer neighbors have more impact on the imputed value.
+
+In this exercise, you will apply the distance-weighted aggregation while imputing the tao data. This will only require passing two additional arguments to the `kNN()` function. Let's try it out!
+
+```{r}
+# Load the VIM package
+library(VIM)
+
+# Impute humidity with kNN using distance-weighted mean
+tao_imp <- kNN(tao, 
+               k = 5, 
+               variable = "humidity", 
+               numFun = weighted.mean,
+               weightDist = TRUE)
+
+tao_imp %>% 
+	select(sea_surface_temp, humidity, humidity_imp) %>% 
+	marginplot(delimiter = "imp")
+```
+
+
+## kNN tricks & tips II: sorting variables
+
+As the k-Nearest Neighbors algorithm loops over the variables in the data to impute them, it computes distances between observations using other variables, some of which have already been imputed in the previous steps. This means that if the variables located earlier in the data have a lot of missing values, then the subsequent distance calculation is based on a lot of imputed values. This introduces noise to the distance calculation.
+
+For this reason, it is a good practice to sort the variables increasingly by the number of missing values before performing kNN imputation. This way, each distance calculation is based on as much observed data and as little imputed data as possible.
+
+Let's try this out on the tao data!
+
+```{r}
+# Get tao variable names sorted by number of NAs
+vars_by_NAs <- tao %>% 
+  is.na() %>%
+  colSums() %>%
+  sort(decreasing = FALSE) %>% 
+  names()
+
+# Sort tao variables and feed it to kNN imputation
+tao_imp <- tao %>% 
+  select(vars_by_NAs) %>% 
+  kNN()
+
+tao_imp %>% 
+	select(sea_surface_temp, humidity, humidity_imp) %>% 
+	marginplot(delimiter = "imp")
+```
+
+
+# Model-based imputation
+## Introduction
+
+Model-based imputation 
+
+- impute each variable with different statistical model
+- Ability to account for relations in the data that we know of. 
+
+The general idea is to loop over the variables and for each of them create a model that explains it using the remaining variables. 
+
+We then iterate through the variables multiple times, imputing the locations where the data were originally missing. 
+
+Imagine we have a data frame with four variables, A,B, C and D. 
+
+1. Predict missing values in A
+2. Treat data imputed in A as observed and predict missing values in C
+3. Treat data imputed in C as observed and predict A again where it was originally missing
+4. Compute until convergence 
+
+### How to choose model
+
+The model for each variable depends on the type of this variable:
+
+- Continuous variables - linear regression
+- Binary variables - logistic regression
+- Categorical variables - multi-nomial logistic regression 
+- Count variables - Poisson regression
+
+```{r}
+# impute Height and WEight in nhanes with a linear model
+
+library(imputation)
+nhanes_imp <- inpute_lm(nhanes,
+                        Hight + Weight ~.)
+
+nhanes_imp <- 
+  is.na() %>% 
+  colSums()
+```
+
+
+To fix it, we will have to initialize the missing values somehow. Also, a single imputation is usually not enough. It is based on the basic initialized values and could be biased. 
+
+A proper approach is to iterate over the variables multiple times, as we have discussed before. 
+
+Initialize missing values with `hotdeck` and save missing locations:
+
+We save the location of misisng values of height and weight using the boolean indicators created by the hotdeck function, which you saw in the previous chapter.
+
+```{r}
+nhanes_imp <- hotdeck(nhanes)
+missing_height <- nhanes_imp$Height_imp
+missing_weight <- nhanes_imp$Weight_imp
+```
+
+Then we iterate over the variables 5 times:
+
+In each iteration, we set height to NA where it was originally missing and impute it with the `impute_lm` function, using age, gender and weight as predictors. 
+
+How do we know that 5 iterations are enough?
+
+For each iteration, we can calculate how much the newly imputed variable differs from the previous imputation. This is the same loop you have seen in the last slide and we will extend it slightly. 
+
+Before the loop, we create two empty vectors to store differences across iterations in each of the two variables. Before the loop, we create two empty vectors to store differences across iterations in each of two variables. 
+
+At the start of each iteration, we copy the data imputed in the previous step, or just initialized in case of the first iteration, to the variable "prev_iter".
+
+Finally, we append the mean absolute percentage change between the current and previous imputation of each variable, computed with the mapc function, to the corresponding vectors. 
+
+```{r}
+diff_height <- c()
+diff_weight <- c()
+
+for (i in 1:5){
+  prev_iter <- nhanes_imp
+  nhanes_imp$Height[missing_height] <- NA
+  nhanes_imp <- impute_lm(nhanes_imp, Height ~ Age + Gender + Weight)
+  nhanes_imp$Weight[missing_weight] <- NA
+  nhanes_imp <- impute_lm(nhanes_imp, Weight  ~ Age + Gender + Height)
+  diff_height <- c(diff_height, mapc(prev_iter$Height, nhanes_imp$Height))
+  diff_weight <- c(diff_weight, mapc(prev_iter$Weight, nhanes_imp$Weight))
+}
+```
+
+## Linear regression imputation
+
+Sometimes, you can use domain knowledge, previous research or simply your common sense to describe the relations between the variables in your data. In such cases, model-based imputation is a great solution, as it allows you to impute each variable according to a statistical model that you can specify yourself, taking into account any assumptions you might have about how the variables impact each other.
+
+For continuous variables, a popular model choice is linear regression. It doesn't restrict you to linear relations though! You can always include a square or a logarithm of a variable in the predictors. In this exercise, you will work with the simputation package to run a single linear regression imputation on the `tao` data and analyze the results. Let's give it a try!
+
+```{r}
+# Load the simputation package
+library(simputation)
+
+# Impute air_temp and humidity with linear regression
+formula <- air_temp + humidity ~ year + latitude + sea_surface_temp 
+tao_imp <- impute_lm(tao, formula)
+
+# Check the number of missing values per column
+tao_imp %>% 
+  is.na() %>% 
+  colSums()
+```
+
+## Initializing missing values & iterating over variables 
+
+As you have just seen, running `impute_lm()` might not fill-in all the missing values. To ensure you impute all of them, you should initialize the missing values with a simple method, such as the hot-deck imputation you learned about in the previous chapter, which simply feeds forward the last observed value.
+
+Moreover, a single imputation is usually not enough. It is based on the basic initialized values and could be biased. A proper approach is to iterate over the variables, imputing them one at a time in the locations where they were originally missing.
+
+In this exercise, you will first initialize the missing values with hot-deck imputation and then loop five times over air_temp and humidity from the tao data to impute them with linear regression. Let's get to it!
+
+```{r}
+# Initialize missing values with hot-deck
+tao_imp <- hotdeck(tao)
+
+# Create boolean masks for where air_temp and humidity are missing
+missing_air_temp <- tao_imp$air_temp_imp
+missing_humidity <- tao_imp$humidity
+
+for (i in 1:5) {
+  # Set air_temp to NA in places where it was originally missing and re-impute it
+  tao_imp$air_temp[missing_air_temp] <- NA
+  tao_imp <- impute_lm(tao_imp, air_temp ~ year + latitude + sea_surface_temp + humidity)
+  # Set humidity to NA in places where it was originally missing and re-impute it
+  tao_imp$humidity[missing_humidity] <- NA
+  tao_imp <- impute_lm(tao_imp, humidity ~ year + latitude + sea_surface_temp + air_temp)
+}
+```
+
+## Detecting convergence 
+
+Great job iterating over  the variables in the last exercise! But how many iterations are needed? When the imputed values don't change with the new iteration, we can stop.
+
+You will now extend your code to compute the differences between the imputed variables in subsequent iterations. To do this, you will use the Mean Absolute Percentage Change function, defined for you as follows:
+
+```
+mapc <- function(a, b) {
+  mean(abs(b - a) / a, na.rm = TRUE)
+}
+```
+
+`mapc()` outputs a single number that tells you how much b differs from a. You will use it to check how much the imputed variables change across iterations. Based on this, you will decide how many of them are needed!
+
+The boolean masks missing_air_temp and missing_humidity are available for you, as is the hotdeck-initialized tao_imp data.
+
+```{r}
+diff_air_temp <- c()
+diff_humidity <- c()
+
+for (i in 1:5) {
+  # Assign the outcome of the previous iteration (or initialization) to prev_iter
+  prev_iter <- tao_imp
+  # Impute air_temp and humidity at originally missing locations
+  tao_imp$air_temp[missing_air_temp] <- NA
+  tao_imp <- impute_lm(tao_imp, air_temp ~ year + latitude + sea_surface_temp + humidity)
+  tao_imp$humidity[missing_humidity] <- NA
+  tao_imp <- impute_lm(tao_imp, humidity ~ year + latitude + sea_surface_temp + air_temp)
+  # Calculate MAPC for air_temp and humidity and append them to previous iteration's MAPCs
+  diff_air_temp <- c(diff_air_temp, mapc(prev_iter$air_temp, tao_imp$air_temp))
+  diff_humidity <- c(diff_humidity, mapc(prev_iter$humidity, tao_imp$humidity))
+}
+```
+
+## Replicating data variability
+
+We will look at how to implement it for binary variables, while discussing an important topic: variability in imputed data.
+
+You remember this margin plot from Chapter 1. Back then, we have said that this method provides no variability in imputed data. This is bad, because we would like the imputation to replicate the variability of observed data.
+
+
+
+
+
+
+
+
+
