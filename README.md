@@ -68,14 +68,11 @@ install.packages("caret")
 ```
 
 ### 📦 Tidymodels  
-Tidymodels is a multi-package containing modern tidyverse-based packages. I understand no text covers tidymodels as of now, and I have prepared a material covering each package's vignettes.  
+Tidymodels is a multi-package containing modern tidyverse-based packages. 
+Tidymodel usecase is prepared by the dev team: https://www.tidymodels.org/learn/
 
+📦Learn: https://www.tidymodels.org/learn/
 📦 Repo: https://github.com/tidymodels/tidymodels
-
-```{R}
-# Avaiable from CRAN
-install.packages("tidymodels")
-```
 
 - **broom**:  tidy, augment, glance for model interpretation support
 - **rsample**:  data resampling 
@@ -95,6 +92,15 @@ A Bookdown page prepared by Max Kuhn
 
 ### 📚 Feature Engineering Book
 by Alice Zheng  
+
+=========================================
+# Natural Language Processing (NLP)
+
+## Supervised machine learning for text analysis 
+The latest book on 2020/07 by Julia Silge and EMIL HVITFELDT  
+
+📚 Book: https://smltar.com/language.html  
+📦 Repo: https://github.com/EmilHvitfeldt/smltar  
 
 =========================================
 # Modern R 
