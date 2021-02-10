@@ -3,10 +3,10 @@
 
 # Machine Learning Archive  
 This repository archives useful R-related books and repositories for machine learning. 
-The recent development comes from `tidyverse` and `tidymodels`, and following cites are useful for catch-up.
+The recent development comes from `tidyverse` and `tidymodels`, and following cites are useful for catch-up.  
 
 <Tidyverse training materials>
-- Tidy data science workshop :https://tidy-ds.wjakethompson.com/  
+- Tidy data science workshop :https://tidy-ds.wjakethompson.com/   
 - Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
     
 For latest papers, browse the state-of-the art is useful for finding the paper and code on GitHub.  
