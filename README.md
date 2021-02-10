@@ -6,17 +6,19 @@ This repository archives useful R-related books and repositories for machine lea
 The recent development comes from `tidyverse` and `tidymodels`, and following cites are useful for catch-up.  
 
 <Tidyverse training materials>
-- Tidy data science workshop :https://tidy-ds.wjakethompson.com/  
-    
+
+- Tidy data science workshop :https://tidy-ds.wjakethompson.com/       
 - Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
-    
+
 For latest papers, browse the state-of-the art is useful for finding the paper and code on GitHub.  
 https://paperswithcode.com/sota  
 
 ## ML Overview
 ### Applied Machine Learning
-Applied ML workshop by Max Kuhn from useR2018 Conference
-Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The material is stored in [this repository](https://github.com/kojimizu/rstudio-conf-2018). The latest repository is [here](https://github.com/topepo/rstudio-conf-2019).  
+Applied ML workshop by Max Kuhn from useR/rstudio-conf Conference
+
+- rstudio-conf-2019 repository: https://github.com/topepo/rstudio-conf-2019
+- rstudio-conf-2018 repository: https://github.com/kojimizu/rstudio-conf-2018
 
 ### 📚 Hands on Machine Learning with R
 Hands-on Machine Learning with R: An applied book covering the fundamentals of machine learning with R.  
@@ -29,18 +31,8 @@ From 2018 to 2019 January
 This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
 📚 Book: University of Cincinatti - http://uc-r.github.io  
 
-- Predictive analytics / Supervised learning: 
-  - Linear:  
-  - Naive Bayes:
-  - Regularized Regression:  Ridge, LASSO, Elastic Net by `glmnet`
-  - MARS: 
-  - Regression Tree:
-  - Random Forests:
-  - Gradient Boosting Machines (GBM): 
-  - Discriminant Analysis
-  - SVM
-
-- Predictive analytics / Unsupervised learning: PCA
+- Predictive analytics / Supervised learning: Linear, Naive Bayes, Reularized Regression (Ridge, LASSO), MARS, Regression Tree, Random Forest, GBM, Discriminant Analysis, SVM
+- Predictive analytics / Unsupervised learning: PCA, 
 - Time series analysis: Exponential smoothing, MA/AR
 - DL: Regression DNN, Classification DNN
 
