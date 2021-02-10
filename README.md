@@ -7,13 +7,20 @@ The recent development comes from `tidyverse` and `tidymodels`, and following ci
 
 <Tidyverse training materials>
 
-- Tidy data science workshop :https://tidy-ds.wjakethompson.com/       
-- Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
+- 🎁Tidy data science workshop :https://tidy-ds.wjakethompson.com/       
+- 🎁Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
 
 For latest papers, browse the state-of-the art is useful for finding the paper and code on GitHub.  
 https://paperswithcode.com/sota  
 
 ## ML Overview
+| Material | Link/Repository  | 
+|--------- | ---------------- | 
+| Applied ML | https://github.com/kojimizu/rstudio-conf-2018 |
+| Hands-on ML with R |  http://bit.ly/HOML_with_R   |
+| UC Business Analytics with R | http://uc-r.github.io |
+| Data Analysis and Prediction Algorithms with R |  https://rafalab.github.io/dsbook/ |
+
 ### Applied Machine Learning
 Applied ML workshop by Max Kuhn from useR/rstudio-conf Conference
 
@@ -27,12 +34,9 @@ From 2018 to 2019 January
 📚 Book: http://bit.ly/HOML_with_R  
 📦 Repo: https://github.com/bradleyboehmke/hands-on-machine-learning-with-r   
 
-### 📚 UC Business analyrics by R
+### 📚 UC Business analyrics by R 
 This material from the below page covers basic R techniques, descrptive analytics, and predictive analytics.  
 📚 Book: University of Cincinatti - http://uc-r.github.io  
-
----|---|---|---|
-A  | B | C | D | 
 
 - Predictive analytics / Supervised learning: Linear, Naive Bayes, Reularized Regression (Ridge, LASSO), MARS, Regression Tree, Random Forest, GBM, Discriminant Analysis, SVM
 - Predictive analytics / Unsupervised learning: PCA, 
