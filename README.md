@@ -2,9 +2,9 @@
 <font size="10"></font>
 
 # Machine Learning Archive  
-The below is an simple introduction of useful books for statistical modeling and proeprocessing/feature engineering.
-All codes are based on tidyverse-principle, and for users not used to tidyverse, the 5-day workshop for tidyverse is 
-recommended.  
+This repository archives useful R-related books and repositories for machine learning. 
+The recent development comes from `tidyverse` and `tidymodels`, and following cites are useful for catch-up.
+
 <Tidyverse training materials>
 - Tidy data science workshop :https://tidy-ds.wjakethompson.com/  
 - Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
@@ -13,7 +13,7 @@ For latest papers, browse the state-of-the art is useful for finding the paper a
 https://paperswithcode.com/sota  
 
 ## ML Overview
-### 1. Applied Machine Learning
+### Applied Machine Learning
 Applied ML workshop by Max Kuhn from useR2018 Conference
 Max Kuhn has talked about Applied Machine Learning in RStudio::Conf 2017. The material is stored in [this repository](https://github.com/kojimizu/rstudio-conf-2018). The latest repository is [here](https://github.com/topepo/rstudio-conf-2019).  
 
