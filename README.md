@@ -39,9 +39,11 @@ This material from the below page covers basic R techniques, descrptive analytic
 📚 Book: University of Cincinatti - http://uc-r.github.io  
 
 - Predictive analytics / Supervised learning: Linear, Naive Bayes, Reularized Regression (Ridge, LASSO), MARS, Regression Tree, Random Forest, GBM, Discriminant Analysis, SVM
-- Predictive analytics / Unsupervised learning: PCA, 
+- Descriptive analytics / Unsupervised learning (K-means, PCA, Hierarchical clustering), Text mining, classical methods 
 - Time series analysis: Exponential smoothing, MA/AR
 - DL: Regression DNN, Classification DNN
+
+--- updated until here on 11/02/2021
 
 ### 📚 Introduction to data science   
 Modeling algorithm by R. 
