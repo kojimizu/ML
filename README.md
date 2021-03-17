@@ -9,7 +9,8 @@ The recent development comes from `tidyverse` and `tidymodels`, and following ci
 
 - 🎁 Tidy data science workshop :https://tidy-ds.wjakethompson.com/       
 - 🎁 Remaster `tidyverse`: https://github.com/rstudio-education/remaster-the-tidyverse     
-- 🎁  An Antarctic Tour of the Tidyverse (R-Ladies Chicago): https://silvia.rbind.io/talk/2020-08-31-tour-of-the-tidyverse/
+- 🎁  An Antarctic Tour of the Tidyverse (R-Ladies Chicago): https://silvia.rbind.io/talk/2020-08-31-tour-of-the-tidyverse/  
+
 ![image](https://user-images.githubusercontent.com/29205710/111499004-d7737400-8785-11eb-9519-d9d6afb407e2.png)
 
 
